@@ -67,6 +67,189 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func fileManagerShowsSinglePaneControls() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let expanded = expandFileManager(in: appElement)
+        #expect(expanded, "File Manager should expand.")
+        guard expanded else { return }
+
+        let requiredIdentifiers = [
+            "file-manager-back",
+            "file-manager-refresh",
+            "file-manager-path-field",
+            "file-manager-go",
+            "file-manager-download",
+            "file-manager-delete",
+            "file-manager-move",
+            "file-manager-conflict",
+            "file-manager-retry-failed",
+            "file-manager-remote-list",
+        ]
+
+        for identifier in requiredIdentifiers {
+            let found = waitForElement(
+                in: appElement,
+                timeout: 5,
+                matching: { self.identifier(of: $0) == identifier }
+            ) != nil
+            #expect(found, "Expected File Manager control \(identifier).")
+        }
+
+        #expect(findElement(in: appElement, matching: { title(of: $0) == "Upload" }) == nil)
+    }
+
+    @Test
+    func fileManagerNavigatesDirectoryAndBack() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let expanded = expandFileManager(in: appElement)
+        #expect(expanded, "File Manager should expand.")
+        guard expanded else { return }
+
+        guard let logsRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { self.identifier(of: $0) == "file-manager-remote-row_logs" }
+        ) else {
+            Issue.record("Could not find /logs remote row.")
+            return
+        }
+
+        guard let logsFrame = frame(of: logsRow) else {
+            Issue.record("Could not read /logs row frame.")
+            return
+        }
+        doubleClick(point: CGPoint(x: logsFrame.midX, y: logsFrame.midY))
+
+        guard let pathField = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-path-field" }
+        ) else {
+            Issue.record("Could not find remote path field.")
+            return
+        }
+
+        let enteredLogs = waitUntil(timeout: 5, {
+            self.stringAttribute(kAXValueAttribute as CFString, of: pathField) == "/logs"
+        })
+        #expect(enteredLogs, "Double-clicking /logs should enter /logs.")
+        guard enteredLogs else { return }
+
+        guard let backButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-back" }
+        ) else {
+            Issue.record("Could not find File Manager Back button.")
+            return
+        }
+        _ = AXUIElementPerformAction(backButton, kAXPressAction as CFString)
+
+        let backToRoot = waitUntil(timeout: 5, {
+            self.stringAttribute(kAXValueAttribute as CFString, of: pathField) == "/"
+        })
+        #expect(backToRoot, "Back should return to root path.")
+    }
+
+    @Test
+    func fileManagerSelectionEnablesBatchActions() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let expanded = expandFileManager(in: appElement)
+        #expect(expanded, "File Manager should expand.")
+        guard expanded else { return }
+
+        guard let downloadButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-download" }
+        ),
+        let deleteButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-delete" }
+        ),
+        let moveButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-move" }
+        ) else {
+            Issue.record("Could not find batch action buttons.")
+            return
+        }
+
+        #expect(boolAttribute(kAXEnabledAttribute as CFString, of: downloadButton) == false)
+        #expect(boolAttribute(kAXEnabledAttribute as CFString, of: deleteButton) == false)
+        #expect(boolAttribute(kAXEnabledAttribute as CFString, of: moveButton) == false)
+
+        guard let readmeRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { self.identifier(of: $0) == "file-manager-remote-row_README.txt" }
+        ) else {
+            Issue.record("Could not find README remote row.")
+            return
+        }
+
+        guard let readmeFrame = frame(of: readmeRow) else {
+            Issue.record("Could not read README row frame.")
+            return
+        }
+        click(point: CGPoint(x: readmeFrame.midX, y: readmeFrame.midY))
+
+        let actionsEnabled = waitUntil(timeout: 5, {
+            self.boolAttribute(kAXEnabledAttribute as CFString, of: downloadButton) == true
+                && self.boolAttribute(kAXEnabledAttribute as CFString, of: deleteButton) == true
+                && self.boolAttribute(kAXEnabledAttribute as CFString, of: moveButton) == true
+        })
+        #expect(actionsEnabled, "Selecting a remote file should enable batch actions.")
+    }
+
+    @Test
     func sidebarGroupTogglesThreadsVisibility() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -1022,6 +1205,51 @@ struct RemoraUIAutomationTests {
                 }
             }
         }
+    }
+
+    private func launchAppForUIAutomation() throws -> (process: Process, appElement: AXUIElement) {
+        let appURL = try locateRemoraAppBinary()
+        let process = Process()
+        process.executableURL = appURL
+        process.arguments = []
+        try process.run()
+
+        guard waitUntil(timeout: 8, {
+            NSRunningApplication(processIdentifier: process.processIdentifier) != nil
+        }) else {
+            if process.isRunning {
+                process.terminate()
+            }
+            throw NSError(
+                domain: "RemoraUIAutomationTests",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "RemoraApp did not launch in time."]
+            )
+        }
+
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate(options: [.activateAllWindows])
+        return (process, AXUIElementCreateApplication(process.processIdentifier))
+    }
+
+    private func expandFileManager(in appElement: AXUIElement) -> Bool {
+        guard let fileManagerButton = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "File Manager"
+            }
+        ) else {
+            return false
+        }
+
+        if findElement(in: appElement, matching: { identifier(of: $0) == "file-manager-refresh" }) == nil {
+            _ = AXUIElementPerformAction(fileManagerButton, kAXPressAction as CFString)
+        }
+
+        return waitUntil(timeout: 5, {
+            findElement(in: appElement, matching: { identifier(of: $0) == "file-manager-refresh" }) != nil
+        })
     }
 
     private func locateRemoraAppBinary() throws -> URL {

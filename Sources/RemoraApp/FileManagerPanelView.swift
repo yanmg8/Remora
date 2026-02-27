@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import RemoraCore
 
@@ -32,6 +33,7 @@ struct FileManagerPanelView: View {
                     Label("Back", systemImage: "arrow.up.left")
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("file-manager-back")
 
                 Spacer()
 
@@ -39,6 +41,7 @@ struct FileManagerPanelView: View {
                     viewModel.refreshAll()
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("file-manager-refresh")
             }
             .padding(.bottom, 2)
 
@@ -55,6 +58,7 @@ struct FileManagerPanelView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(selectedRemoteFiles.isEmpty)
+                .accessibilityIdentifier("file-manager-download")
 
                 Button(role: .destructive) {
                     viewModel.deleteRemoteEntries(paths: Array(selectedRemotePaths))
@@ -64,6 +68,7 @@ struct FileManagerPanelView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(selectedRemotePaths.isEmpty)
+                .accessibilityIdentifier("file-manager-delete")
 
                 Button {
                     moveTargetPath = viewModel.remoteDirectoryPath
@@ -73,6 +78,7 @@ struct FileManagerPanelView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(selectedRemotePaths.isEmpty)
+                .accessibilityIdentifier("file-manager-move")
 
                 Picker("Conflict", selection: $viewModel.conflictStrategy) {
                     ForEach(TransferConflictStrategy.allCases) { strategy in
@@ -81,12 +87,14 @@ struct FileManagerPanelView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 120)
+                .accessibilityIdentifier("file-manager-conflict")
 
                 Button("Retry Failed") {
                     viewModel.retryFailedTransfers()
                 }
                 .buttonStyle(.bordered)
                 .disabled(!hasRetryableTransfers)
+                .accessibilityIdentifier("file-manager-retry-failed")
 
                 Spacer()
 
@@ -126,11 +134,13 @@ struct FileManagerPanelView: View {
                     .onSubmit {
                         jumpToRemotePath()
                     }
+                    .accessibilityIdentifier("file-manager-path-field")
 
                 Button("Go") {
                     jumpToRemotePath()
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("file-manager-go")
             }
 
             List(viewModel.remoteEntries, id: \.path, selection: $selectedRemotePaths) { entry in
@@ -154,6 +164,18 @@ struct FileManagerPanelView: View {
                 )
                 .contentShape(Rectangle())
                 .tag(entry.path)
+                .accessibilityIdentifier(remoteRowIdentifier(entry.path))
+                .onTapGesture {
+                    if NSEvent.modifierFlags.contains(.command) {
+                        if selectedRemotePaths.contains(entry.path) {
+                            selectedRemotePaths.remove(entry.path)
+                        } else {
+                            selectedRemotePaths.insert(entry.path)
+                        }
+                    } else {
+                        selectedRemotePaths = [entry.path]
+                    }
+                }
                 .onTapGesture(count: 2) {
                     guard entry.isDirectory else { return }
                     viewModel.openRemote(entry)
@@ -172,6 +194,7 @@ struct FileManagerPanelView: View {
             .scrollContentBackground(.hidden)
             .background(VisualStyle.rightPanelBackground)
             .listStyle(.plain)
+            .accessibilityIdentifier("file-manager-remote-list")
             .dropDestination(for: URL.self) { items, _ in
                 guard !items.isEmpty else { return false }
                 viewModel.enqueueUpload(localFileURLs: items, toRemoteDirectory: viewModel.remoteDirectoryPath)
@@ -334,5 +357,10 @@ struct FileManagerPanelView: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+
+    private func remoteRowIdentifier(_ path: String) -> String {
+        let sanitized = path.replacingOccurrences(of: "/", with: "_")
+        return "file-manager-remote-row\(sanitized)"
     }
 }

@@ -31,6 +31,6 @@ Status allowed: `todo` | `in_progress` | `done`
 
 ## Milestone F - 测试与验收
 - [ ] `status: todo` `id: F01` 新增/更新单元测试：ViewModel、TransferCenter、Editor、目录联动。
-- [ ] `status: todo` `id: F02` 扩展 `RemoraUIAutomationTests` 覆盖文件管理关键路径。
+- [x] `status: done` `id: F02` 扩展 `RemoraUIAutomationTests` 覆盖文件管理关键路径。
 - [ ] `status: todo` `id: F03` 执行 `swift test` 并修复回归。
 - [ ] `status: todo` `id: F04` 执行 `REMORA_RUN_UI_TESTS=1 swift test --filter RemoraUIAutomationTests` 并记录结果。
