@@ -229,6 +229,13 @@ struct RemoraUIAutomationTests {
 
         let hasLineBreak = lastValue.range(of: #"whoami\s*\n\s*remora"#, options: .regularExpression) != nil
         #expect(hasLineBreak, "Command output should appear on a new line after Enter.")
+
+        let remainsVisibleWithoutMouseInteraction = waitUntil(timeout: 2, {
+            guard let snapshot = transcriptText(from: transcriptElement) else { return false }
+            return snapshot.contains("Connected to remora@127.0.0.1:22")
+                && snapshot.range(of: #"whoami\s*\n\s*remora"#, options: .regularExpression) != nil
+        })
+        #expect(remainsVisibleWithoutMouseInteraction, "Terminal content should remain visible after Enter without extra mouse clicks.")
     }
 
     @Test

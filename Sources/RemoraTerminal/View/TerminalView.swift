@@ -19,7 +19,14 @@ public struct TerminalSelection: Equatable {
 public final class TerminalView: NSView {
     public var onInput: (@Sendable (Data) -> Void)?
     public var onFocus: (() -> Void)?
-    public var isDisplayActive: Bool = true
+    public var isDisplayActive: Bool = true {
+        didSet {
+            guard isDisplayActive else { return }
+            if !dirtyRows.isEmpty {
+                needsDisplay = true
+            }
+        }
+    }
 
     private let screenBuffer: ScreenBuffer
     private let parser = ANSIParser()
@@ -194,11 +201,8 @@ public final class TerminalView: NSView {
             }
         }
 
-        let shouldRedraw = isDisplayActive || flushSequence % 12 == 0
-        guard shouldRedraw else { return }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.needsDisplay = true
+        if isDisplayActive, !dirtyRows.isEmpty {
+            needsDisplay = true
         }
     }
 
