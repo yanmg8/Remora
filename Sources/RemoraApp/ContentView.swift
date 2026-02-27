@@ -73,6 +73,13 @@ struct ContentView: View {
         .onChange(of: selectedHostID) {
             selectedTemplateID = availableTemplates.first?.id
         }
+        .onChange(of: hostCatalog.hosts) {
+            if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
+                return
+            }
+            selectedHostID = hostCatalog.hosts.first?.id
+            selectedTemplateID = availableTemplates.first?.id
+        }
         .onChange(of: hostCatalog.groups) {
             collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
         }
@@ -104,7 +111,7 @@ struct ContentView: View {
             ) {
                 beginExportAllHosts()
             }
-            .disabled(isExportingHosts)
+            .disabled(isExportingHosts || hostCatalog.isLoading)
             .padding(.horizontal, 8)
             .padding(.bottom, 10)
 
@@ -138,54 +145,68 @@ struct ContentView: View {
             .padding(.bottom, 6)
 
             ScrollView {
-                LazyVStack(spacing: 6) {
-                    ForEach(visibleGroupSections) { section in
-                        SidebarGroupSectionView(
-                            section: section,
-                            selectedHostID: selectedHostID,
-                            isCollapsed: collapsedGroupNames.contains(section.name),
-                            onToggleCollapsed: {
-                                toggleGroupCollapse(section.name)
-                            },
-                            onAddThread: {
-                                beginCreateHost(in: section.name)
-                            },
-                            onEditGroup: {
-                                beginEditGroup(section.name)
-                            },
-                            onExportGroup: {
-                                beginExportGroup(section.name)
-                            },
-                            onDeleteGroup: {
-                                deleteGroup(section.name)
-                            },
-                            onSelectThread: { hostID in
-                                selectedHostID = hostID
-                            },
-                            onPinThread: { hostID in
-                                togglePinHost(hostID)
-                            },
-                            onEditThread: { hostID in
-                                beginEditHost(hostID)
-                            },
-                            onArchiveThread: { hostID in
-                                archiveHost(hostID)
-                            },
-                            onCopyAddress: { host in
-                                copyToPasteboard(host.address)
-                            },
-                            onCopySSHCommand: { host in
-                                let command = "ssh \(host.username)@\(host.address) -p \(host.port)"
-                                copyToPasteboard(command)
-                            },
-                            onDeleteThread: { hostID in
-                                deleteHost(hostID)
-                            }
-                        )
+                if hostCatalog.isLoading {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading SSH connections...")
+                            .font(.system(size: 12))
+                            .foregroundStyle(VisualStyle.textSecondary)
                     }
+                    .frame(maxWidth: .infinity, minHeight: 180)
+                    .accessibilityIdentifier("sidebar-hosts-loading")
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                } else {
+                    LazyVStack(spacing: 6) {
+                        ForEach(visibleGroupSections) { section in
+                            SidebarGroupSectionView(
+                                section: section,
+                                selectedHostID: selectedHostID,
+                                isCollapsed: collapsedGroupNames.contains(section.name),
+                                onToggleCollapsed: {
+                                    toggleGroupCollapse(section.name)
+                                },
+                                onAddThread: {
+                                    beginCreateHost(in: section.name)
+                                },
+                                onEditGroup: {
+                                    beginEditGroup(section.name)
+                                },
+                                onExportGroup: {
+                                    beginExportGroup(section.name)
+                                },
+                                onDeleteGroup: {
+                                    deleteGroup(section.name)
+                                },
+                                onSelectThread: { hostID in
+                                    selectedHostID = hostID
+                                },
+                                onPinThread: { hostID in
+                                    togglePinHost(hostID)
+                                },
+                                onEditThread: { hostID in
+                                    beginEditHost(hostID)
+                                },
+                                onArchiveThread: { hostID in
+                                    archiveHost(hostID)
+                                },
+                                onCopyAddress: { host in
+                                    copyToPasteboard(host.address)
+                                },
+                                onCopySSHCommand: { host in
+                                    let command = "ssh \(host.username)@\(host.address) -p \(host.port)"
+                                    copyToPasteboard(command)
+                                },
+                                onDeleteThread: { hostID in
+                                    deleteHost(hostID)
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
                 }
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
             }
 
             Spacer(minLength: 8)

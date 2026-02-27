@@ -1,7 +1,7 @@
 import Foundation
 import RemoraCore
 
-struct HostSessionTemplate: Identifiable, Equatable, Hashable {
+struct HostSessionTemplate: Identifiable, Equatable, Hashable, Codable {
     let id: UUID
     var hostID: UUID
     var name: String
@@ -35,50 +35,41 @@ struct HostGroupSection: Identifiable, Equatable {
 
 @MainActor
 final class HostCatalogStore: ObservableObject {
-    @Published private(set) var hosts: [RemoraCore.Host]
-    @Published private(set) var templates: [HostSessionTemplate]
-    @Published private(set) var recentHostIDs: [UUID]
-    @Published private(set) var groups: [String]
+    @Published private(set) var hosts: [RemoraCore.Host] {
+        didSet { persistSnapshotIfNeeded() }
+    }
+    @Published private(set) var templates: [HostSessionTemplate] {
+        didSet { persistSnapshotIfNeeded() }
+    }
+    @Published private(set) var recentHostIDs: [UUID] {
+        didSet { persistSnapshotIfNeeded() }
+    }
+    @Published private(set) var groups: [String] {
+        didSet { persistSnapshotIfNeeded() }
+    }
+    @Published private(set) var isLoading: Bool
 
-    init() {
-        let production = RemoraCore.Host(
-            name: "prod-api",
-            address: "10.0.0.10",
-            username: "deploy",
-            group: "Production",
-            tags: ["api", "critical"],
-            favorite: true,
-            auth: HostAuth(method: .privateKey, keyReference: "/Users/wuu/.ssh/id_ed25519")
-        )
+    private let persistenceStore: HostCatalogPersistenceStore
+    private let persistenceEnabled: Bool
+    private var suppressPersistence = false
 
-        let staging = RemoraCore.Host(
-            name: "staging-api",
-            address: "10.0.1.10",
-            username: "deploy",
-            group: "Staging",
-            tags: ["api"],
-            auth: HostAuth(method: .agent)
-        )
+    init(
+        persistenceStore: HostCatalogPersistenceStore = HostCatalogPersistenceStore(),
+        persistenceEnabled: Bool = HostCatalogStore.defaultPersistenceEnabled
+    ) {
+        let defaults = Self.makeDefaultCatalog()
+        self.hosts = defaults.hosts
+        self.templates = defaults.templates
+        self.recentHostIDs = defaults.recentHostIDs
+        self.groups = defaults.groups
+        self.persistenceStore = persistenceStore
+        self.persistenceEnabled = persistenceEnabled
+        self.isLoading = persistenceEnabled
 
-        let jump = RemoraCore.Host(
-            name: "jump-box",
-            address: "127.0.0.1",
-            username: NSUserName(),
-            group: "Local",
-            tags: ["local"],
-            favorite: true,
-            auth: HostAuth(method: .agent)
-        )
-
-        let initialHosts = [production, staging, jump]
-        self.hosts = initialHosts
-        self.templates = [
-            HostSessionTemplate(hostID: production.id, name: "Prod Readonly", usernameOverride: "readonly"),
-            HostSessionTemplate(hostID: production.id, name: "Prod Deploy", usernameOverride: "deploy"),
-            HostSessionTemplate(hostID: staging.id, name: "Staging Ops", usernameOverride: "ops"),
-        ]
-        self.recentHostIDs = []
-        self.groups = Self.orderedUniqueGroups(from: initialHosts)
+        guard persistenceEnabled else { return }
+        Task { [weak self] in
+            await self?.loadPersistedCatalog()
+        }
     }
 
     func host(id: UUID?) -> RemoraCore.Host? {
@@ -247,6 +238,53 @@ final class HostCatalogStore: ObservableObject {
         })
     }
 
+    private func loadPersistedCatalog() async {
+        defer { isLoading = false }
+
+        do {
+            guard let snapshot = try await persistenceStore.load() else { return }
+            apply(snapshot: snapshot)
+        } catch {
+            print("[HostCatalogStore] load failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func apply(snapshot: PersistedHostCatalog) {
+        suppressPersistence = true
+        defer { suppressPersistence = false }
+
+        hosts = []
+        groups = []
+        let normalizedHosts = snapshot.hosts.map { normalizedHostForStorage($0, excludingID: $0.id) }
+        hosts = normalizedHosts
+        templates = snapshot.templates.filter { template in
+            normalizedHosts.contains(where: { $0.id == template.hostID })
+        }
+        recentHostIDs = snapshot.recentHostIDs.filter { id in
+            normalizedHosts.contains(where: { $0.id == id })
+        }
+
+        let mergedGroups = snapshot.groups + Self.orderedUniqueGroups(from: normalizedHosts)
+        groups = Self.orderedUniqueStrings(from: mergedGroups)
+    }
+
+    private func persistSnapshotIfNeeded() {
+        guard persistenceEnabled, !suppressPersistence else { return }
+        let snapshot = PersistedHostCatalog(
+            hosts: hosts,
+            templates: templates,
+            recentHostIDs: recentHostIDs,
+            groups: groups
+        )
+        Task {
+            do {
+                try await persistenceStore.save(snapshot)
+            } catch {
+                print("[HostCatalogStore] save failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func filter(_ hosts: [RemoraCore.Host], query: String) -> [RemoraCore.Host] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return hosts }
@@ -271,6 +309,69 @@ final class HostCatalogStore: ObservableObject {
             }
         }
         return ordered
+    }
+
+    private static func orderedUniqueStrings(from values: [String]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for value in values {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { continue }
+            seen.insert(trimmed)
+            ordered.append(trimmed)
+        }
+        return ordered
+    }
+
+    private static func makeDefaultCatalog() -> PersistedHostCatalog {
+        let production = RemoraCore.Host(
+            name: "prod-api",
+            address: "10.0.0.10",
+            username: "deploy",
+            group: "Production",
+            tags: ["api", "critical"],
+            favorite: true,
+            auth: HostAuth(method: .privateKey, keyReference: "/Users/wuu/.ssh/id_ed25519")
+        )
+
+        let staging = RemoraCore.Host(
+            name: "staging-api",
+            address: "10.0.1.10",
+            username: "deploy",
+            group: "Staging",
+            tags: ["api"],
+            auth: HostAuth(method: .agent)
+        )
+
+        let jump = RemoraCore.Host(
+            name: "jump-box",
+            address: "127.0.0.1",
+            username: NSUserName(),
+            group: "Local",
+            tags: ["local"],
+            favorite: true,
+            auth: HostAuth(method: .agent)
+        )
+
+        let initialHosts = [production, staging, jump]
+        return PersistedHostCatalog(
+            hosts: initialHosts,
+            templates: [
+                HostSessionTemplate(hostID: production.id, name: "Prod Readonly", usernameOverride: "readonly"),
+                HostSessionTemplate(hostID: production.id, name: "Prod Deploy", usernameOverride: "deploy"),
+                HostSessionTemplate(hostID: staging.id, name: "Staging Ops", usernameOverride: "ops"),
+            ],
+            recentHostIDs: [],
+            groups: orderedUniqueGroups(from: initialHosts)
+        )
+    }
+
+    private static var defaultPersistenceEnabled: Bool {
+        let env = ProcessInfo.processInfo.environment
+        if env["REMORA_DISABLE_HOST_PERSISTENCE"] == "1" { return false }
+        if env["REMORA_RUN_UI_TESTS"] == "1" { return false }
+        if env["XCTestConfigurationFilePath"] != nil { return false }
+        return true
     }
 
     private func normalizedGroupName(_ value: String) -> String {
