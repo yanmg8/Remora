@@ -636,6 +636,169 @@ struct RemoraUIAutomationTests {
         #expect(secondSessionIsClean, "New session should not inherit previous session terminal buffer.")
     }
 
+    @Test
+    func multiSessionSupportsMultiRoundIsolationAndClear() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let appURL = try locateRemoraAppBinary()
+        let process = Process()
+        process.executableURL = appURL
+        process.arguments = []
+        try process.run()
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard waitUntil(timeout: 8, {
+            NSRunningApplication(processIdentifier: process.processIdentifier) != nil
+        }) else {
+            Issue.record("RemoraApp did not launch in time.")
+            return
+        }
+
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate()
+
+        let appElement = AXUIElementCreateApplication(process.processIdentifier)
+        let connected = waitUntil(timeout: 8, {
+            findElement(in: appElement, matching: { title(of: $0) == "Connected (Mock)" }) != nil
+        })
+        #expect(connected, "Expected initial mock terminal connection.")
+        guard connected else { return }
+
+        guard let addSessionButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { identifier(of: $0) == "session-tab-add" }
+        ) else {
+            Issue.record("Could not find add-session button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(addSessionButton, kAXPressAction as CFString)
+        _ = AXUIElementPerformAction(addSessionButton, kAXPressAction as CFString)
+
+        let sessionTitles = ["Session 1", "Session 2", "Session 3"]
+        for title in sessionTitles {
+            guard selectSessionTab(title, in: appElement) else {
+                Issue.record("Could not select tab \(title)")
+                return
+            }
+            let ready = waitUntil(timeout: 8, {
+                guard let transcript = activeTranscriptText(in: appElement) else { return false }
+                return transcript.contains("Type commands and press Enter.")
+            })
+            #expect(ready, "\(title) should have initial prompt output.")
+            guard ready else { return }
+        }
+
+        let round1Markers = [
+            "Session 1": "s1_round1_marker_101",
+            "Session 2": "s2_round1_marker_202",
+            "Session 3": "s3_round1_marker_303",
+        ]
+
+        for title in sessionTitles {
+            guard let marker = round1Markers[title], selectSessionTab(title, in: appElement) else {
+                Issue.record("Could not select tab \(title) for round1")
+                return
+            }
+            guard focusActiveTerminal(in: appElement) else {
+                Issue.record("Could not focus terminal in \(title)")
+                return
+            }
+            typeText("\(marker)\r")
+            let echoed = waitUntil(timeout: 8, {
+                guard let transcript = activeTranscriptText(in: appElement) else { return false }
+                return transcript.contains("command not found: \(marker)")
+            })
+            #expect(echoed, "\(title) should render marker output \(marker)")
+            guard echoed else { return }
+        }
+
+        guard selectSessionTab("Session 2", in: appElement), focusActiveTerminal(in: appElement) else {
+            Issue.record("Could not focus Session 2 for clear.")
+            return
+        }
+        let beforeClearTranscript = activeTranscriptText(in: appElement) ?? ""
+        typeText("clear\r")
+        let session2ProcessedClear = waitUntil(timeout: 8, {
+            guard let transcript = activeTranscriptText(in: appElement) else { return false }
+            return transcript != beforeClearTranscript
+        })
+        #expect(session2ProcessedClear, "Session 2 should process clear command input.")
+        guard session2ProcessedClear else { return }
+
+        for title in ["Session 1", "Session 3"] {
+            guard let marker = round1Markers[title], selectSessionTab(title, in: appElement) else {
+                Issue.record("Could not select \(title) to verify isolation after clear.")
+                return
+            }
+            let unaffected = waitUntil(timeout: 6, {
+                guard let transcript = activeTranscriptText(in: appElement) else { return false }
+                return transcript.contains("command not found: \(marker)") && !transcript.contains("\nclear")
+            })
+            #expect(unaffected, "\(title) should keep its own marker after Session 2 clear.")
+        }
+
+        let round2Markers = [
+            "Session 1": "s1_round2_marker_404",
+            "Session 2": "s2_round2_marker_505",
+            "Session 3": "s3_round2_marker_606",
+        ]
+
+        for title in sessionTitles {
+            guard let marker = round2Markers[title], selectSessionTab(title, in: appElement) else {
+                Issue.record("Could not select \(title) for round2.")
+                return
+            }
+            guard focusActiveTerminal(in: appElement) else {
+                Issue.record("Could not focus terminal in \(title) for round2.")
+                return
+            }
+            typeText("\(marker)\r")
+            let echoed = waitUntil(timeout: 8, {
+                guard let transcript = activeTranscriptText(in: appElement) else { return false }
+                return transcript.contains("command not found: \(marker)")
+            })
+            #expect(echoed, "\(title) should render second marker output \(marker)")
+        }
+
+        for title in sessionTitles {
+            guard let marker1 = round1Markers[title],
+                  let marker2 = round2Markers[title],
+                  selectSessionTab(title, in: appElement)
+            else {
+                Issue.record("Could not validate final isolation for \(title).")
+                return
+            }
+
+            guard let snapshot = activeTranscriptText(in: appElement) else {
+                Issue.record("Could not read transcript for \(title) final validation.")
+                return
+            }
+
+            #expect(snapshot.contains(marker1), "\(title) should keep round1 marker.")
+            #expect(snapshot.contains(marker2), "\(title) should keep round2 marker.")
+
+            for other in sessionTitles where other != title {
+                if let otherMarker1 = round1Markers[other] {
+                    #expect(!snapshot.contains(otherMarker1), "\(title) should not contain \(other)'s round1 marker.")
+                }
+                if let otherMarker2 = round2Markers[other] {
+                    #expect(!snapshot.contains(otherMarker2), "\(title) should not contain \(other)'s round2 marker.")
+                }
+            }
+        }
+    }
+
     private func locateRemoraAppBinary() throws -> URL {
         if let custom = ProcessInfo.processInfo.environment["REMORA_APP_BINARY"], !custom.isEmpty {
             let url = URL(fileURLWithPath: custom)
@@ -699,6 +862,20 @@ struct RemoraUIAutomationTests {
         return nil
     }
 
+    private func findElements(
+        in root: AXUIElement,
+        matching: (AXUIElement) -> Bool
+    ) -> [AXUIElement] {
+        var results: [AXUIElement] = []
+        if matching(root) {
+            results.append(root)
+        }
+        for child in children(of: root) {
+            results.append(contentsOf: findElements(in: child, matching: matching))
+        }
+        return results
+    }
+
     private func children(of element: AXUIElement) -> [AXUIElement] {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
@@ -718,6 +895,16 @@ struct RemoraUIAutomationTests {
 
     private func identifier(of element: AXUIElement) -> String? {
         stringAttribute(kAXIdentifierAttribute as CFString, of: element)
+    }
+
+    private func boolAttribute(_ attr: CFString, of element: AXUIElement) -> Bool? {
+        var value: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(element, attr, &value)
+        guard status == .success, let raw = value else { return nil }
+        if let number = raw as? NSNumber {
+            return number.boolValue
+        }
+        return nil
     }
 
     private func stringAttribute(_ attr: CFString, of element: AXUIElement) -> String? {
@@ -864,6 +1051,107 @@ struct RemoraUIAutomationTests {
             return title
         }
         return nil
+    }
+
+    private func activeTerminalElement(in appElement: AXUIElement) -> AXUIElement? {
+        let terminals = findElements(in: appElement) { identifier(of: $0) == "terminal-view" }
+        if terminals.count <= 1 {
+            return terminals.first
+        }
+
+        if let focused = terminals.first(where: { boolAttribute(kAXFocusedAttribute as CFString, of: $0) == true }) {
+            return focused
+        }
+
+        if let visible = terminals.first(where: { boolAttribute(kAXHiddenAttribute as CFString, of: $0) != true }) {
+            return visible
+        }
+        return terminals.first
+    }
+
+    private func activeTranscriptElement(in appElement: AXUIElement) -> AXUIElement? {
+        let transcripts = findElements(in: appElement) { identifier(of: $0) == "terminal-transcript" }
+        if transcripts.count <= 1 {
+            return transcripts.first
+        }
+
+        if let visible = transcripts.first(where: { boolAttribute(kAXHiddenAttribute as CFString, of: $0) != true }) {
+            return visible
+        }
+        return transcripts.first
+    }
+
+    private func activeTranscriptText(in appElement: AXUIElement) -> String? {
+        guard let element = activeTranscriptElement(in: appElement) else { return nil }
+        return transcriptText(from: element)
+    }
+
+    private func activeTerminalValue(in appElement: AXUIElement) -> String? {
+        guard let element = activeTerminalElement(in: appElement) else { return nil }
+        return stringAttribute(kAXValueAttribute as CFString, of: element)
+    }
+
+    private func focusActiveTerminal(in appElement: AXUIElement) -> Bool {
+        let terminals = findElements(in: appElement) { identifier(of: $0) == "terminal-view" }
+        guard let terminal = terminals.first, let terminalFrame = frame(of: terminal) else { return false }
+        click(point: CGPoint(x: terminalFrame.midX, y: terminalFrame.midY))
+        return waitUntil(timeout: 2) {
+            activeTerminalElement(in: appElement) != nil
+        }
+    }
+
+    private func sessionIndex(from title: String) -> Int? {
+        guard title.hasPrefix("Session ") else { return nil }
+        let raw = title.replacingOccurrences(of: "Session ", with: "")
+        guard let value = Int(raw), value > 0 else { return nil }
+        return value - 1
+    }
+
+    private func terminalElement(forSessionTitle title: String, in appElement: AXUIElement) -> AXUIElement? {
+        guard let index = sessionIndex(from: title) else { return nil }
+        let terminals = findElements(in: appElement) { identifier(of: $0) == "terminal-view" }
+        guard terminals.indices.contains(index) else { return nil }
+        return terminals[index]
+    }
+
+    private func transcriptElement(forSessionTitle title: String, in appElement: AXUIElement) -> AXUIElement? {
+        guard let index = sessionIndex(from: title) else { return nil }
+        let transcripts = findElements(in: appElement) { identifier(of: $0) == "terminal-transcript" }
+        guard transcripts.indices.contains(index) else { return nil }
+        return transcripts[index]
+    }
+
+    private func terminalValue(forSessionTitle title: String, in appElement: AXUIElement) -> String? {
+        guard let element = terminalElement(forSessionTitle: title, in: appElement) else { return nil }
+        return stringAttribute(kAXValueAttribute as CFString, of: element)
+    }
+
+    private func transcriptText(forSessionTitle title: String, in appElement: AXUIElement) -> String? {
+        guard let element = transcriptElement(forSessionTitle: title, in: appElement) else { return nil }
+        return transcriptText(from: element)
+    }
+
+    private func focusTerminal(forSessionTitle title: String, in appElement: AXUIElement) -> Bool {
+        guard let element = terminalElement(forSessionTitle: title, in: appElement),
+              let terminalFrame = frame(of: element) else { return false }
+        _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        click(point: CGPoint(x: terminalFrame.midX, y: terminalFrame.midY))
+        return true
+    }
+
+    private func selectSessionTab(_ title: String, in appElement: AXUIElement) -> Bool {
+        guard let tab = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && self.title(of: element) == title
+            }
+        ) else {
+            return false
+        }
+        _ = AXUIElementPerformAction(tab, kAXPressAction as CFString)
+        _ = AXUIElementPerformAction(tab, kAXPressAction as CFString)
+        return true
     }
 
     private func accessibilitySummary(of element: AXUIElement) -> String {

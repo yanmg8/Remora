@@ -80,6 +80,12 @@ final class WorkspaceViewModel: ObservableObject {
         tabs.append(tab)
         activeTabID = tab.id
         activePaneByTab[tab.id] = pane.id
+
+        // Test-mode convenience: auto-connect new tabs so UI automation can verify isolation.
+        if ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" {
+            pane.runtime.connectMock()
+        }
+
         applyPaneVisibility()
     }
 
@@ -112,6 +118,13 @@ final class WorkspaceViewModel: ObservableObject {
         {
             activePaneByTab[tabID] = pane.id
         }
+
+        if ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1",
+           let pane = activePane, pane.runtime.connectionState == "Idle"
+        {
+            pane.runtime.connectMock()
+        }
+
         applyPaneVisibility()
     }
 
