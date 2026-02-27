@@ -511,7 +511,10 @@ struct RemoraUIAutomationTests {
         let hasCorrectOutput = waitUntil(timeout: 8, {
             guard let value = transcriptText(from: transcriptElement) else { return false }
             snapshot = value
-            return value.range(of: #"whoami\s*\n\s*remora"#, options: .regularExpression) != nil
+            return value.range(
+                of: #"\n\s*remora\s*\n\s*remora@127\.0\.0\.1\s*%"#,
+                options: .regularExpression
+            ) != nil
         })
 
         if !hasCorrectOutput {
@@ -568,20 +571,29 @@ struct RemoraUIAutomationTests {
             return
         }
 
+        guard let transcriptElement = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { identifier(of: $0) == "terminal-transcript" }
+        ) else {
+            Issue.record("Could not find transcript accessibility element.")
+            return
+        }
+
         guard let frame = frame(of: terminal) else {
             Issue.record("Could not read terminal frame for click focus.")
             return
         }
 
         click(point: CGPoint(x: frame.midX, y: frame.midY))
-        typeText("whoami\r")
+        typeText("help\r")
 
-        let firstSessionHasWhoami = waitUntil(timeout: 8, {
-            guard let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) else { return false }
-            return value.contains("whoami") && value.contains("remora")
+        let firstSessionHasCommandOutput = waitUntil(timeout: 8, {
+            guard let value = transcriptText(from: transcriptElement) else { return false }
+            return value.contains("Available commands: help, date, whoami, ls, clear")
         })
-        #expect(firstSessionHasWhoami, "First session should contain typed whoami output.")
-        guard firstSessionHasWhoami else { return }
+        #expect(firstSessionHasCommandOutput, "First session should contain command output.")
+        guard firstSessionHasCommandOutput else { return }
 
         guard let addSessionButton = waitForElement(
             in: appElement,
@@ -608,13 +620,17 @@ struct RemoraUIAutomationTests {
         _ = AXUIElementPerformAction(session2Tab, kAXPressAction as CFString)
 
         let secondSessionIsClean = waitUntil(timeout: 5, {
-            guard let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) else { return false }
-            return !value.contains("whoami")
+            findElement(in: appElement, matching: { element in
+                guard identifier(of: element) == "terminal-transcript" else { return false }
+                guard let value = transcriptText(from: element) else { return false }
+                return !value.contains("Available commands: help, date, whoami, ls, clear")
+            }) != nil
         })
 
         if !secondSessionIsClean {
-            let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) ?? ""
-            Issue.record("Session 2 terminal buffer leaked from Session 1: \(value)")
+            let leaked = findElement(in: appElement, matching: { identifier(of: $0) == "terminal-transcript" })
+                .flatMap { transcriptText(from: $0) } ?? ""
+            Issue.record("Session 2 terminal buffer leaked from Session 1: \(leaked)")
         }
 
         #expect(secondSessionIsClean, "New session should not inherit previous session terminal buffer.")

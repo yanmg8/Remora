@@ -31,6 +31,8 @@ final class TerminalRuntime: ObservableObject {
     private var sessionID: UUID?
     private var streamTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
+    private var inputDrainerTask: Task<Void, Never>?
+    private var pendingInputs: [Data] = []
     private var isPaneActive = true
     private var pendingOutput = Data()
     private var transcriptBuffer = ""
@@ -48,8 +50,8 @@ final class TerminalRuntime: ObservableObject {
         terminalView = view
         view.isDisplayActive = isPaneActive
         view.onInput = { [weak self] data in
-            Task {
-                await self?.sendInput(data)
+            DispatchQueue.main.async {
+                self?.enqueueInput(data)
             }
         }
         flushPendingOutputIfNeeded()
@@ -89,6 +91,7 @@ final class TerminalRuntime: ObservableObject {
         connectionMode = config.mode
         connectionState = "Connecting"
         clearTranscript()
+        clearInputQueue()
 
         guard let host = buildHostConfiguration(config: config) else {
             connectionState = "配置错误：请检查主机、端口、用户名"
@@ -128,6 +131,7 @@ final class TerminalRuntime: ObservableObject {
                 self.stateTask?.cancel()
                 self.stateTask = nil
                 self.pendingOutput.removeAll(keepingCapacity: false)
+                self.clearInputQueue()
             }
         }
     }
@@ -170,16 +174,45 @@ final class TerminalRuntime: ObservableObject {
         }
     }
 
-    private func sendInput(_ data: Data) async {
-        guard let sessionID, let manager = activeSessionManager else { return }
+    private func enqueueInput(_ data: Data) {
+        pendingInputs.append(data)
+        guard inputDrainerTask == nil else { return }
 
-        do {
-            try await manager.write(data, to: sessionID)
-        } catch {
-            await MainActor.run {
-                connectionState = "Write failed: \(error.localizedDescription)"
+        inputDrainerTask = Task { [weak self] in
+            await self?.drainInputQueue()
+        }
+    }
+
+    private func drainInputQueue() async {
+        defer {
+            inputDrainerTask = nil
+            if !pendingInputs.isEmpty {
+                inputDrainerTask = Task { [weak self] in
+                    await self?.drainInputQueue()
+                }
             }
         }
+
+        while !pendingInputs.isEmpty {
+            if Task.isCancelled { return }
+
+            let data = pendingInputs.removeFirst()
+            guard !data.isEmpty else { continue }
+            guard let sessionID, let manager = activeSessionManager else { continue }
+
+            do {
+                try await manager.write(data, to: sessionID)
+            } catch {
+                connectionState = "Write failed: \(error.localizedDescription)"
+                return
+            }
+        }
+    }
+
+    private func clearInputQueue() {
+        pendingInputs.removeAll(keepingCapacity: false)
+        inputDrainerTask?.cancel()
+        inputDrainerTask = nil
     }
 
     private func buildHostConfiguration(config: TerminalConnectConfig) -> RemoraCore.Host? {
