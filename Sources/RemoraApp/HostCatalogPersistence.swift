@@ -33,18 +33,22 @@ actor HostCatalogPersistenceStore {
     private let credentialStore: CredentialStore
     private let baseDirectoryURL: URL
     private let storageFileURL: URL
-    private let keyReference = "host-catalog-encryption-key-v1"
+    private let keyFileURL: URL
+    private let keyReference: String
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
     init(
         credentialStore: CredentialStore = CredentialStore(),
+        keyReference: String = "host-catalog-encryption-key-v1",
         baseDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".remora/ssh", isDirectory: true)
     ) {
         self.credentialStore = credentialStore
         self.baseDirectoryURL = baseDirectoryURL
         self.storageFileURL = baseDirectoryURL.appendingPathComponent("connections.enc.json")
+        self.keyFileURL = baseDirectoryURL.appendingPathComponent("catalog.key")
+        self.keyReference = keyReference
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -72,7 +76,7 @@ actor HostCatalogPersistenceStore {
     }
 
     private func encrypt(plainData: Data) async throws -> EncryptedHostCatalogEnvelope {
-        let key = try await symmetricKey()
+        let key = try await encryptionKey()
         let sealedBox = try AES.GCM.seal(plainData, using: key)
         guard let combined = sealedBox.combined else {
             throw HostCatalogPersistenceError.invalidEncryptedBlob
@@ -86,21 +90,32 @@ actor HostCatalogPersistenceStore {
     }
 
     private func decrypt(envelope: EncryptedHostCatalogEnvelope) async throws -> Data {
-        let key = try await symmetricKey()
         guard let combinedData = Data(base64Encoded: envelope.combined) else {
             throw HostCatalogPersistenceError.invalidEncryptedBlob
         }
 
         let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
-        return try AES.GCM.open(sealedBox, using: key)
+        var lastError: Error?
+        for key in try await decryptionKeys() {
+            do {
+                return try AES.GCM.open(sealedBox, using: key)
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw lastError ?? HostCatalogPersistenceError.invalidEncryptedBlob
     }
 
-    private func symmetricKey() async throws -> SymmetricKey {
-        if let base64 = await credentialStore.secret(for: keyReference),
-           let keyData = Data(base64Encoded: base64),
-           keyData.count == 32
-        {
-            return SymmetricKey(data: keyData)
+    private func encryptionKey() async throws -> SymmetricKey {
+        if let fileKeyData = loadKeyDataFromFile() {
+            await credentialStore.setSecret(fileKeyData.base64EncodedString(), for: keyReference)
+            return SymmetricKey(data: fileKeyData)
+        }
+
+        if let keychainData = await loadKeyDataFromKeychain() {
+            try persistKeyDataToFile(keychainData)
+            return SymmetricKey(data: keychainData)
         }
 
         let generated = SymmetricKey(size: .bits256)
@@ -108,7 +123,67 @@ actor HostCatalogPersistenceStore {
         guard keyData.count == 32 else {
             throw HostCatalogPersistenceError.invalidKeyMaterial
         }
+
+        try persistKeyDataToFile(keyData)
         await credentialStore.setSecret(keyData.base64EncodedString(), for: keyReference)
         return generated
+    }
+
+    private func decryptionKeys() async throws -> [SymmetricKey] {
+        var keys: [SymmetricKey] = []
+        var seen: Set<Data> = []
+
+        if let fileData = loadKeyDataFromFile(), !seen.contains(fileData) {
+            seen.insert(fileData)
+            keys.append(SymmetricKey(data: fileData))
+        }
+
+        if let keychainData = await loadKeyDataFromKeychain(), !seen.contains(keychainData) {
+            seen.insert(keychainData)
+            keys.append(SymmetricKey(data: keychainData))
+        }
+
+        if keys.isEmpty {
+            keys.append(try await encryptionKey())
+        }
+
+        return keys
+    }
+
+    private func loadKeyDataFromKeychain() async -> Data? {
+        guard let base64 = await credentialStore.secret(for: keyReference),
+              let keyData = Data(base64Encoded: base64),
+              keyData.count == 32
+        else {
+            return nil
+        }
+        return keyData
+    }
+
+    private func loadKeyDataFromFile() -> Data? {
+        guard let raw = try? Data(contentsOf: keyFileURL),
+              let base64 = String(data: raw, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let keyData = Data(base64Encoded: base64),
+              keyData.count == 32
+        else {
+            return nil
+        }
+        return keyData
+    }
+
+    private func persistKeyDataToFile(_ keyData: Data) throws {
+        guard keyData.count == 32 else {
+            throw HostCatalogPersistenceError.invalidKeyMaterial
+        }
+        try FileManager.default.createDirectory(at: baseDirectoryURL, withIntermediateDirectories: true)
+        guard let encoded = keyData.base64EncodedString().data(using: .utf8) else {
+            throw HostCatalogPersistenceError.invalidKeyMaterial
+        }
+        try encoded.write(to: keyFileURL, options: [.atomic])
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: keyFileURL.path
+        )
     }
 }

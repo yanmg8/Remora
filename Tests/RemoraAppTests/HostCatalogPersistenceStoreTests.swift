@@ -84,6 +84,54 @@ struct HostCatalogPersistenceStoreTests {
         #expect(!envelope.combined.isEmpty)
     }
 
+    @Test
+    func canDecryptUsingFileBackedKeyAfterKeychainSecretIsRemoved() async throws {
+        let baseDirectory = makeTemporaryDirectory()
+        defer {
+            let root = baseDirectory.deletingLastPathComponent().deletingLastPathComponent()
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let credentialStore = CredentialStore()
+        let keyReference = "host-catalog-encryption-key-test-\(UUID().uuidString)"
+
+        let firstStore = HostCatalogPersistenceStore(
+            credentialStore: credentialStore,
+            keyReference: keyReference,
+            baseDirectoryURL: baseDirectory
+        )
+
+        let host = Host(
+            name: "fallback-check",
+            address: "172.16.0.8",
+            username: "ops",
+            group: "Ops",
+            tags: [],
+            auth: HostAuth(method: .agent)
+        )
+        let snapshot = PersistedHostCatalog(
+            hosts: [host],
+            templates: [],
+            recentHostIDs: [],
+            groups: ["Ops"]
+        )
+
+        try await firstStore.save(snapshot)
+        let keyFileURL = baseDirectory.appendingPathComponent("catalog.key")
+        #expect(FileManager.default.fileExists(atPath: keyFileURL.path))
+
+        await credentialStore.removeSecret(for: keyReference)
+
+        let secondStore = HostCatalogPersistenceStore(
+            credentialStore: credentialStore,
+            keyReference: keyReference,
+            baseDirectoryURL: baseDirectory
+        )
+        let loaded = try await secondStore.load()
+        #expect(loaded == snapshot)
+        await credentialStore.removeSecret(for: keyReference)
+    }
+
     private func makeTemporaryDirectory() -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("remora-host-catalog-tests-\(UUID().uuidString)", isDirectory: true)
