@@ -33,6 +33,35 @@ enum TransferConflictStrategy: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum RemoteClipboardMode: String, Sendable {
+    case copy
+    case cut
+}
+
+struct RemoteClipboardState: Equatable, Sendable {
+    var mode: RemoteClipboardMode
+    var sourcePaths: [String]
+}
+
+enum RemoteContextAction: Sendable {
+    case refresh
+    case delete(paths: [String])
+    case rename(path: String, newName: String)
+    case copy(paths: [String])
+    case cut(paths: [String])
+    case paste(destinationDirectory: String)
+    case download(paths: [String])
+    case move(paths: [String], destinationDirectory: String)
+}
+
+struct RemoteTextDocument: Sendable {
+    var path: String
+    var text: String
+    var encoding: String
+    var modifiedAt: Date?
+    var isReadOnly: Bool
+}
+
 struct TransferItem: Identifiable, Sendable {
     let id: UUID
     var direction: TransferDirection
@@ -93,6 +122,7 @@ final class FileTransferViewModel: ObservableObject {
     @Published var localDirectoryURL: URL
     @Published var remoteDirectoryPath: String
     @Published var conflictStrategy: TransferConflictStrategy = .overwrite
+    @Published private(set) var remoteClipboard: RemoteClipboardState?
     @Published private(set) var localEntries: [LocalFileEntry] = []
     @Published private(set) var remoteEntries: [RemoteFileEntry] = []
     @Published private(set) var transferQueue: [TransferItem] = []
@@ -189,6 +219,33 @@ final class FileTransferViewModel: ObservableObject {
         Task { await refreshRemoteEntries() }
     }
 
+    func canPaste(into destinationDirectory: String) -> Bool {
+        guard let clipboard = remoteClipboard else { return false }
+        let normalizedDestination = normalizeRemoteDirectoryPath(destinationDirectory)
+        return !clipboard.sourcePaths.isEmpty && normalizedDestination != ""
+    }
+
+    func performContextAction(_ action: RemoteContextAction) {
+        switch action {
+        case .refresh:
+            refreshAll()
+        case .delete(let paths):
+            deleteRemoteEntries(paths: paths)
+        case .rename(let path, let newName):
+            renameRemoteEntry(path: path, toName: newName)
+        case .copy(let paths):
+            copyRemoteEntries(paths: paths, mode: .copy)
+        case .cut(let paths):
+            copyRemoteEntries(paths: paths, mode: .cut)
+        case .paste(let destinationDirectory):
+            pasteRemoteEntries(into: destinationDirectory)
+        case .download(let paths):
+            enqueueDownload(paths: paths)
+        case .move(let paths, let destinationDirectory):
+            moveRemoteEntries(paths: paths, toDirectory: destinationDirectory)
+        }
+    }
+
     func openLocal(_ entry: LocalFileEntry) {
         guard entry.isDirectory else { return }
         localDirectoryURL = entry.url
@@ -230,6 +287,13 @@ final class FileTransferViewModel: ObservableObject {
         }
     }
 
+    func enqueueDownload(paths: [String]) {
+        let normalized = Set(paths.map(normalizeRemoteDirectoryPath))
+        for entry in remoteEntries where normalized.contains(normalizeRemoteDirectoryPath(entry.path)) && !entry.isDirectory {
+            enqueueDownload(remoteEntry: entry)
+        }
+    }
+
     func deleteRemoteEntries(paths: [String]) {
         let normalizedPaths = paths
             .map(normalizeRemoteDirectoryPath)
@@ -258,14 +322,84 @@ final class FileTransferViewModel: ObservableObject {
         Task {
             for source in normalizedSources {
                 let sourceName = URL(fileURLWithPath: source).lastPathComponent
-                let targetPath = normalizedRemotePath(base: destination, child: sourceName)
-                guard targetPath != source else { continue }
+                let baseTargetPath = normalizedRemotePath(base: destination, child: sourceName)
+                guard let targetPath = await resolveRemoteConflictPath(for: baseTargetPath) else {
+                    continue
+                }
+                guard targetPath != source else {
+                    continue
+                }
                 do {
                     try await sftpClient.move(from: source, to: targetPath)
                 } catch {
                     continue
                 }
             }
+            await refreshRemoteEntries()
+        }
+    }
+
+    func renameRemoteEntry(path: String, toName newName: String) {
+        let source = normalizeRemoteDirectoryPath(path)
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        guard source != "/" else { return }
+
+        let parent = URL(fileURLWithPath: source).deletingLastPathComponent().path
+        let destination = normalizedRemotePath(base: parent.isEmpty ? "/" : parent, child: trimmedName)
+
+        Task {
+            do {
+                try await sftpClient.rename(from: source, to: destination)
+            } catch {
+                return
+            }
+            await refreshRemoteEntries()
+        }
+    }
+
+    func copyRemoteEntries(paths: [String], mode: RemoteClipboardMode) {
+        let normalized = Array(
+            Set(paths.map(normalizeRemoteDirectoryPath).filter { $0 != "/" })
+        )
+        guard !normalized.isEmpty else {
+            remoteClipboard = nil
+            return
+        }
+        remoteClipboard = RemoteClipboardState(mode: mode, sourcePaths: normalized)
+    }
+
+    func pasteRemoteEntries(into destinationDirectory: String) {
+        guard let clipboard = remoteClipboard else { return }
+        let destination = normalizeRemoteDirectoryPath(destinationDirectory)
+
+        Task {
+            for source in clipboard.sourcePaths {
+                let sourceName = URL(fileURLWithPath: source).lastPathComponent
+                let baseTargetPath = normalizedRemotePath(base: destination, child: sourceName)
+                guard let targetPath = await resolveRemoteConflictPath(for: baseTargetPath) else {
+                    continue
+                }
+                guard targetPath != source else { continue }
+
+                do {
+                    switch clipboard.mode {
+                    case .copy:
+                        try await sftpClient.copy(from: source, to: targetPath)
+                    case .cut:
+                        try await sftpClient.move(from: source, to: targetPath)
+                    }
+                } catch {
+                    continue
+                }
+            }
+
+            if clipboard.mode == .cut {
+                await MainActor.run {
+                    remoteClipboard = nil
+                }
+            }
+
             await refreshRemoteEntries()
         }
     }
@@ -288,6 +422,66 @@ final class FileTransferViewModel: ObservableObject {
         for id in failedIDs {
             retryTransfer(itemID: id)
         }
+    }
+
+    func loadTextDocument(path: String, maxBytes: Int = 2 * 1024 * 1024) async throws -> RemoteTextDocument {
+        let normalizedPath = normalizeRemoteDirectoryPath(path)
+        let attributes = try? await sftpClient.stat(path: normalizedPath)
+        let payload = try await sftpClient.download(path: normalizedPath)
+        let isReadOnly = payload.count > maxBytes
+
+        if let utf8 = String(data: payload, encoding: .utf8) {
+            return RemoteTextDocument(
+                path: normalizedPath,
+                text: utf8,
+                encoding: "UTF-8",
+                modifiedAt: attributes?.modifiedAt,
+                isReadOnly: isReadOnly
+            )
+        }
+
+        if let latin1 = String(data: payload, encoding: .isoLatin1) {
+            return RemoteTextDocument(
+                path: normalizedPath,
+                text: latin1,
+                encoding: "ISO-8859-1",
+                modifiedAt: attributes?.modifiedAt,
+                isReadOnly: isReadOnly
+            )
+        }
+
+        throw SFTPClientError.unsupportedOperation("edit-binary-file")
+    }
+
+    func saveTextDocument(
+        path: String,
+        text: String,
+        expectedModifiedAt: Date?
+    ) async throws -> Date? {
+        let normalizedPath = normalizeRemoteDirectoryPath(path)
+        let latestAttributes = try? await sftpClient.stat(path: normalizedPath)
+
+        if let expectedModifiedAt, let latest = latestAttributes?.modifiedAt, latest > expectedModifiedAt {
+            throw SFTPClientError.unsupportedOperation("file-modified-conflict")
+        }
+
+        guard let data = text.data(using: .utf8) else {
+            throw SFTPClientError.unsupportedOperation("unsupported-text-encoding")
+        }
+
+        try await sftpClient.upload(data: data, to: normalizedPath)
+        await refreshRemoteEntries()
+        let savedAttributes = try? await sftpClient.stat(path: normalizedPath)
+        return savedAttributes?.modifiedAt
+    }
+
+    func loadRemoteAttributes(path: String) async throws -> RemoteFileAttributes {
+        try await sftpClient.stat(path: normalizeRemoteDirectoryPath(path))
+    }
+
+    func saveRemoteAttributes(path: String, attributes: RemoteFileAttributes) async throws {
+        try await sftpClient.setAttributes(path: normalizeRemoteDirectoryPath(path), attributes: attributes)
+        await refreshRemoteEntries()
     }
 
     private func executeTransfer(itemID: UUID) async {
@@ -501,6 +695,26 @@ final class FileTransferViewModel: ObservableObject {
             index += 1
         }
         return candidate
+    }
+
+    private func resolveRemoteConflictPath(for destinationPath: String) async -> String? {
+        let normalized = normalizeRemoteDirectoryPath(destinationPath)
+        guard await remotePathExists(normalized) else { return normalized }
+
+        switch conflictStrategy {
+        case .overwrite:
+            return normalized
+        case .skip:
+            return nil
+        case .rename:
+            var index = 1
+            var candidate = normalized
+            while await remotePathExists(candidate) {
+                candidate = pathByAppendingSuffix(normalized, index: index)
+                index += 1
+            }
+            return candidate
+        }
     }
 
     private func uniqueLocalPath(from originalPath: String, excluding itemID: UUID) -> String {

@@ -19,10 +19,10 @@ Status allowed: `todo` | `in_progress` | `done`
 - [x] `status: done` `id: C04` 补齐失败重试与同名冲突策略（覆盖/跳过/重命名）。
 
 ## Milestone D - 右键菜单与编辑能力
-- [ ] `status: todo` `id: D01` 实现右键动作分发：刷新、删除、重命名、复制、粘贴、下载、移动至。
-- [ ] `status: todo` `id: D02` 实现右键动作：编辑、复制路径、复制名称、属性、上传至当前目录（目录菜单）。
-- [ ] `status: todo` `id: D03` 实现 `RemoteTextEditor`（打开/编辑/保存/编码提示/大小限制）。
-- [ ] `status: todo` `id: D04` 实现 `FilePropertiesSheet`（chmod/chown/modified time 编辑）。
+- [x] `status: done` `id: D01` 实现右键动作分发：刷新、删除、重命名、复制、粘贴、下载、移动至。
+- [x] `status: done` `id: D02` 实现右键动作：编辑、复制路径、复制名称、属性、上传至当前目录（目录菜单）。
+- [x] `status: done` `id: D03` 实现 `RemoteTextEditor`（打开/编辑/保存/编码提示/大小限制）。
+- [x] `status: done` `id: D04` 实现 `FilePropertiesSheet`（chmod/chown/modified time 编辑）。
 
 ## Milestone E - Terminal 联动
 - [ ] `status: todo` `id: E01` 在 `TerminalRuntime` 暴露 `workingDirectory` 与 `changeDirectory(to:)`。

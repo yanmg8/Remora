@@ -11,6 +11,14 @@ struct FileManagerPanelView: View {
     @State private var remotePathDraft = "/"
     @State private var isMoveSheetPresented = false
     @State private var moveTargetPath = "/"
+    @State private var moveSourcePaths: [String] = []
+    @State private var isRenameSheetPresented = false
+    @State private var renameTargetPath: String?
+    @State private var renameDraft = ""
+    @State private var editorTargetPath: String?
+    @State private var propertiesTargetPath: String?
+    @State private var isUploadPanelPresented = false
+    @State private var uploadTargetDirectory = "/"
 
     private var selectedRemoteEntries: [RemoteFileEntry] {
         viewModel.remoteEntries.filter { selectedRemotePaths.contains($0.path) }
@@ -22,6 +30,10 @@ struct FileManagerPanelView: View {
 
     private var hasRetryableTransfers: Bool {
         viewModel.transferQueue.contains { $0.status == .failed || $0.status == .skipped }
+    }
+
+    private var currentDestinationDirectoryForPaste: String {
+        viewModel.remoteDirectoryPath
     }
 
     var body: some View {
@@ -39,7 +51,7 @@ struct FileManagerPanelView: View {
                 Spacer()
 
                 Button("Refresh") {
-                    viewModel.refreshAll()
+                    viewModel.performContextAction(.refresh)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -53,9 +65,7 @@ struct FileManagerPanelView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     Button {
-                        for entry in selectedRemoteFiles {
-                            viewModel.enqueueDownload(remoteEntry: entry)
-                        }
+                        viewModel.performContextAction(.download(paths: Array(selectedRemotePaths)))
                     } label: {
                         Label("Download", systemImage: "arrow.down.circle.fill")
                     }
@@ -65,7 +75,7 @@ struct FileManagerPanelView: View {
                     .accessibilityIdentifier("file-manager-download")
 
                     Button(role: .destructive) {
-                        viewModel.deleteRemoteEntries(paths: Array(selectedRemotePaths))
+                        viewModel.performContextAction(.delete(paths: Array(selectedRemotePaths)))
                         selectedRemotePaths.removeAll()
                     } label: {
                         Label("Delete", systemImage: "trash")
@@ -76,6 +86,7 @@ struct FileManagerPanelView: View {
                     .accessibilityIdentifier("file-manager-delete")
 
                     Button {
+                        moveSourcePaths = Array(selectedRemotePaths)
                         moveTargetPath = viewModel.remoteDirectoryPath
                         isMoveSheetPresented = true
                     } label: {
@@ -106,6 +117,14 @@ struct FileManagerPanelView: View {
                     .controlSize(.small)
                     .disabled(!hasRetryableTransfers)
                     .accessibilityIdentifier("file-manager-retry-failed")
+
+                    Button("Paste") {
+                        viewModel.performContextAction(.paste(destinationDirectory: currentDestinationDirectoryForPaste))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!viewModel.canPaste(into: currentDestinationDirectoryForPaste))
+                    .accessibilityIdentifier("file-manager-paste")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,6 +141,37 @@ struct FileManagerPanelView: View {
         }
         .sheet(isPresented: $isMoveSheetPresented) {
             moveSheet
+        }
+        .sheet(isPresented: $isRenameSheetPresented) {
+            renameSheet
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { editorTargetPath != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        editorTargetPath = nil
+                    }
+                }
+            )
+        ) {
+            if let editorTargetPath {
+                RemoteTextEditorSheet(path: editorTargetPath, fileTransfer: viewModel)
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { propertiesTargetPath != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        propertiesTargetPath = nil
+                    }
+                }
+            )
+        ) {
+            if let propertiesTargetPath {
+                RemoteFilePropertiesSheet(path: propertiesTargetPath, fileTransfer: viewModel)
+            }
         }
     }
 
@@ -200,6 +250,9 @@ struct FileManagerPanelView: View {
                     viewModel.enqueueUpload(localFileURLs: items, toRemoteDirectory: entry.path)
                     return true
                 }
+                .contextMenu {
+                    rowContextMenu(for: entry)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scrollContentBackground(.hidden)
@@ -210,6 +263,9 @@ struct FileManagerPanelView: View {
                 guard !items.isEmpty else { return false }
                 viewModel.enqueueUpload(localFileURLs: items, toRemoteDirectory: viewModel.remoteDirectoryPath)
                 return true
+            }
+            .contextMenu {
+                panelContextMenu
             }
         }
     }
@@ -278,6 +334,94 @@ struct FileManagerPanelView: View {
         }
     }
 
+    @ViewBuilder
+    private var panelContextMenu: some View {
+        Button("Refresh") {
+            viewModel.performContextAction(.refresh)
+        }
+
+        if viewModel.canPaste(into: viewModel.remoteDirectoryPath) {
+            Button("Paste") {
+                viewModel.performContextAction(.paste(destinationDirectory: viewModel.remoteDirectoryPath))
+            }
+        }
+
+        Button("Upload To Current Directory") {
+            presentUploadPanel(targetDirectory: viewModel.remoteDirectoryPath)
+        }
+    }
+
+    @ViewBuilder
+    private func rowContextMenu(for entry: RemoteFileEntry) -> some View {
+        Button("Refresh") {
+            viewModel.performContextAction(.refresh)
+        }
+
+        Divider()
+
+        Button("Delete", role: .destructive) {
+            viewModel.performContextAction(.delete(paths: [entry.path]))
+            selectedRemotePaths.remove(entry.path)
+        }
+
+        Button("Rename") {
+            beginRename(path: entry.path)
+        }
+
+        Button("Copy") {
+            viewModel.performContextAction(.copy(paths: [entry.path]))
+        }
+
+        Button("Cut") {
+            viewModel.performContextAction(.cut(paths: [entry.path]))
+        }
+
+        if viewModel.canPaste(into: entry.isDirectory ? entry.path : viewModel.remoteDirectoryPath) {
+            Button("Paste") {
+                let destination = entry.isDirectory ? entry.path : viewModel.remoteDirectoryPath
+                viewModel.performContextAction(.paste(destinationDirectory: destination))
+            }
+        }
+
+        Button("Download") {
+            viewModel.performContextAction(.download(paths: [entry.path]))
+        }
+        .disabled(entry.isDirectory)
+
+        Button("Move To") {
+            moveSourcePaths = [entry.path]
+            moveTargetPath = viewModel.remoteDirectoryPath
+            isMoveSheetPresented = true
+        }
+
+        Divider()
+
+        if !entry.isDirectory {
+            Button("Edit") {
+                editorTargetPath = entry.path
+            }
+        }
+
+        Button("Copy Path") {
+            copyToPasteboard(entry.path)
+        }
+
+        Button("Copy Name") {
+            copyToPasteboard(entry.name)
+        }
+
+        Button("Properties") {
+            propertiesTargetPath = entry.path
+        }
+
+        if entry.isDirectory {
+            Divider()
+            Button("Upload To Current Directory") {
+                presentUploadPanel(targetDirectory: entry.path)
+            }
+        }
+    }
+
     private func statusColor(_ status: TransferStatus) -> Color {
         switch status {
         case .queued:
@@ -303,6 +447,64 @@ struct FileManagerPanelView: View {
         selectedRemotePaths.removeAll()
     }
 
+    private func beginRename(path: String) {
+        renameTargetPath = path
+        renameDraft = URL(fileURLWithPath: path).lastPathComponent
+        isRenameSheetPresented = true
+    }
+
+    private func commitRename() {
+        let sourcePath = renameTargetPath
+        isRenameSheetPresented = false
+        renameTargetPath = nil
+        guard let sourcePath else { return }
+        viewModel.performContextAction(.rename(path: sourcePath, newName: renameDraft))
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    private func presentUploadPanel(targetDirectory: String) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+
+        if panel.runModal() == .OK {
+            let urls = panel.urls
+            guard !urls.isEmpty else { return }
+            viewModel.enqueueUpload(localFileURLs: urls, toRemoteDirectory: targetDirectory)
+        }
+    }
+
+    private var renameSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename")
+                .font(.headline)
+
+            TextField("New name", text: $renameDraft)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    isRenameSheetPresented = false
+                }
+                Button("Save") {
+                    commitRename()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 360)
+    }
+
     private var moveSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Move Selected Files")
@@ -319,13 +521,15 @@ struct FileManagerPanelView: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) {
+                    moveSourcePaths.removeAll()
                     isMoveSheetPresented = false
                 }
                 Button("Move") {
                     viewModel.moveRemoteEntries(
-                        paths: Array(selectedRemotePaths),
+                        paths: moveSourcePaths,
                         toDirectory: moveTargetPath
                     )
+                    moveSourcePaths.removeAll()
                     selectedRemotePaths.removeAll()
                     isMoveSheetPresented = false
                 }

@@ -246,6 +246,80 @@ struct FileTransferViewModelTests {
         }
     }
 
+    @Test
+    func contextActionsSupportRenameCopyPasteAndDelete() async throws {
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            remoteDirectoryPath: "/"
+        )
+        await vm.refreshRemoteEntries()
+        #expect(vm.remoteEntries.contains(where: { $0.path == "/README.txt" }))
+
+        vm.performContextAction(.rename(path: "/README.txt", newName: "README-renamed.txt"))
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            await vm.refreshRemoteEntries()
+            return vm.remoteEntries.contains(where: { $0.path == "/README-renamed.txt" })
+        }
+
+        vm.performContextAction(.copy(paths: ["/README-renamed.txt"]))
+        #expect(vm.canPaste(into: "/logs"))
+        vm.performContextAction(.paste(destinationDirectory: "/logs"))
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            vm.navigateRemote(to: "/logs")
+            await vm.refreshRemoteEntries()
+            return vm.remoteEntries.contains(where: { $0.path == "/logs/README-renamed.txt" })
+        }
+
+        vm.performContextAction(.delete(paths: ["/logs/README-renamed.txt"]))
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            await vm.refreshRemoteEntries()
+            return vm.remoteEntries.contains(where: { $0.path == "/logs/README-renamed.txt" }) == false
+        }
+    }
+
+    @Test
+    func textDocumentRoundTripSupportsLoadAndSave() async throws {
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            remoteDirectoryPath: "/"
+        )
+
+        let loaded = try await vm.loadTextDocument(path: "/README.txt")
+        #expect(loaded.text.contains("Remora"))
+        #expect(loaded.encoding == "UTF-8")
+        #expect(!loaded.isReadOnly)
+
+        let modified = loaded.text + "\nupdated"
+        let savedModifiedAt = try await vm.saveTextDocument(
+            path: "/README.txt",
+            text: modified,
+            expectedModifiedAt: loaded.modifiedAt
+        )
+        #expect(savedModifiedAt != nil)
+
+        let reloaded = try await vm.loadTextDocument(path: "/README.txt")
+        #expect(reloaded.text.contains("updated"))
+    }
+
+    @Test
+    func remotePropertiesRoundTripSupportsLoadAndSave() async throws {
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            remoteDirectoryPath: "/"
+        )
+
+        var attrs = try await vm.loadRemoteAttributes(path: "/README.txt")
+        attrs.permissions = 0o600
+        attrs.owner = "owner1"
+        attrs.group = "group1"
+        try await vm.saveRemoteAttributes(path: "/README.txt", attributes: attrs)
+
+        let updated = try await vm.loadRemoteAttributes(path: "/README.txt")
+        #expect(updated.permissions == 0o600)
+        #expect(updated.owner == "owner1")
+        #expect(updated.group == "group1")
+    }
+
     private func waitForSuccess(in vm: FileTransferViewModel, transferName: String, successCount: Int) async throws {
         for _ in 0 ..< 40 {
             let success = vm.transferQueue.filter { $0.name == transferName && $0.status == .success }.count
