@@ -156,6 +156,30 @@ struct TerminalRuntimeTests {
     }
 
     @Test
+    func workingDirectoryProbeHandlesAnsiWrappedPwdOutput() async {
+        let recorder = TerminalCommandRecorder()
+        let manager = SessionManager(
+            sshClientFactory: {
+                RecordingSSHClient(
+                    recorder: recorder,
+                    initialDirectory: "/var/www/app",
+                    pwdOutputStyle: .ansiWrapped
+                )
+            }
+        )
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+
+        runtime.setWorkingDirectoryTrackingEnabled(true)
+        runtime.connectLocalShell()
+
+        let detected = await waitUntil(timeout: 2.0) {
+            runtime.workingDirectory == "/var/www/app"
+        }
+        #expect(detected, "ANSI-wrapped pwd output should still update workingDirectory.")
+        runtime.disconnect()
+    }
+
+    @Test
     func repeatedSameResizeOnlyAppliesOnce() async {
         let recorder = TerminalCommandRecorder()
         let manager = SessionManager(

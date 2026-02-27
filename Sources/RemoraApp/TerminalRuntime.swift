@@ -488,13 +488,12 @@ final class TerminalRuntime: ObservableObject {
         workingDirectoryLineBuffer.append(normalizedChunk)
 
         while let newlineIndex = workingDirectoryLineBuffer.firstIndex(of: "\n") {
-            let line = String(workingDirectoryLineBuffer[..<newlineIndex])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawLine = String(workingDirectoryLineBuffer[..<newlineIndex])
             workingDirectoryLineBuffer.removeSubrange(...newlineIndex)
 
             guard awaitingPwdResponse else { continue }
-            guard line.hasPrefix("/") else { continue }
-            workingDirectory = normalizeDirectoryPath(line)
+            guard let candidatePath = extractWorkingDirectoryPath(from: rawLine) else { continue }
+            workingDirectory = normalizeDirectoryPath(candidatePath)
             awaitingPwdResponse = false
         }
 
@@ -514,6 +513,102 @@ final class TerminalRuntime: ObservableObject {
         guard let slashIndex = payload.firstIndex(of: "/") else { return nil }
         let path = String(payload[slashIndex...])
         return path.removingPercentEncoding ?? path
+    }
+
+    private func extractWorkingDirectoryPath(from rawLine: String) -> String? {
+        let stripped = stripANSISequences(from: rawLine)
+            .unicodeScalars
+            .filter {
+                !CharacterSet.controlCharacters.contains($0) || $0 == "\t" || $0 == "\n" || $0 == "\r"
+            }
+            .map(Character.init)
+        let normalizedLine = String(stripped).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedLine.isEmpty else { return nil }
+        if normalizedLine == "pwd" { return nil }
+
+        if normalizedLine.hasPrefix("/") {
+            return normalizedLine
+        }
+
+        for token in normalizedLine.split(whereSeparator: { $0.isWhitespace }) {
+            guard token.first == "/" else { continue }
+            return String(token)
+        }
+        return nil
+    }
+
+    private func stripANSISequences(from text: String) -> String {
+        var output = ""
+        let scalars = Array(text.unicodeScalars)
+        var index = 0
+
+        while index < scalars.count {
+            let scalar = scalars[index]
+
+            // ESC-prefixed control sequence.
+            if scalar == "\u{001B}" {
+                let nextIndex = index + 1
+                guard nextIndex < scalars.count else { break }
+                let marker = scalars[nextIndex]
+
+                // CSI: ESC [ ... final byte
+                if marker == "[" {
+                    index = nextIndex + 1
+                    while index < scalars.count {
+                        let byte = scalars[index].value
+                        if (0x40...0x7E).contains(byte) {
+                            index += 1
+                            break
+                        }
+                        index += 1
+                    }
+                    continue
+                }
+
+                // OSC: ESC ] ... BEL or ESC \
+                if marker == "]" {
+                    index = nextIndex + 1
+                    while index < scalars.count {
+                        if scalars[index] == "\u{0007}" {
+                            index += 1
+                            break
+                        }
+                        if scalars[index] == "\u{001B}" {
+                            let maybeTerminator = index + 1
+                            if maybeTerminator < scalars.count, scalars[maybeTerminator] == "\\" {
+                                index = maybeTerminator + 1
+                                break
+                            }
+                        }
+                        index += 1
+                    }
+                    continue
+                }
+
+                // Unsupported ESC sequence, skip marker.
+                index = nextIndex + 1
+                continue
+            }
+
+            // Single-byte CSI (C1 control).
+            if scalar == "\u{009B}" {
+                index += 1
+                while index < scalars.count {
+                    let byte = scalars[index].value
+                    if (0x40...0x7E).contains(byte) {
+                        index += 1
+                        break
+                    }
+                    index += 1
+                }
+                continue
+            }
+
+            output.unicodeScalars.append(scalar)
+            index += 1
+        }
+
+        return output
     }
 
     private func normalizeDirectoryPath(_ path: String) -> String {

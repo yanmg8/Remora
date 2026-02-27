@@ -158,6 +158,44 @@ struct TerminalDirectorySyncBridgeTests {
         runtime.disconnect()
     }
 
+    @Test
+    func enablingSyncAfterBindingAlignsFileManagerToCurrentRuntimeDirectory() async {
+        let recorder = TerminalCommandRecorder()
+        let manager = SessionManager(
+            sshClientFactory: {
+                RecordingSSHClient(
+                    recorder: recorder,
+                    initialDirectory: "/opt/service",
+                    pwdOutputStyle: .ansiWrapped
+                )
+            }
+        )
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+        let fileTransfer = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
+        let bridge = TerminalDirectorySyncBridge()
+
+        runtime.connectSSH(address: "127.0.0.1", port: 22, username: "deploy", privateKeyPath: nil)
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected (SSH)")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        bridge.bind(fileTransfer: fileTransfer, runtime: runtime)
+        let stillRoot = await waitUntil(timeout: 2.0) {
+            fileTransfer.remoteDirectoryPath == "/"
+        }
+        #expect(stillRoot)
+
+        fileTransfer.isTerminalDirectorySyncEnabled = true
+
+        let synced = await waitUntil(timeout: 2.0) {
+            fileTransfer.remoteDirectoryPath == "/opt/service"
+        }
+        #expect(synced, "Turning on sync should align file manager to current runtime directory.")
+        runtime.disconnect()
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

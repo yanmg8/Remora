@@ -20,13 +20,24 @@ actor TerminalCommandRecorder {
 }
 
 actor RecordingSSHClient: SSHTransportClientProtocol {
+    enum PwdOutputStyle: Sendable {
+        case plain
+        case ansiWrapped
+    }
+
     private let recorder: TerminalCommandRecorder
     private let initialDirectory: String
+    private let pwdOutputStyle: PwdOutputStyle
     private var connectedHost: RemoraCore.Host?
 
-    init(recorder: TerminalCommandRecorder, initialDirectory: String = "/") {
+    init(
+        recorder: TerminalCommandRecorder,
+        initialDirectory: String = "/",
+        pwdOutputStyle: PwdOutputStyle = .plain
+    ) {
         self.recorder = recorder
         self.initialDirectory = initialDirectory
+        self.pwdOutputStyle = pwdOutputStyle
     }
 
     func connect(to host: RemoraCore.Host) async throws {
@@ -41,7 +52,8 @@ actor RecordingSSHClient: SSHTransportClientProtocol {
             host: host,
             pty: pty,
             recorder: recorder,
-            initialDirectory: initialDirectory
+            initialDirectory: initialDirectory,
+            pwdOutputStyle: pwdOutputStyle
         )
     }
 
@@ -58,14 +70,22 @@ final class RecordingShellSession: SSHTransportSessionProtocol, @unchecked Senda
     private var pty: PTYSize
     private let recorder: TerminalCommandRecorder
     private var currentDirectory: String
+    private let pwdOutputStyle: RecordingSSHClient.PwdOutputStyle
     private var commandBuffer = ""
     private var isRunning = false
 
-    init(host: RemoraCore.Host, pty: PTYSize, recorder: TerminalCommandRecorder, initialDirectory: String) {
+    init(
+        host: RemoraCore.Host,
+        pty: PTYSize,
+        recorder: TerminalCommandRecorder,
+        initialDirectory: String,
+        pwdOutputStyle: RecordingSSHClient.PwdOutputStyle
+    ) {
         self.host = host
         self.pty = pty
         self.recorder = recorder
         self.currentDirectory = initialDirectory
+        self.pwdOutputStyle = pwdOutputStyle
     }
 
     func start() async throws {
@@ -108,7 +128,12 @@ final class RecordingShellSession: SSHTransportSessionProtocol, @unchecked Senda
 
     private func handle(_ command: String) async throws {
         if command == "pwd" {
-            emit("\(currentDirectory)\r\n")
+            switch pwdOutputStyle {
+            case .plain:
+                emit("\(currentDirectory)\r\n")
+            case .ansiWrapped:
+                emit("\u{001B}[?2004l\(currentDirectory)\r\n\u{001B}[?2004h")
+            }
             return
         }
 

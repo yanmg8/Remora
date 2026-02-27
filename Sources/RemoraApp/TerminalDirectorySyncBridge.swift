@@ -28,8 +28,8 @@ final class TerminalDirectorySyncBridge: ObservableObject {
         syncToggleCancellable?.cancel()
         syncToggleCancellable = fileTransfer.$isTerminalDirectorySyncEnabled
             .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.updateRuntimeTrackingState()
+            .sink { [weak self] enabled in
+                self?.updateRuntimeTrackingState(syncEnabledOverride: enabled)
             }
 
         attachRuntime(runtime)
@@ -61,9 +61,15 @@ final class TerminalDirectorySyncBridge: ObservableObject {
             }
     }
 
-    private func updateRuntimeTrackingState() {
+    private func updateRuntimeTrackingState(syncEnabledOverride: Bool? = nil) {
         guard let runtime else { return }
-        runtime.setWorkingDirectoryTrackingEnabled(isSyncEnabled && runtime.connectionMode == .ssh)
+        let isSyncEnabled = syncEnabledOverride ?? self.isSyncEnabled
+        let shouldTrack = isSyncEnabled && runtime.connectionMode == .ssh
+        runtime.setWorkingDirectoryTrackingEnabled(shouldTrack)
+        guard shouldTrack else { return }
+        if let currentPath = runtime.workingDirectory {
+            handleRuntimeDirectoryChange(currentPath)
+        }
     }
 
     private func handleFileManagerDirectoryChange(_ path: String) {
