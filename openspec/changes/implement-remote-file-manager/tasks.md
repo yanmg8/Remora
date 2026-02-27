@@ -25,12 +25,12 @@ Status allowed: `todo` | `in_progress` | `done`
 - [x] `status: done` `id: D04` 实现 `FilePropertiesSheet`（chmod/chown/modified time 编辑）。
 
 ## Milestone E - Terminal 联动
-- [ ] `status: todo` `id: E01` 在 `TerminalRuntime` 暴露 `workingDirectory` 与 `changeDirectory(to:)`。
-- [ ] `status: todo` `id: E02` 实现 `TerminalDirectorySyncBridge`，打通 file->terminal 和 terminal->file。
-- [ ] `status: todo` `id: E03` 增加防循环同步逻辑与降级 `pwd` 探测机制。
+- [x] `status: done` `id: E01` 在 `TerminalRuntime` 暴露 `workingDirectory` 与 `changeDirectory(to:)`。
+- [x] `status: done` `id: E02` 实现 `TerminalDirectorySyncBridge`，打通 file->terminal 和 terminal->file。
+- [x] `status: done` `id: E03` 增加防循环同步逻辑与降级 `pwd` 探测机制。
 
 ## Milestone F - 测试与验收
-- [ ] `status: todo` `id: F01` 新增/更新单元测试：ViewModel、TransferCenter、Editor、目录联动。
+- [x] `status: done` `id: F01` 新增/更新单元测试：ViewModel、TransferCenter、Editor、目录联动。
 - [x] `status: done` `id: F02` 扩展 `RemoraUIAutomationTests` 覆盖文件管理关键路径。
-- [ ] `status: todo` `id: F03` 执行 `swift test` 并修复回归。
-- [ ] `status: todo` `id: F04` 执行 `REMORA_RUN_UI_TESTS=1 swift test --filter RemoraUIAutomationTests` 并记录结果。
+- [x] `status: done` `id: F03` 执行 `swift test` 并修复回归。
+- [x] `status: done` `id: F04` 执行 `REMORA_RUN_UI_TESTS=1 swift test --filter RemoraUIAutomationTests` 并记录结果。
