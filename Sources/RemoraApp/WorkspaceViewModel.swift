@@ -20,7 +20,8 @@ final class TerminalPaneModel: ObservableObject, Identifiable {
 
     private static func defaultRuntime() -> TerminalRuntime {
         if ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" {
-            return TerminalRuntime(sessionManager: SessionManager(sshClientFactory: { MockSSHClient() }))
+            let mockManager = SessionManager(sshClientFactory: { MockSSHClient() })
+            return TerminalRuntime(localSessionManager: mockManager, sshSessionManager: mockManager)
         }
         return TerminalRuntime()
     }
@@ -87,12 +88,7 @@ final class WorkspaceViewModel: ObservableObject {
         tabs.append(tab)
         activeTabID = tab.id
         activePaneByTab[tab.id] = pane.id
-
-        // Test-mode convenience: auto-connect new tabs so UI automation can verify isolation.
-        if ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" {
-            pane.runtime.connectLocalSSH()
-        }
-
+        pane.runtime.connectLocalShell()
         applyPaneVisibility()
     }
 
@@ -124,12 +120,6 @@ final class WorkspaceViewModel: ObservableObject {
            let pane = tab(id: tabID)?.panes.first
         {
             activePaneByTab[tabID] = pane.id
-        }
-
-        if ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1",
-           let pane = activePane, pane.runtime.connectionState == "Idle"
-        {
-            pane.runtime.connectLocalSSH()
         }
 
         applyPaneVisibility()

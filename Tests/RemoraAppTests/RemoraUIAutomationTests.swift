@@ -162,9 +162,9 @@ struct RemoraUIAutomationTests {
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected ssh terminal connection to be established.")
+        #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
         guard let transcriptElement = waitForElement(
@@ -274,9 +274,9 @@ struct RemoraUIAutomationTests {
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected ssh terminal connection to be established.")
+        #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
         guard let transcriptElement = waitForElement(
@@ -359,9 +359,9 @@ struct RemoraUIAutomationTests {
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected ssh terminal connection to be established.")
+        #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
         guard let transcriptElement = waitForElement(
@@ -478,9 +478,9 @@ struct RemoraUIAutomationTests {
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected ssh terminal connection to be established.")
+        #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
         guard let transcriptElement = waitForElement(
@@ -563,9 +563,9 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected ssh terminal connection to be established.")
+        #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
         guard let terminal = waitForElement(
@@ -674,9 +674,9 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let connected = waitUntil(timeout: 8, {
-            findElement(in: appElement, matching: { title(of: $0) == "Connected (SSH)" }) != nil
+            hasConnectedStatus(in: appElement)
         })
-        #expect(connected, "Expected initial ssh terminal connection.")
+        #expect(connected, "Expected initial terminal connection.")
         guard connected else { return }
 
         guard let addSessionButton = waitForElement(
@@ -866,6 +866,13 @@ struct RemoraUIAutomationTests {
             }
         }
         return nil
+    }
+
+    private func hasConnectedStatus(in appElement: AXUIElement) -> Bool {
+        findElement(in: appElement, matching: { element in
+            guard let text = title(of: element) else { return false }
+            return text.hasPrefix("Connected (")
+        }) != nil
     }
 
     private func findElements(
