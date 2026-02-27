@@ -4,7 +4,7 @@ Status allowed: `todo` | `in_progress` | `done`
 
 ## Milestone A - 数据与协议准备
 - [x] `status: done` `id: A01` 扩展 `SFTPClientProtocol`：上传/下载进度、stat、setAttributes、move、copy。
-- [ ] `status: todo` `id: A02` 更新 `MockSFTPClient` 支持新接口，确保测试可运行。
+- [x] `status: done` `id: A02` 更新 `MockSFTPClient` 支持新接口，确保测试可运行。
 - [x] `status: done` `id: A03` 新增远端属性与传输进度模型（`RemoteFileAttributes`、`TransferProgressSnapshot`）。
 
 ## Milestone B - 单栏 File Manager UI
