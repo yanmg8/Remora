@@ -27,6 +27,25 @@ swift test
 swift run terminal-stress
 ```
 
+## UI Automation Tests
+
+`RemoraUIAutomationTests` 默认不执行真实 UI 点击流程。  
+要运行 UI 自动化测试（会启动 `RemoraApp` 并操作界面）：
+
+1. 给运行测试的终端授予 macOS 无障碍权限：
+   - `System Settings > Privacy & Security > Accessibility`
+2. 执行：
+
+```bash
+REMORA_RUN_UI_TESTS=1 swift test --filter fileManagerHeaderTogglesExpandAndCollapse
+```
+
+可选：如果可执行文件不在默认路径，可指定：
+
+```bash
+REMORA_RUN_UI_TESTS=1 REMORA_APP_BINARY=/abs/path/to/RemoraApp swift test --filter fileManagerHeaderTogglesExpandAndCollapse
+```
+
 ## App Icon
 
 - Source image: project root `logo.png`

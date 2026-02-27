@@ -20,52 +20,47 @@ struct FileManagerPanelView: View {
     }
 
     var body: some View {
-        GroupBox {
-            VStack(spacing: 10) {
-                HStack {
-                    Label("File Manager", systemImage: "folder.badge.gearshape")
-                        .panelTitleStyle()
-                    Spacer()
-                    Button("Refresh") {
-                        viewModel.refreshAll()
-                    }
-                    .buttonStyle(.bordered)
+        VStack(spacing: 10) {
+            HStack {
+                Spacer()
+                Button("Refresh") {
+                    viewModel.refreshAll()
                 }
-
-                HSplitView {
-                    localPanel
-                    remotePanel
-                }
-                .frame(minHeight: 250)
-
-                HStack {
-                    Button {
-                        if let selectedLocalEntry {
-                            viewModel.enqueueUpload(localEntry: selectedLocalEntry)
-                        }
-                    } label: {
-                        Label("Upload", systemImage: "arrow.up.circle.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(selectedLocalEntry == nil || selectedLocalEntry?.isDirectory == true)
-
-                    Button {
-                        if let selectedRemoteEntry {
-                            viewModel.enqueueDownload(remoteEntry: selectedRemoteEntry)
-                        }
-                    } label: {
-                        Label("Download", systemImage: "arrow.down.circle.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(selectedRemoteEntry == nil || selectedRemoteEntry?.isDirectory == true)
-
-                    Spacer()
-                }
-
-                transferQueuePanel
+                .buttonStyle(.bordered)
             }
+
+            HSplitView {
+                localPanel
+                remotePanel
+            }
+            .frame(minHeight: 250)
+
+            HStack {
+                Button {
+                    if let selectedLocalEntry {
+                        viewModel.enqueueUpload(localEntry: selectedLocalEntry)
+                    }
+                } label: {
+                    Label("Upload", systemImage: "arrow.up.circle.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedLocalEntry == nil || selectedLocalEntry?.isDirectory == true)
+
+                Button {
+                    if let selectedRemoteEntry {
+                        viewModel.enqueueDownload(remoteEntry: selectedRemoteEntry)
+                    }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedRemoteEntry == nil || selectedRemoteEntry?.isDirectory == true)
+
+                Spacer()
+            }
+
+            transferQueuePanel
         }
-        .glassCard()
         .animation(.easeInOut(duration: 0.2), value: viewModel.transferQueue.map(\.status))
     }
 
@@ -121,6 +116,7 @@ struct FileManagerPanelView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scrollContentBackground(.hidden)
             .background(VisualStyle.rightPanelBackground)
+            .listStyle(.plain)
         }
     }
 
@@ -176,6 +172,7 @@ struct FileManagerPanelView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scrollContentBackground(.hidden)
             .background(VisualStyle.rightPanelBackground)
+            .listStyle(.plain)
         }
     }
 
@@ -216,6 +213,7 @@ struct FileManagerPanelView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .scrollContentBackground(.hidden)
                 .background(VisualStyle.rightPanelBackground)
+                .listStyle(.plain)
             }
         }
     }

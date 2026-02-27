@@ -98,6 +98,13 @@ final class WorkspaceViewModel: ObservableObject {
         applyPaneVisibility()
     }
 
+    func renameTab(_ tabID: UUID, title: String) {
+        guard let tab = tab(id: tabID) else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        tab.title = trimmed
+    }
+
     func selectTab(_ tabID: UUID) {
         activeTabID = tabID
         if activePaneByTab[tabID] == nil,
