@@ -1,0 +1,101 @@
+import Foundation
+
+public actor MockSSHClient: SSHClientProtocol {
+    private var connectedHost: Host?
+
+    public init() {}
+
+    public func connect(to host: Host) async throws {
+        connectedHost = host
+    }
+
+    public func openShell(pty: PTYSize) async throws -> SSHShellSessionProtocol {
+        guard let host = connectedHost else {
+            throw SSHError.notConnected
+        }
+        return MockShellSession(host: host, pty: pty)
+    }
+
+    public func disconnect() async {
+        connectedHost = nil
+    }
+}
+
+public final class MockShellSession: SSHShellSessionProtocol, @unchecked Sendable {
+    public var onOutput: (@Sendable (Data) -> Void)?
+    public var onStateChange: (@Sendable (ShellSessionState) -> Void)?
+
+    private let host: Host
+    private var pty: PTYSize
+    private var isRunning = false
+
+    public init(host: Host, pty: PTYSize) {
+        self.host = host
+        self.pty = pty
+    }
+
+    public func start() async throws {
+        isRunning = true
+        onStateChange?(.running)
+        emit("Connected to \(host.username)@\(host.address):\(host.port)\\r\\n")
+        emit("Type commands and press Enter.\\r\\n")
+        prompt()
+    }
+
+    public func write(_ data: Data) async throws {
+        guard isRunning else { return }
+        guard let input = String(data: data, encoding: .utf8) else { return }
+
+        if input == "\u{3}" {
+            emit("^C\\r\\n")
+            prompt()
+            return
+        }
+
+        if input.contains("\r") || input.contains("\n") {
+            let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            try await handle(command: command)
+            prompt()
+            return
+        }
+
+        emit(input)
+    }
+
+    public func resize(_ size: PTYSize) async throws {
+        pty = size
+        emit("\\r\\n[pty resized to \(size.columns)x\(size.rows)]\\r\\n")
+        prompt()
+    }
+
+    public func stop() async {
+        isRunning = false
+        onStateChange?(.stopped)
+    }
+
+    private func handle(command: String) async throws {
+        switch command {
+        case "", "clear":
+            emit("\u{001B}[2J\u{001B}[H")
+        case "help":
+            emit("Available commands: help, date, whoami, ls, clear\\r\\n")
+        case "date":
+            emit("\(Date.now.formatted(date: .abbreviated, time: .standard))\\r\\n")
+        case "whoami":
+            emit("\(host.username)\\r\\n")
+        case "ls":
+            emit("app.log  releases  config.yml\\r\\n")
+        default:
+            emit("zsh: command not found: \(command)\\r\\n")
+        }
+    }
+
+    private func prompt() {
+        emit("\(host.username)@\(host.name) % ")
+    }
+
+    private func emit(_ text: String) {
+        guard let data = text.data(using: .utf8) else { return }
+        onOutput?(data)
+    }
+}

@@ -1,0 +1,181 @@
+import Foundation
+
+public actor SystemSSHClient: SSHClientProtocol {
+    private var connectedHost: Host?
+
+    public init() {}
+
+    public func connect(to host: Host) async throws {
+        connectedHost = host
+    }
+
+    public func openShell(pty: PTYSize) async throws -> SSHShellSessionProtocol {
+        guard let host = connectedHost else {
+            throw SSHError.notConnected
+        }
+        return ProcessSSHShellSession(host: host, pty: pty)
+    }
+
+    public func disconnect() async {
+        connectedHost = nil
+    }
+}
+
+public final class ProcessSSHShellSession: SSHShellSessionProtocol, @unchecked Sendable {
+    public var onOutput: (@Sendable (Data) -> Void)?
+    public var onStateChange: (@Sendable (ShellSessionState) -> Void)?
+
+    private let host: Host
+    private var pty: PTYSize
+    private var process: Process?
+    private var stdinPipe: Pipe?
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
+    private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
+
+    public init(host: Host, pty: PTYSize) {
+        self.host = host
+        self.pty = pty
+    }
+
+    public func start() async throws {
+        let shouldStart = stateQueue.sync { process == nil }
+        guard shouldStart else {
+            return
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        proc.arguments = Self.makeSSHArguments(for: host)
+
+        let inPipe = Pipe()
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+
+        proc.standardInput = inPipe
+        proc.standardOutput = outPipe
+        proc.standardError = errPipe
+
+        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.onOutput?(data)
+        }
+
+        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.onOutput?(data)
+        }
+
+        proc.terminationHandler = { [weak self] task in
+            self?.onStateChange?(.stopped)
+            self?.cleanupHandles()
+
+            if task.terminationStatus != 0 {
+                let message = "ssh exited with status \(task.terminationStatus)"
+                self?.onOutput?(Data((message + "\r\n").utf8))
+            }
+        }
+
+        do {
+            try proc.run()
+        } catch {
+            cleanupHandles()
+            onStateChange?(.failed(error.localizedDescription))
+            throw SSHError.connectionFailed(error.localizedDescription)
+        }
+
+        stateQueue.sync {
+            process = proc
+            stdinPipe = inPipe
+            stdoutPipe = outPipe
+            stderrPipe = errPipe
+        }
+
+        onStateChange?(.running)
+
+        try writeSync(Data("stty cols \(pty.columns) rows \(pty.rows)\n".utf8))
+    }
+
+    public func write(_ data: Data) async throws {
+        try writeSync(data)
+    }
+
+    public func resize(_ size: PTYSize) async throws {
+        pty = size
+        try writeSync(Data("stty cols \(size.columns) rows \(size.rows)\n".utf8))
+    }
+
+    public func stop() async {
+        let currentProcess = stateQueue.sync { process }
+        guard let currentProcess else {
+            cleanupHandles()
+            return
+        }
+
+        if currentProcess.isRunning {
+            currentProcess.terminate()
+        }
+        cleanupHandles()
+        onStateChange?(.stopped)
+    }
+
+    private func writeSync(_ data: Data) throws {
+        guard let stdinPipe = stateQueue.sync(execute: { stdinPipe }) else {
+            throw SSHError.notConnected
+        }
+
+        do {
+            try stdinPipe.fileHandleForWriting.write(contentsOf: data)
+        } catch {
+            throw SSHError.connectionFailed("write failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func cleanupHandles() {
+        let handles = stateQueue.sync { () -> (Pipe?, Pipe?, Pipe?) in
+            let currentIn = stdinPipe
+            let currentOut = stdoutPipe
+            let currentErr = stderrPipe
+
+            stdinPipe = nil
+            stdoutPipe = nil
+            stderrPipe = nil
+            process = nil
+
+            return (currentIn, currentOut, currentErr)
+        }
+
+        handles.1?.fileHandleForReading.readabilityHandler = nil
+        handles.2?.fileHandleForReading.readabilityHandler = nil
+
+        try? handles.0?.fileHandleForWriting.close()
+        try? handles.1?.fileHandleForReading.close()
+        try? handles.2?.fileHandleForReading.close()
+    }
+
+    static func makeSSHArguments(for host: Host) -> [String] {
+        var args: [String] = [
+            "-tt",
+            "-p", "\(host.port)",
+            "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
+            "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
+        ]
+
+        switch host.auth.method {
+        case .privateKey:
+            if let keyRef = host.auth.keyReference, !keyRef.isEmpty {
+                args.append(contentsOf: ["-i", keyRef])
+            }
+            args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
+        case .password:
+            args.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
+        case .agent:
+            args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
+        }
+
+        args.append("\(host.username)@\(host.address)")
+        return args
+    }
+}
