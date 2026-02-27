@@ -67,6 +67,45 @@ struct SessionManagerTests {
         #expect(stopped == .stopped)
     }
 
+    @Test
+    func supportsConcurrentSessionsWithIsolatedOutputStreams() async throws {
+        let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+        let hostA = Host(
+            name: "alpha",
+            address: "10.0.0.1",
+            username: "alice",
+            auth: HostAuth(method: .agent)
+        )
+        let hostB = Host(
+            name: "beta",
+            address: "10.0.0.2",
+            username: "bob",
+            auth: HostAuth(method: .agent)
+        )
+
+        let sessionA = try await manager.startSession(for: hostA, pty: .init(columns: 100, rows: 30))
+        let sessionB = try await manager.startSession(for: hostB, pty: .init(columns: 100, rows: 30))
+        let sessions = await manager.activeSessions()
+        #expect(sessions.count == 2)
+
+        let streamA = await manager.sessionOutputStream(sessionID: sessionA.id)
+        let streamB = await manager.sessionOutputStream(sessionID: sessionB.id)
+
+        let firstA = await firstChunkWithinOneSecond(from: streamA)
+        let firstB = await firstChunkWithinOneSecond(from: streamB)
+
+        let textA = String(decoding: firstA ?? Data(), as: UTF8.self)
+        let textB = String(decoding: firstB ?? Data(), as: UTF8.self)
+
+        #expect(textA.contains("Connected to alice@10.0.0.1:22"))
+        #expect(!textA.contains("bob@10.0.0.2"))
+        #expect(textB.contains("Connected to bob@10.0.0.2:22"))
+        #expect(!textB.contains("alice@10.0.0.1"))
+
+        await manager.stopSession(id: sessionA.id)
+        await manager.stopSession(id: sessionB.id)
+    }
+
     private func firstChunkWithinOneSecond(
         from stream: AsyncStream<Data>
     ) async -> Data? {

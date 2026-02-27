@@ -17,7 +17,7 @@ Status allowed: `todo` | `in_progress` | `done`
 - [x] `status: done` `id: B05` 修复异常着色（同一行颜色污染/串色）并补回归测试。
 
 ## Milestone C - 多会话与可用性
-- [ ] `status: todo` `id: C01` 支持多 host 并发连接并保持隔离。
+- [x] `status: done` `id: C01` 支持多 host 并发连接并保持隔离。
 - [ ] `status: todo` `id: C02` 优化 tab 切换时 session 绑定与焦点恢复。
 - [x] `status: done` `id: C03` 对连接失败/断开提供明确错误提示与重试动作。
 - [x] `status: done` `id: C04` 将 mock/real SSH 模式选择固化为可测试入口。
@@ -25,9 +25,9 @@ Status allowed: `todo` | `in_progress` | `done`
 ## Milestone D - 自动化测试与验收
 - [x] `status: done` `id: D01` 扩展 UI 自动化：连续执行 5+ 命令并验证内容稳定。
 - [x] `status: done` `id: D02` 扩展 UI 自动化：验证方向键、退格、回车行为一致性。
-- [ ] `status: todo` `id: D03` 添加集成测试：连接->执行->断开->重连流程。
-- [ ] `status: todo` `id: D04` 添加性能断言：输入延迟与帧耗时门限。
-- [ ] `status: todo` `id: D05` 真实主机手工验收并记录 checklist。
+- [x] `status: done` `id: D03` 添加集成测试：连接->执行->断开->重连流程。
+- [x] `status: done` `id: D04` 添加性能断言：输入延迟与帧耗时门限。
+- [x] `status: done` `id: D05` 真实主机手工验收并记录 checklist。
 
 ## Milestone E - 下一阶段准备（可选）
 - [ ] `status: todo` `id: E01` 形成 `libssh2` PoC 评估文档（仅评估，不替换主线）。

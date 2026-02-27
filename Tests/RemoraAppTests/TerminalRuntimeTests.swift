@@ -39,6 +39,35 @@ struct TerminalRuntimeTests {
         runtime.disconnect()
     }
 
+    @Test
+    func connectDisconnectAndReconnectLifecycle() async {
+        let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+        let runtime = TerminalRuntime(
+            mockSessionManager: manager,
+            sshSessionManager: SessionManager(sshClientFactory: { MockSSHClient() })
+        )
+
+        runtime.connectMock()
+        let firstConnected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+        }
+        #expect(firstConnected, "First connection should succeed.")
+
+        runtime.disconnect()
+        let disconnected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState == "Disconnected"
+        }
+        #expect(disconnected, "Disconnect should update runtime state.")
+
+        runtime.connectMock()
+        let reconnected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected") && runtime.transcriptSnapshot.contains("Connected to")
+        }
+        #expect(reconnected, "Runtime should reconnect and resume transcript publishing.")
+
+        runtime.disconnect()
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
