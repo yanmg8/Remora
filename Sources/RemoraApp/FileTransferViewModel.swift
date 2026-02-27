@@ -198,6 +198,46 @@ final class FileTransferViewModel: ObservableObject {
         processQueueIfNeeded()
     }
 
+    func deleteRemoteEntries(paths: [String]) {
+        let normalizedPaths = paths
+            .map(normalizeRemoteDirectoryPath)
+            .filter { $0 != "/" }
+        guard !normalizedPaths.isEmpty else { return }
+
+        Task {
+            for path in normalizedPaths {
+                do {
+                    try await sftpClient.remove(path: path)
+                } catch {
+                    continue
+                }
+            }
+            await refreshRemoteEntries()
+        }
+    }
+
+    func moveRemoteEntries(paths: [String], toDirectory destinationDirectory: String) {
+        let destination = normalizeRemoteDirectoryPath(destinationDirectory)
+        let normalizedSources = paths
+            .map(normalizeRemoteDirectoryPath)
+            .filter { $0 != "/" }
+        guard !normalizedSources.isEmpty else { return }
+
+        Task {
+            for source in normalizedSources {
+                let sourceName = URL(fileURLWithPath: source).lastPathComponent
+                let targetPath = normalizedRemotePath(base: destination, child: sourceName)
+                guard targetPath != source else { continue }
+                do {
+                    try await sftpClient.move(from: source, to: targetPath)
+                } catch {
+                    continue
+                }
+            }
+            await refreshRemoteEntries()
+        }
+    }
+
     private func processQueueIfNeeded() {
         while runningTransferIDs.count < maxConcurrentTransfers,
               let nextIndex = transferQueue.firstIndex(where: { $0.status == .queued })

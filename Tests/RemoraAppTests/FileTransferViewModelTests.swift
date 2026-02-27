@@ -49,6 +49,38 @@ struct FileTransferViewModelTests {
         #expect(String(decoding: downloadedData, as: UTF8.self) == "hello-remora")
     }
 
+    @Test
+    func moveAndDeleteRemoteEntries() async throws {
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 2
+        )
+
+        await vm.refreshRemoteEntries()
+        let hasReadme = vm.remoteEntries.contains(where: { $0.path == "/README.txt" })
+        #expect(hasReadme)
+
+        vm.moveRemoteEntries(paths: ["/README.txt"], toDirectory: "/docs")
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            await vm.refreshRemoteEntries()
+            let rootHasReadme = vm.remoteEntries.contains(where: { $0.path == "/README.txt" })
+            return rootHasReadme == false
+        }
+
+        vm.navigateRemote(to: "/docs")
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            await vm.refreshRemoteEntries()
+            return vm.remoteEntries.contains(where: { $0.path == "/docs/README.txt" })
+        }
+
+        vm.deleteRemoteEntries(paths: ["/docs/README.txt"])
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            await vm.refreshRemoteEntries()
+            return vm.remoteEntries.contains(where: { $0.path == "/docs/README.txt" }) == false
+        }
+    }
+
     private func waitForSuccess(in vm: FileTransferViewModel, transferName: String, successCount: Int) async throws {
         for _ in 0 ..< 40 {
             let success = vm.transferQueue.filter { $0.name == transferName && $0.status == .success }.count
@@ -61,5 +93,19 @@ struct FileTransferViewModelTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         throw NSError(domain: "FileTransferViewModelTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "timeout waiting transfer success"])
+    }
+
+    private func waitUntil(
+        timeoutLoops: Int,
+        intervalMS: UInt64,
+        condition: @escaping @MainActor () async -> Bool
+    ) async throws {
+        for _ in 0 ..< timeoutLoops {
+            if await condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(intervalMS))
+        }
+        throw NSError(domain: "FileTransferViewModelTests", code: 3, userInfo: [NSLocalizedDescriptionKey: "timeout waiting condition"])
     }
 }
