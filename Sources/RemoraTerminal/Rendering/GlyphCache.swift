@@ -41,6 +41,8 @@ public final class GlyphCache {
             .font: resolvedFont,
             .foregroundColor: foreground,
             .backgroundColor: background,
+            .kern: 0,
+            .ligature: 0,
             .underlineStyle: cell.attributes.underline ? NSUnderlineStyle.single.rawValue : 0,
         ]
         let value = NSAttributedString(string: String(cell.character), attributes: attrs)

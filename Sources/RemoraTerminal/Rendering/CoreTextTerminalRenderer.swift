@@ -50,60 +50,30 @@ public final class CoreTextTerminalRenderer {
     private func drawRow(_ row: Int, screen: ScreenBuffer, context: CGContext, bounds: CGRect) {
         guard screen.validRowRange().contains(row) else { return }
         let line = screen.line(at: row)
-        let baselineY = bounds.height - CGFloat(row + 1) * lineHeight + 2
-
-        var currentAttrs: TerminalAttributes?
-        var currentText = ""
-        var runStartColumn = 0
-
-        func flushRun(endColumn: Int) {
-            guard let attrs = currentAttrs, !currentText.isEmpty else { return }
-            let x = horizontalInset + CGFloat(runStartColumn) * cellWidth
-            let y = baselineY
-            let fg = color(for: attrs.foreground, isBackground: false)
-            let bg = color(for: attrs.background, isBackground: true)
-
-            let bgRect = CGRect(
-                x: x,
-                y: bounds.height - CGFloat(row + 1) * lineHeight,
-                width: CGFloat(endColumn - runStartColumn) * cellWidth,
-                height: lineHeight
-            )
-            bg.setFill()
-            context.fill(bgRect)
-
-            let attrString = NSAttributedString(string: currentText, attributes: [
-                .font: attrs.bold ? NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) : font,
-                .foregroundColor: fg,
-                .underlineStyle: attrs.underline ? NSUnderlineStyle.single.rawValue : 0,
-            ])
-            attrString.draw(at: CGPoint(x: x, y: y))
-        }
+        let rowY = bounds.height - CGFloat(row + 1) * lineHeight
+        let baselineY = rowY + 2
 
         for col in 0 ..< line.count {
             let cell = line[col]
-            if currentAttrs == nil {
-                currentAttrs = cell.attributes
-                runStartColumn = col
+            let x = horizontalInset + CGFloat(col) * cellWidth
+            let fg = color(for: cell.attributes.foreground, isBackground: false)
+            let bg = color(for: cell.attributes.background, isBackground: true)
+
+            context.setFillColor(bg.cgColor)
+            context.fill(CGRect(x: x, y: rowY, width: cellWidth, height: lineHeight))
+
+            if cell.character == " " {
+                continue
             }
 
-            if currentAttrs != cell.attributes {
-                flushRun(endColumn: col)
-                currentAttrs = cell.attributes
-                currentText = ""
-                runStartColumn = col
-            }
-
-            _ = glyphCache.attributedGlyph(
+            let glyph = glyphCache.attributedGlyph(
                 for: cell,
                 font: font,
-                foreground: color(for: cell.attributes.foreground, isBackground: false),
-                background: color(for: cell.attributes.background, isBackground: true)
+                foreground: fg,
+                background: bg
             )
-            currentText.append(cell.character)
+            glyph.draw(at: CGPoint(x: x, y: baselineY))
         }
-
-        flushRun(endColumn: line.count)
     }
 
     private func recalculateMetrics() {
