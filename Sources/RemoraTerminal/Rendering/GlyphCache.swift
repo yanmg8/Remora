@@ -2,12 +2,21 @@ import AppKit
 import Foundation
 
 public final class GlyphCache {
+    private struct ColorSignature: Hashable {
+        var red: UInt16
+        var green: UInt16
+        var blue: UInt16
+        var alpha: UInt16
+    }
+
     private struct Key: Hashable {
         var character: Character
         var fontName: String
         var fontSize: CGFloat
         var bold: Bool
         var underline: Bool
+        var foreground: ColorSignature
+        var background: ColorSignature
     }
 
     private var storage: [Key: NSAttributedString] = [:]
@@ -25,7 +34,9 @@ public final class GlyphCache {
             fontName: font.fontName,
             fontSize: font.pointSize,
             bold: cell.attributes.bold,
-            underline: cell.attributes.underline
+            underline: cell.attributes.underline,
+            foreground: colorSignature(foreground),
+            background: colorSignature(background)
         )
 
         if let cached = storage[key] {
@@ -52,5 +63,20 @@ public final class GlyphCache {
 
     public func clear() {
         storage.removeAll(keepingCapacity: true)
+    }
+
+    private func colorSignature(_ color: NSColor) -> ColorSignature {
+        let resolved = (color.usingColorSpace(.extendedSRGB) ?? color)
+        return ColorSignature(
+            red: quantize(resolved.redComponent),
+            green: quantize(resolved.greenComponent),
+            blue: quantize(resolved.blueComponent),
+            alpha: quantize(resolved.alphaComponent)
+        )
+    }
+
+    private func quantize(_ value: CGFloat) -> UInt16 {
+        let clamped = min(max(value, 0), 1)
+        return UInt16((clamped * 65535).rounded())
     }
 }
