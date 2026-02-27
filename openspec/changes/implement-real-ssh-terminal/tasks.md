@@ -18,7 +18,7 @@ Status allowed: `todo` | `in_progress` | `done`
 
 ## Milestone C - 多会话与可用性
 - [x] `status: done` `id: C01` 支持多 host 并发连接并保持隔离。
-- [ ] `status: todo` `id: C02` 优化 tab 切换时 session 绑定与焦点恢复。
+- [x] `status: done` `id: C02` 优化 tab 切换时 session 绑定与焦点恢复。
 - [x] `status: done` `id: C03` 对连接失败/断开提供明确错误提示与重试动作。
 - [x] `status: done` `id: C04` 将 mock/real SSH 模式选择固化为可测试入口。
 

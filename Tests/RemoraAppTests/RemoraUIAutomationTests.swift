@@ -522,6 +522,104 @@ struct RemoraUIAutomationTests {
         #expect(!snapshot.contains("command not found: whoamx"), "Corrected command should not execute the unedited typo.")
     }
 
+    @Test
+    func newSessionStartsIsolatedFromExistingTerminalBuffer() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let appURL = try locateRemoraAppBinary()
+        let process = Process()
+        process.executableURL = appURL
+        process.arguments = []
+        try process.run()
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard waitUntil(timeout: 8, {
+            NSRunningApplication(processIdentifier: process.processIdentifier) != nil
+        }) else {
+            Issue.record("RemoraApp did not launch in time.")
+            return
+        }
+
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate()
+
+        let appElement = AXUIElementCreateApplication(process.processIdentifier)
+        let connected = waitUntil(timeout: 8, {
+            findElement(in: appElement, matching: { title(of: $0) == "Connected (Mock)" }) != nil
+        })
+        #expect(connected, "Expected mock terminal connection to be established.")
+        guard connected else { return }
+
+        guard let terminal = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { identifier(of: $0) == "terminal-view" }
+        ) else {
+            Issue.record("Could not find terminal accessibility element.")
+            return
+        }
+
+        guard let frame = frame(of: terminal) else {
+            Issue.record("Could not read terminal frame for click focus.")
+            return
+        }
+
+        click(point: CGPoint(x: frame.midX, y: frame.midY))
+        typeText("whoami\r")
+
+        let firstSessionHasWhoami = waitUntil(timeout: 8, {
+            guard let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) else { return false }
+            return value.contains("whoami") && value.contains("remora")
+        })
+        #expect(firstSessionHasWhoami, "First session should contain typed whoami output.")
+        guard firstSessionHasWhoami else { return }
+
+        guard let addSessionButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { identifier(of: $0) == "session-tab-add" }
+        ) else {
+            Issue.record("Could not find add-session button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(addSessionButton, kAXPressAction as CFString)
+
+        guard let session2Tab = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "Session 2"
+            }
+        ) else {
+            Issue.record("Could not find Session 2 tab button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(session2Tab, kAXPressAction as CFString)
+
+        let secondSessionIsClean = waitUntil(timeout: 5, {
+            guard let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) else { return false }
+            return !value.contains("whoami")
+        })
+
+        if !secondSessionIsClean {
+            let value = stringAttribute(kAXValueAttribute as CFString, of: terminal) ?? ""
+            Issue.record("Session 2 terminal buffer leaked from Session 1: \(value)")
+        }
+
+        #expect(secondSessionIsClean, "New session should not inherit previous session terminal buffer.")
+    }
+
     private func locateRemoraAppBinary() throws -> URL {
         if let custom = ProcessInfo.processInfo.environment["REMORA_APP_BINARY"], !custom.isEmpty {
             let url = URL(fileURLWithPath: custom)

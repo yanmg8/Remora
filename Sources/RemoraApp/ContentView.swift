@@ -245,14 +245,23 @@ struct ContentView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
             Group {
-                if let activeTab = workspace.activeTab {
-                    sessionContent(for: activeTab)
-                } else {
+                if workspace.tabs.isEmpty {
                     ContentUnavailableView(
                         "No Session",
                         systemImage: "rectangle.slash",
                         description: Text("Create a new session from tab bar.")
                     )
+                } else {
+                    ZStack {
+                        ForEach(workspace.tabs) { tab in
+                            let isActive = workspace.activeTabID == tab.id
+                            sessionContent(for: tab)
+                                .opacity(isActive ? 1 : 0)
+                                .allowsHitTesting(isActive)
+                                .accessibilityHidden(!isActive)
+                                .zIndex(isActive ? 1 : 0)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -289,6 +298,7 @@ struct ContentView: View {
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("session-tab-add")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -407,6 +417,7 @@ struct ContentView: View {
                 workspace.selectPane(pane.id, in: tabID)
             }
         )
+        .id(pane.id)
     }
 
     private func toggleGroupCollapse(_ groupName: String) {

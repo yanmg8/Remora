@@ -27,3 +27,4 @@ DerivedData/
 
 # Runtime caches
 *.xcuserstate
+.history/
