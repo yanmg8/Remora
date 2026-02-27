@@ -203,6 +203,64 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func doubleClickHostRowCreatesNewSessionAndConnects() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let appURL = try locateRemoraAppBinary()
+        let process = Process()
+        process.executableURL = appURL
+        process.arguments = []
+        try process.run()
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard waitUntil(timeout: 8, {
+            NSRunningApplication(processIdentifier: process.processIdentifier) != nil
+        }) else {
+            Issue.record("RemoraApp did not launch in time.")
+            return
+        }
+
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate()
+
+        let appElement = AXUIElementCreateApplication(process.processIdentifier)
+        guard let hostRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                role(of: element) == kAXStaticTextRole as String && title(of: element) == "prod-api"
+            }
+        ) else {
+            Issue.record("Could not find prod-api row.")
+            return
+        }
+
+        guard let hostFrame = frame(of: hostRow) else {
+            Issue.record("Could not read prod-api row frame.")
+            return
+        }
+
+        doubleClick(point: CGPoint(x: hostFrame.midX, y: hostFrame.midY))
+
+        let session2Ready = waitUntil(timeout: 8, {
+            guard selectSessionTab("Session 2", in: appElement) else { return false }
+            guard let transcript = activeTranscriptText(in: appElement) else { return false }
+            return transcript.contains("Connected to deploy@10.0.0.10:22")
+        })
+
+        #expect(session2Ready, "Double-clicking a host row should create Session 2 and connect to that host.")
+    }
+
+    @Test
     func terminalAcceptsKeyboardInputAndShowsCommandOutput() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -1062,6 +1120,29 @@ struct RemoraUIAutomationTests {
 
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+    }
+
+    private func doubleClick(point: CGPoint) {
+        for clickState in [1, 2] {
+            guard let down = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseDown,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ),
+            let up = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseUp,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ) else { return }
+
+            down.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
+            up.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            usleep(8_000)
+        }
     }
 
     private func typeText(_ text: String) {

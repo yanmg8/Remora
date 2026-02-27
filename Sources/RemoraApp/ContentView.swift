@@ -182,6 +182,9 @@ struct ContentView: View {
                                 onSelectThread: { hostID in
                                     selectedHostID = hostID
                                 },
+                                onOpenThread: { hostID in
+                                    openHostInNewSession(hostID)
+                                },
                                 onPinThread: { hostID in
                                     togglePinHost(hostID)
                                 },
@@ -760,6 +763,17 @@ struct ContentView: View {
         hostCatalog.markConnected(hostID: host.id)
     }
 
+    private func openHostInNewSession(_ hostID: UUID) {
+        guard let host = hostCatalog.host(id: hostID) else { return }
+        selectedHostID = hostID
+        selectedTemplateID = nil
+        workspace.createTab()
+        guard let tabID = workspace.activeTabID else { return }
+        workspace.selectTab(tabID)
+        workspace.connectActivePane(host: host, template: nil)
+        hostCatalog.markConnected(hostID: host.id)
+    }
+
     private func disconnectSession(_ tabID: UUID) {
         workspace.selectTab(tabID)
         workspace.disconnectActivePane()
@@ -833,6 +847,7 @@ private struct SidebarGroupSectionView: View {
     let onExportGroup: () -> Void
     let onDeleteGroup: () -> Void
     let onSelectThread: (UUID) -> Void
+    let onOpenThread: (UUID) -> Void
     let onPinThread: (UUID) -> Void
     let onEditThread: (UUID) -> Void
     let onArchiveThread: (UUID) -> Void
@@ -905,6 +920,9 @@ private struct SidebarGroupSectionView: View {
                             onSelect: {
                                 onSelectThread(host.id)
                             },
+                            onOpen: {
+                                onOpenThread(host.id)
+                            },
                             onPin: {
                                 onPinThread(host.id)
                             },
@@ -935,6 +953,7 @@ private struct SidebarHostRow: View {
     let host: RemoraCore.Host
     let isSelected: Bool
     let onSelect: () -> Void
+    let onOpen: () -> Void
     let onPin: () -> Void
     let onEdit: () -> Void
     let onArchive: () -> Void
@@ -1006,6 +1025,9 @@ private struct SidebarHostRow: View {
             }
         }
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            onOpen()
+        }
         .onTapGesture {
             onSelect()
         }
