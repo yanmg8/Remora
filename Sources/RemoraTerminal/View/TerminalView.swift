@@ -100,9 +100,7 @@ public final class TerminalView: NSView {
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        sanitizeDirtyRows()
-
-        renderer.draw(screen: screenBuffer, in: context, bounds: bounds, dirtyRows: dirtyRows)
+        renderer.draw(screen: screenBuffer, in: context, bounds: bounds, dirtyRows: [])
         drawCursor(in: context)
         drawSelection(in: context)
         updateAccessibilitySnapshot()

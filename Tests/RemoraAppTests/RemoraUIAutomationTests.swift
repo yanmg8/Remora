@@ -321,6 +321,105 @@ struct RemoraUIAutomationTests {
         #expect(!snapshot.contains("\u{1B}"), "Transcript should not include raw ANSI arrow sequences.")
     }
 
+    @Test
+    func terminalRetainsHistoryAcrossMultipleCommands() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let appURL = try locateRemoraAppBinary()
+        let process = Process()
+        process.executableURL = appURL
+        process.arguments = []
+        try process.run()
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard waitUntil(timeout: 8, {
+            NSRunningApplication(processIdentifier: process.processIdentifier) != nil
+        }) else {
+            Issue.record("RemoraApp did not launch in time.")
+            return
+        }
+
+        NSRunningApplication(processIdentifier: process.processIdentifier)?
+            .activate()
+
+        let appElement = AXUIElementCreateApplication(process.processIdentifier)
+        let connected = waitUntil(timeout: 8, {
+            findElement(in: appElement, matching: { title(of: $0) == "Connected (Mock)" }) != nil
+        })
+        #expect(connected, "Expected mock terminal connection to be established.")
+        guard connected else { return }
+
+        guard let transcriptElement = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                identifier(of: element) == "terminal-transcript"
+            }
+        ) else {
+            Issue.record("Could not find transcript accessibility element.")
+            return
+        }
+
+        guard let terminal = waitForElement(
+            in: appElement,
+            timeout: 6,
+            matching: { element in
+                identifier(of: element) == "terminal-view"
+            }
+        ) else {
+            Issue.record("Could not find terminal accessibility element.")
+            return
+        }
+
+        guard let frame = frame(of: terminal) else {
+            Issue.record("Could not read terminal frame for click focus.")
+            return
+        }
+
+        click(point: CGPoint(x: frame.midX, y: frame.midY))
+        typeText("123\r")
+        let hasFirstOutput = waitUntil(timeout: 6, {
+            guard let snapshot = transcriptText(from: transcriptElement) else { return false }
+            return snapshot.contains("command not found: 123")
+        })
+        #expect(hasFirstOutput, "Expected first command output.")
+
+        typeText("ls\r")
+        let hasSecondOutput = waitUntil(timeout: 6, {
+            guard let snapshot = transcriptText(from: transcriptElement) else { return false }
+            return snapshot.contains("app.log") && snapshot.contains("config.yml")
+        })
+        #expect(hasSecondOutput, "Expected ls command output.")
+
+        typeText("whoami\r")
+        var finalSnapshot = ""
+        let hasThirdOutput = waitUntil(timeout: 6, {
+            guard let snapshot = transcriptText(from: transcriptElement) else { return false }
+            finalSnapshot = snapshot
+            return snapshot.range(of: #"whoami\s*\n\s*remora"#, options: .regularExpression) != nil
+        })
+        #expect(hasThirdOutput, "Expected whoami command output.")
+
+        let historyRetained =
+            finalSnapshot.contains("Connected to remora@127.0.0.1:22")
+            && finalSnapshot.contains("command not found: 123")
+            && finalSnapshot.contains("app.log")
+            && finalSnapshot.contains("whoami")
+        if !historyRetained {
+            Issue.record("Final transcript snapshot: \(finalSnapshot)")
+        }
+        #expect(historyRetained, "Previous terminal history should remain visible after multiple commands.")
+    }
+
     private func locateRemoraAppBinary() throws -> URL {
         if let custom = ProcessInfo.processInfo.environment["REMORA_APP_BINARY"], !custom.isEmpty {
             let url = URL(fileURLWithPath: custom)
