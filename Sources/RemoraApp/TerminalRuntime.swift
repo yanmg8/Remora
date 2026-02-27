@@ -37,6 +37,8 @@ final class TerminalRuntime: ObservableObject {
     private var pendingOutput = Data()
     private var transcriptBuffer = ""
     private let maxTranscriptCharacters = 4_096
+    private var pendingPTYSize: PTYSize?
+    private var lastAppliedPTYSize: PTYSize?
 
     init(
         localSessionManager: SessionManager = SessionManager(sshClientFactory: { LocalShellClient() }),
@@ -118,6 +120,7 @@ final class TerminalRuntime: ObservableObject {
                     bindOutput(for: descriptor.id, manager: manager)
                     bindSessionState(for: descriptor.id, manager: manager)
                 }
+                await self.applyPendingResizeIfNeeded()
             } catch {
                 await MainActor.run {
                     connectionState = "Failed: \(error.localizedDescription)"
@@ -133,6 +136,12 @@ final class TerminalRuntime: ObservableObject {
                 self.connectionState = "Disconnected"
             }
         }
+    }
+
+    func resize(columns: Int, rows: Int) {
+        let nextSize = PTYSize(columns: max(1, columns), rows: max(1, rows))
+        pendingPTYSize = nextSize
+        Task { await applyPendingResizeIfNeeded() }
     }
 
     private func bindOutput(for id: UUID, manager: SessionManager) {
@@ -237,6 +246,20 @@ final class TerminalRuntime: ObservableObject {
 
         pendingOutput.removeAll(keepingCapacity: false)
         clearInputQueue()
+        lastAppliedPTYSize = nil
+    }
+
+    private func applyPendingResizeIfNeeded() async {
+        guard let pendingSize = pendingPTYSize else { return }
+        guard pendingSize != lastAppliedPTYSize else { return }
+        guard let sessionID, let manager = activeSessionManager else { return }
+
+        do {
+            try await manager.resize(sessionID: sessionID, pty: pendingSize)
+            lastAppliedPTYSize = pendingSize
+        } catch {
+            connectionState = "Resize failed: \(error.localizedDescription)"
+        }
     }
 
     private func buildHostConfiguration(config: TerminalConnectConfig) -> RemoraCore.Host? {

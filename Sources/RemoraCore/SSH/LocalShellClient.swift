@@ -101,8 +101,6 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
 
         onStateChange?(.running)
         onOutput?(Data("Connected to local zsh shell\r\nType commands and press Enter.\r\n".utf8))
-
-        try writeSync(Data("stty cols \(pty.columns) rows \(pty.rows)\n".utf8))
     }
 
     public func write(_ data: Data) async throws {
@@ -171,6 +169,7 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
             env.merge(base) { _, new in new }
         }
         env["TERM"] = env["TERM"] ?? "xterm-256color"
+        env["PROMPT_EOL_MARK"] = ""
         return env
     }
 }
