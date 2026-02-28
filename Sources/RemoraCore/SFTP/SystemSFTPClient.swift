@@ -250,7 +250,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     static func makeSSHArguments(
         for host: Host,
         batchMode: Bool = true,
-        useConnectionReuse: Bool = true
+        useConnectionReuse: Bool = true,
+        forceTTY: Bool = false
     ) -> [String] {
         var args: [String] = [
             "-p", "\(host.port)",
@@ -259,6 +260,9 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
+        if forceTTY {
+            args.insert("-tt", at: 0)
+        }
         if batchMode {
             args.append(contentsOf: ["-o", "BatchMode=yes"])
         }
@@ -539,6 +543,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     }
 
     private func runSFTPBatchWithFallbacks(stdin: Data) async throws -> ProcessResult {
+        let storedPassword = await storedPasswordIfAvailable()
+
         var result = try await runProcess(
             executablePath: "/usr/bin/sftp",
             arguments: Self.makeSFTPArguments(for: host, batchMode: true, useConnectionReuse: true),
@@ -560,6 +566,16 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 arguments: passwordLaunch.arguments,
                 environment: passwordLaunch.environment,
                 stdin: stdin
+            )
+            if result.status == 0 {
+                return result
+            }
+        } else if let storedPassword {
+            result = try await runProcess(
+                executablePath: "/usr/bin/sftp",
+                arguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: true),
+                environment: [:],
+                stdin: Self.passwordPrefixedStdin(password: storedPassword, payload: stdin)
             )
             if result.status == 0 {
                 return result
@@ -592,12 +608,21 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 environment: passwordLaunch.environment,
                 stdin: stdin
             )
+        } else if let storedPassword {
+            result = try await runProcess(
+                executablePath: "/usr/bin/sftp",
+                arguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: false),
+                environment: [:],
+                stdin: Self.passwordPrefixedStdin(password: storedPassword, payload: stdin)
+            )
         }
 
         return result
     }
 
     private func runSSHCommandWithFallbacks(command: String) async throws -> ProcessResult {
+        let storedPassword = await storedPasswordIfAvailable()
+
         var result = try await runProcess(
             executablePath: "/usr/bin/ssh",
             arguments: Self.makeSSHArguments(for: host, batchMode: true, useConnectionReuse: true) + [command],
@@ -623,6 +648,16 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             if result.status == 0 {
                 return result
             }
+        } else if let storedPassword {
+            result = try await runProcess(
+                executablePath: "/usr/bin/ssh",
+                arguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: true) + [command],
+                environment: [:],
+                stdin: Data((storedPassword + "\n").utf8)
+            )
+            if result.status == 0 {
+                return result
+            }
         }
 
         guard shouldRetryWithoutConnectionReuse(result: result) else {
@@ -642,7 +677,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         if host.auth.method == .password,
            let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
                baseExecutable: "/usr/bin/ssh",
-               baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command]
+                baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command]
            )
         {
             result = try await runProcess(
@@ -650,6 +685,41 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 arguments: passwordLaunch.arguments,
                 environment: passwordLaunch.environment,
                 stdin: nil
+            )
+        } else if let storedPassword {
+            result = try await runProcess(
+                executablePath: "/usr/bin/ssh",
+                arguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command],
+                environment: [:],
+                stdin: Data((storedPassword + "\n").utf8)
+            )
+        }
+
+        if result.status != 0 {
+            result = try await runProcess(
+                executablePath: "/usr/bin/ssh",
+                arguments: Self.makeSSHArguments(
+                    for: host,
+                    batchMode: true,
+                    useConnectionReuse: false,
+                    forceTTY: true
+                ) + [command],
+                environment: [:],
+                stdin: nil
+            )
+        }
+
+        if result.status != 0, let storedPassword {
+            result = try await runProcess(
+                executablePath: "/usr/bin/ssh",
+                arguments: Self.makeSSHArguments(
+                    for: host,
+                    batchMode: false,
+                    useConnectionReuse: false,
+                    forceTTY: true
+                ) + [command],
+                environment: [:],
+                stdin: Data((storedPassword + "\n").utf8)
             )
         }
 
@@ -731,6 +801,19 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             return true
         }
         return false
+    }
+
+    private func storedPasswordIfAvailable() async -> String? {
+        guard host.auth.method == .password else { return nil }
+        guard let passwordRef = host.auth.passwordReference, !passwordRef.isEmpty else { return nil }
+        guard let password = await credentialStore.secret(for: passwordRef), !password.isEmpty else { return nil }
+        return password
+    }
+
+    private static func passwordPrefixedStdin(password: String, payload: Data) -> Data {
+        var data = Data((password + "\n").utf8)
+        data.append(payload)
+        return data
     }
 
     private func makePasswordLaunchConfigurationIfAvailable(
