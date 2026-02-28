@@ -175,7 +175,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         try await runSSHCommand(touchCommand)
     }
 
-    static func makeSFTPArguments(for host: Host) -> [String] {
+    static func makeSFTPArguments(for host: Host, batchMode: Bool = true) -> [String] {
         var args: [String] = [
             "-q",
             "-b", "-",
@@ -185,7 +185,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
-        args.append(contentsOf: SSHConnectionReuse.options(for: host))
+        if batchMode {
+            args.append(contentsOf: ["-o", "BatchMode=yes"])
+        }
+        args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
 
         switch host.auth.method {
         case .privateKey:
@@ -203,7 +206,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return args
     }
 
-    static func makeSSHArguments(for host: Host) -> [String] {
+    static func makeSSHArguments(for host: Host, batchMode: Bool = true) -> [String] {
         var args: [String] = [
             "-p", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
@@ -211,7 +214,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
-        args.append(contentsOf: SSHConnectionReuse.options(for: host))
+        if batchMode {
+            args.append(contentsOf: ["-o", "BatchMode=yes"])
+        }
+        args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
 
         switch host.auth.method {
         case .privateKey:
@@ -408,14 +414,29 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             throw SFTPClientError.unsupportedOperation("empty-sftp-command")
         }
 
-        let launch = try await makeSFTPBatchLaunchConfiguration()
+        let defaultLaunch = makeDefaultSFTPBatchLaunchConfiguration()
         let payload = Data((normalizedCommands + ["quit"]).joined(separator: "\n").appending("\n").utf8)
-        let result = try await runProcess(
-            executablePath: launch.executablePath,
-            arguments: launch.arguments,
-            environment: launch.environment,
+        var result = try await runProcess(
+            executablePath: defaultLaunch.executablePath,
+            arguments: defaultLaunch.arguments,
+            environment: defaultLaunch.environment,
             stdin: payload
         )
+
+        if result.status != 0,
+           host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/sftp",
+               baseArguments: Self.makeSFTPArguments(for: host, batchMode: false)
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: payload
+            )
+        }
 
         let stdoutText = String(decoding: result.stdout, as: UTF8.self)
         let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -441,13 +462,28 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        let launch = try await makeSSHLaunchConfiguration(command: trimmed)
-        let result = try await runProcess(
-            executablePath: launch.executablePath,
-            arguments: launch.arguments,
-            environment: launch.environment,
+        let defaultLaunch = makeDefaultSSHLaunchConfiguration(command: trimmed)
+        var result = try await runProcess(
+            executablePath: defaultLaunch.executablePath,
+            arguments: defaultLaunch.arguments,
+            environment: defaultLaunch.environment,
             stdin: nil
         )
+
+        if result.status != 0,
+           host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/ssh",
+               baseArguments: Self.makeSSHArguments(for: host, batchMode: false) + [trimmed]
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: nil
+            )
+        }
 
         let stdoutText = String(decoding: result.stdout, as: UTF8.self)
         let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -521,13 +557,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         }
     }
 
-    private func makeSFTPBatchLaunchConfiguration() async throws -> BatchLaunchConfiguration {
-        if host.auth.method == .password {
-            return try await makePasswordLaunchConfiguration(
-                baseExecutable: "/usr/bin/sftp",
-                baseArguments: Self.makeSFTPArguments(for: host)
-            )
-        }
+    private func makeDefaultSFTPBatchLaunchConfiguration() -> BatchLaunchConfiguration {
         return BatchLaunchConfiguration(
             executablePath: "/usr/bin/sftp",
             arguments: Self.makeSFTPArguments(for: host),
@@ -535,14 +565,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         )
     }
 
-    private func makeSSHLaunchConfiguration(command: String) async throws -> BatchLaunchConfiguration {
+    private func makeDefaultSSHLaunchConfiguration(command: String) -> BatchLaunchConfiguration {
         let sshArgs = Self.makeSSHArguments(for: host) + [command]
-        if host.auth.method == .password {
-            return try await makePasswordLaunchConfiguration(
-                baseExecutable: "/usr/bin/ssh",
-                baseArguments: sshArgs
-            )
-        }
         return BatchLaunchConfiguration(
             executablePath: "/usr/bin/ssh",
             arguments: sshArgs,
@@ -550,10 +574,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         )
     }
 
-    private func makePasswordLaunchConfiguration(
+    private func makePasswordLaunchConfigurationIfAvailable(
         baseExecutable: String,
         baseArguments: [String]
-    ) async throws -> BatchLaunchConfiguration {
+    ) async -> BatchLaunchConfiguration? {
         let sshpassCandidates = [
             "/opt/homebrew/bin/sshpass",
             "/usr/local/bin/sshpass",
@@ -561,14 +585,14 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         ]
 
         guard let sshpassPath = sshpassCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw SFTPClientError.unsupportedOperation("password-auth-sftp-requires-sshpass")
+            return nil
         }
 
         guard let passwordRef = host.auth.passwordReference, !passwordRef.isEmpty else {
-            throw SFTPClientError.unsupportedOperation("password-reference-missing")
+            return nil
         }
         guard let password = await credentialStore.secret(for: passwordRef), !password.isEmpty else {
-            throw SFTPClientError.unsupportedOperation("password-secret-missing")
+            return nil
         }
 
         return BatchLaunchConfiguration(

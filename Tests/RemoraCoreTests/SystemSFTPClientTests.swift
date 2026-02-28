@@ -22,6 +22,7 @@ struct SystemSFTPClientTests {
         #expect(args.contains("ConnectTimeout=12"))
         #expect(args.contains("ServerAliveInterval=40"))
         #expect(args.contains("StrictHostKeyChecking=ask"))
+        #expect(args.contains("BatchMode=yes"))
         #expect(args.contains("ControlMaster=auto"))
         #expect(args.contains(where: { $0.hasPrefix("ControlPath=/tmp/") }))
         #expect(args.contains("-i"))

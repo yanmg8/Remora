@@ -126,6 +126,7 @@ final class FileTransferViewModel: ObservableObject {
     @Published private(set) var remoteClipboard: RemoteClipboardState?
     @Published private(set) var localEntries: [LocalFileEntry] = []
     @Published private(set) var remoteEntries: [RemoteFileEntry] = []
+    @Published private(set) var remoteLoadErrorMessage: String?
     @Published private(set) var transferQueue: [TransferItem] = []
 
     private var sftpClient: SFTPClientProtocol
@@ -156,6 +157,7 @@ final class FileTransferViewModel: ObservableObject {
         remoteClipboard = nil
         transferQueue.removeAll()
         remoteEntries = []
+        remoteLoadErrorMessage = nil
 
         if let initialRemoteDirectory {
             remoteDirectoryPath = normalizeRemoteDirectoryPath(initialRemoteDirectory)
@@ -214,8 +216,10 @@ final class FileTransferViewModel: ObservableObject {
                 }
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
+            remoteLoadErrorMessage = nil
         } catch {
             remoteEntries = []
+            remoteLoadErrorMessage = error.localizedDescription
         }
     }
 

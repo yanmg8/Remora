@@ -1,10 +1,17 @@
 import Foundation
 
 enum SSHConnectionReuse {
-    static func options(for host: Host) -> [String] {
+    static func masterOptions(for host: Host) -> [String] {
         [
             "-o", "ControlMaster=auto",
             "-o", "ControlPersist=600",
+            "-o", "ControlPath=\(controlPath(for: host))",
+        ]
+    }
+
+    static func reuseOnlyOptions(for host: Host) -> [String] {
+        [
+            "-o", "ControlMaster=no",
             "-o", "ControlPath=\(controlPath(for: host))",
         ]
     }

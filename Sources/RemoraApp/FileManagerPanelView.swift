@@ -273,6 +273,32 @@ struct FileManagerPanelView: View {
             .contextMenu {
                 panelContextMenu
             }
+            .overlay(alignment: .center) {
+                if viewModel.remoteEntries.isEmpty,
+                   let message = viewModel.remoteLoadErrorMessage,
+                   !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    VStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text("Failed to load remote directory")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(message)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(4)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.04))
+                    )
+                    .padding(16)
+                    .accessibilityIdentifier("file-manager-remote-error")
+                }
+            }
         }
     }
 
