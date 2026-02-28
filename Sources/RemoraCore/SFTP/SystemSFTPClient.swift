@@ -22,23 +22,31 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public func list(path: String) async throws -> [RemoteFileEntry] {
         let normalized = normalize(path)
-        let output = try await runSFTPBatch(commands: ["ls -lan \(Self.quoteBatchArgument(normalized))"])
-        let parsedLongEntries = Self.parseLongListOutput(output, parentPath: normalized)
-        if !parsedLongEntries.isEmpty {
-            return parsedLongEntries
-        }
+        do {
+            let output = try await runSFTPBatch(commands: ["ls -lan \(Self.quoteBatchArgument(normalized))"])
+            let parsedLongEntries = Self.parseLongListOutput(output, parentPath: normalized)
+            if !parsedLongEntries.isEmpty {
+                return parsedLongEntries
+            }
 
-        // Some servers return a non-long listing even when -l is requested.
-        if let sshFallback = try? await listViaSSH(path: normalized), !sshFallback.isEmpty {
-            return sshFallback
-        }
+            // Some servers return a non-long listing even when -l is requested.
+            if let sshFallback = try? await listViaSSH(path: normalized), !sshFallback.isEmpty {
+                return sshFallback
+            }
 
-        let parsedNameEntries = Self.parseNameOnlyListOutput(output, parentPath: normalized)
-        if !parsedNameEntries.isEmpty {
-            return parsedNameEntries
-        }
+            let parsedNameEntries = Self.parseNameOnlyListOutput(output, parentPath: normalized)
+            if !parsedNameEntries.isEmpty {
+                return parsedNameEntries
+            }
 
-        return []
+            return []
+        } catch {
+            // Some servers disable SFTP subsystem while SSH shell stays available.
+            if let sshFallback = try? await listViaSSH(path: normalized), !sshFallback.isEmpty {
+                return sshFallback
+            }
+            throw error
+        }
     }
 
     public func download(path: String) async throws -> Data {
@@ -91,11 +99,16 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     public func rename(from: String, to: String) async throws {
         let source = normalize(from)
         let destination = normalize(to)
-        _ = try await runSFTPBatch(
-            commands: [
-                "rename \(Self.quoteBatchArgument(source)) \(Self.quoteBatchArgument(destination))",
-            ]
-        )
+        do {
+            _ = try await runSFTPBatch(
+                commands: [
+                    "rename \(Self.quoteBatchArgument(source)) \(Self.quoteBatchArgument(destination))",
+                ]
+            )
+        } catch {
+            let command = "mv -- \(Self.quoteShellArgument(source)) \(Self.quoteShellArgument(destination))"
+            try await runSSHCommand(command)
+        }
     }
 
     public func move(from: String, to: String) async throws {
@@ -111,34 +124,56 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public func mkdir(path: String) async throws {
         let normalized = normalize(path)
-        _ = try await runSFTPBatch(commands: ["mkdir \(Self.quoteBatchArgument(normalized))"])
+        do {
+            _ = try await runSFTPBatch(commands: ["mkdir \(Self.quoteBatchArgument(normalized))"])
+        } catch {
+            let command = "mkdir -p -- \(Self.quoteShellArgument(normalized))"
+            try await runSSHCommand(command)
+        }
     }
 
     public func remove(path: String) async throws {
         let normalized = normalize(path)
         let attributes = try await stat(path: normalized)
-        if attributes.isDirectory {
-            let command = "rm -rf -- \(Self.quoteShellArgument(normalized))"
-            try await runSSHCommand(command)
-            return
+        let command: String
+        if attributes.isDirectory == true {
+            command = "rm -rf -- \(Self.quoteShellArgument(normalized))"
+        } else {
+            command = "rm -f -- \(Self.quoteShellArgument(normalized))"
         }
-        _ = try await runSFTPBatch(commands: ["rm \(Self.quoteBatchArgument(normalized))"])
+        try await runSSHCommand(command)
     }
 
     public func stat(path: String) async throws -> RemoteFileAttributes {
         let normalized = normalize(path)
-        let output = try await runSFTPBatch(commands: ["ls -ldn \(Self.quoteBatchArgument(normalized))"])
-        guard let parsed = Self.parseLongListEntries(output).first else {
-            throw SFTPClientError.notFound(normalized)
+        do {
+            let output = try await runSFTPBatch(commands: ["ls -ldn \(Self.quoteBatchArgument(normalized))"])
+            guard let parsed = Self.parseLongListEntries(output).first else {
+                throw SFTPClientError.notFound(normalized)
+            }
+            return RemoteFileAttributes(
+                permissions: parsed.permissions,
+                owner: parsed.owner,
+                group: parsed.group,
+                size: parsed.size,
+                modifiedAt: parsed.modifiedAt,
+                isDirectory: parsed.isDirectory
+            )
+        } catch {
+            let command = "LC_ALL=C ls -ldn -- \(Self.quoteShellArgument(normalized))"
+            let output = try await runSSHCommandOutput(command)
+            guard let parsed = Self.parseLongListEntries(output).first else {
+                throw SFTPClientError.notFound(normalized)
+            }
+            return RemoteFileAttributes(
+                permissions: parsed.permissions,
+                owner: parsed.owner,
+                group: parsed.group,
+                size: parsed.size,
+                modifiedAt: parsed.modifiedAt,
+                isDirectory: parsed.isDirectory
+            )
         }
-        return RemoteFileAttributes(
-            permissions: parsed.permissions,
-            owner: parsed.owner,
-            group: parsed.group,
-            size: parsed.size,
-            modifiedAt: parsed.modifiedAt,
-            isDirectory: parsed.isDirectory
-        )
     }
 
     public func setAttributes(path: String, attributes: RemoteFileAttributes) async throws {
