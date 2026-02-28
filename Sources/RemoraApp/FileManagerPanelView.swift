@@ -404,10 +404,12 @@ struct FileManagerPanelView: View {
 
     private var transferQueueFloatingOverlay: some View {
         Group {
-            if isTransferQueueExpanded {
-                transferQueueExpandedPanel
-            } else {
-                transferQueueCollapsedPanel
+            if !viewModel.transferQueue.isEmpty {
+                if isTransferQueueExpanded {
+                    transferQueueExpandedPanel
+                } else {
+                    transferQueueCollapsedPanel
+                }
             }
         }
     }
@@ -416,36 +418,13 @@ struct FileManagerPanelView: View {
         Button {
             isTransferQueueExpanded = true
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Transfer Queue")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(VisualStyle.textPrimary)
-                    Spacer(minLength: 6)
-                    Text(transferQueueSummary.statusText)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(transferQueueSummary.statusColor)
-                    Image(systemName: "chevron.up")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(VisualStyle.textSecondary)
-                }
-
+            VStack(alignment: .leading, spacing: 0) {
                 ProgressView(value: transferQueueSummary.progress)
                     .progressViewStyle(.linear)
                     .controlSize(.small)
-
-                HStack {
-                    Text("\(Int(transferQueueSummary.progress * 100))%")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(VisualStyle.textSecondary)
-                    Spacer()
-                    Text("\(viewModel.transferQueue.count) task\(viewModel.transferQueue.count == 1 ? "" : "s")")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(VisualStyle.textSecondary)
-                }
             }
             .padding(10)
-            .frame(width: 300)
+            .frame(width: 220)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(VisualStyle.rightPanelBackground)
