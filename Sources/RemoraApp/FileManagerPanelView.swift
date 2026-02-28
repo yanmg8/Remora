@@ -5,7 +5,7 @@ import RemoraCore
 struct FileManagerPanelView: View {
     @ObservedObject var viewModel: FileTransferViewModel
 
-    @AppStorage("file-manager-path-width") private var remotePathFieldWidth: Double = 720
+    @AppStorage("file-manager-path-width") private var remotePathFieldWidth: Double = 420
     @State private var selectedRemotePaths: Set<String> = []
     @State private var hoveredRemotePath: String?
     @State private var hoveredTransferID: UUID?
@@ -41,7 +41,7 @@ struct FileManagerPanelView: View {
     }
 
     private var clampedPathFieldWidth: CGFloat {
-        CGFloat(min(max(remotePathFieldWidth, 260), 1400))
+        CGFloat(min(max(remotePathFieldWidth, 180), 1200))
     }
 
     var body: some View {
@@ -319,7 +319,7 @@ struct FileManagerPanelView: View {
             TextField("/path/to/dir", text: $remotePathDraft)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption.monospaced())
-                .frame(width: clampedPathFieldWidth)
+                .frame(minWidth: 180, maxWidth: min(clampedPathFieldWidth, 520))
                 .onSubmit {
                     jumpToRemotePath()
                 }
@@ -336,7 +336,7 @@ struct FileManagerPanelView: View {
                                 pathWidthDragStart = remotePathFieldWidth
                             }
                             let start = pathWidthDragStart ?? remotePathFieldWidth
-                            remotePathFieldWidth = min(max(start + value.translation.width, 260), 1400)
+                            remotePathFieldWidth = min(max(start + value.translation.width, 180), 1200)
                         }
                         .onEnded { _ in
                             pathWidthDragStart = nil
