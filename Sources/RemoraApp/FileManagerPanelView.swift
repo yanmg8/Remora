@@ -358,7 +358,6 @@ struct FileManagerPanelView: View {
                 .accessibilityIdentifier("file-manager-sync-toggle")
                 .fixedSize()
         }
-        .padding(.top, 4)
     }
 
     private var transferQueuePanel: some View {
