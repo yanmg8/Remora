@@ -146,4 +146,17 @@ struct SystemSFTPClientTests {
         #expect(entries[0].path == "/home/lighting")
         #expect(entries[0].isDirectory)
     }
+
+    @Test
+    func detectsTransientConnectionFailureMessages() {
+        #expect(SystemSFTPClient.isTransientConnectionFailureMessage("Connection failed: Connection closed"))
+        #expect(SystemSFTPClient.isTransientConnectionFailureMessage("mux_client_request_session: read from master failed: Broken pipe"))
+        #expect(SystemSFTPClient.isTransientConnectionFailureMessage("control socket connect(/tmp/ctl): Connection refused"))
+    }
+
+    @Test
+    func ignoresNonTransientConnectionFailureMessages() {
+        #expect(!SystemSFTPClient.isTransientConnectionFailureMessage("Permission denied (publickey,password)."))
+        #expect(!SystemSFTPClient.isTransientConnectionFailureMessage("No such file or directory"))
+    }
 }

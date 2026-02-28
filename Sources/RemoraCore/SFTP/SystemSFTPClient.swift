@@ -23,6 +23,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private let credentialStore = CredentialStore()
     private let directoryOperationTimeout: TimeInterval
     private let shellFallbackTimeout: TimeInterval
+    private var prefersSSHStreamingDownload = false
 
     public init(host: Host) {
         self.host = host
@@ -64,14 +65,19 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public func download(path: String) async throws -> Data {
         let normalized = normalize(path)
-        let tempURL = makeTemporaryURL(prefix: "remora-sftp-download")
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        _ = try await runSFTPBatch(
-            commands: [
-                "get \(Self.quoteBatchArgument(normalized)) \(Self.quoteBatchArgument(tempURL.path))",
-            ]
-        )
-        return try Data(contentsOf: tempURL)
+        if prefersSSHStreamingDownload {
+            return try await downloadViaSSH(path: normalized)
+        }
+
+        do {
+            return try await downloadViaSFTP(path: normalized)
+        } catch {
+            guard Self.shouldSwitchToSSHStreamingDownload(for: error) else {
+                throw error
+            }
+            prefersSSHStreamingDownload = true
+            return try await downloadViaSSH(path: normalized)
+        }
     }
 
     public func download(path: String, progress: TransferProgressHandler?) async throws -> Data {
@@ -556,6 +562,22 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return stdoutText
     }
 
+    private func runSSHCommandData(_ command: String, timeout: TimeInterval? = nil) async throws -> Data {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return Data() }
+
+        let result = try await runSSHCommandWithFallbacks(command: trimmed, timeout: timeout)
+        guard result.status == 0 else {
+            let stderrText = String(decoding: result.stderr, as: UTF8.self)
+            let stdoutText = String(decoding: result.stdout, as: UTF8.self)
+            let message = [stderrText, stdoutText]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first(where: { !$0.isEmpty }) ?? "ssh exited with status \(result.status)"
+            throw SSHError.connectionFailed(message)
+        }
+        return result.stdout
+    }
+
     private func runSFTPBatchWithFallbacks(stdin: Data, timeout: TimeInterval? = nil) async throws -> ProcessResult {
         let primary = await makePrimarySFTPLaunchConfiguration()
         var result = try await runProcess(
@@ -582,6 +604,22 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             timeout: timeout
         )
         return result
+    }
+
+    private func downloadViaSFTP(path: String) async throws -> Data {
+        let tempURL = makeTemporaryURL(prefix: "remora-sftp-download")
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        _ = try await runSFTPBatch(
+            commands: [
+                "get \(Self.quoteBatchArgument(path)) \(Self.quoteBatchArgument(tempURL.path))",
+            ]
+        )
+        return try Data(contentsOf: tempURL)
+    }
+
+    private func downloadViaSSH(path: String) async throws -> Data {
+        let command = "cat -- \(Self.quoteShellArgument(path))"
+        return try await runSSHCommandData(command)
     }
 
     private func runSSHCommandWithFallbacks(command: String, timeout: TimeInterval? = nil) async throws -> ProcessResult {
@@ -748,20 +786,29 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     private func shouldRetryWithoutConnectionReuse(result: ProcessResult) -> Bool {
         guard result.status != 0 else { return false }
-        let message = String(decoding: result.stderr + result.stdout, as: UTF8.self).lowercased()
-        if message.contains("connection closed") {
+        let message = String(decoding: result.stderr + result.stdout, as: UTF8.self)
+        return Self.isTransientConnectionFailureMessage(message)
+    }
+
+    static func isTransientConnectionFailureMessage(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        if lowered.contains("connection closed") {
             return true
         }
-        if message.contains("control socket") {
+        if lowered.contains("control socket") {
             return true
         }
-        if message.contains("mux_client") || message.contains("muxserver") {
+        if lowered.contains("mux_client") || lowered.contains("muxserver") {
             return true
         }
-        if message.contains("broken pipe") {
+        if lowered.contains("broken pipe") {
             return true
         }
         return false
+    }
+
+    private static func shouldSwitchToSSHStreamingDownload(for error: Error) -> Bool {
+        isTransientConnectionFailureMessage(error.localizedDescription)
     }
 
     private func storedPasswordIfAvailable() async -> String? {
