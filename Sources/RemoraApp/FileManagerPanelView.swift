@@ -192,7 +192,7 @@ struct FileManagerPanelView: View {
                                 .foregroundStyle(VisualStyle.textPrimary)
                             Spacer()
                             if !entry.isDirectory {
-                                Text("\(entry.size)")
+                                Text(ByteSizeFormatter.format(entry.size))
                                     .font(.caption.monospaced())
                                     .foregroundStyle(VisualStyle.textSecondary)
                             }
