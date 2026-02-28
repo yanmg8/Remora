@@ -17,6 +17,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         case metadataOnly
     }
 
+    private enum InputLogMode {
+        case text
+        case metadataOnly
+    }
+
     private struct BatchLaunchConfiguration {
         var executablePath: String
         var arguments: [String]
@@ -29,6 +34,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private let directoryOperationTimeout: TimeInterval
     private let shellFallbackTimeout: TimeInterval
     private var prefersSSHStreamingDownload = false
+    private var prefersSSHStreamingUpload = false
 
     private static let diagnosticsQueue = DispatchQueue(label: "io.lighting-tech.remora.sftp-diagnostics")
     private static let diagnosticsLogMaxBytes: Int64 = 10 * 1024 * 1024
@@ -90,7 +96,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         do {
             return try await downloadViaSFTP(path: normalized)
         } catch {
-            guard Self.shouldSwitchToSSHStreamingDownload(for: error) else {
+            guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
                 throw error
             }
             prefersSSHStreamingDownload = true
@@ -135,11 +141,33 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let normalized = normalize(path)
         let totalBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
         progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
-        _ = try await runSFTPBatch(
-            commands: [
-                "put \(Self.quoteBatchArgument(fileURL.path)) \(Self.quoteBatchArgument(normalized))",
-            ]
-        )
+
+        if prefersSSHStreamingUpload {
+            try await uploadViaSSH(fileURL: fileURL, to: normalized)
+            progress?(.init(bytesTransferred: totalBytes ?? 0, totalBytes: totalBytes))
+            return
+        }
+
+        do {
+            try await uploadViaSFTP(fileURL: fileURL, to: normalized)
+        } catch {
+            guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
+                throw error
+            }
+            prefersSSHStreamingUpload = true
+            Self.appendDiagnostics(
+                Self.formatDiagnosticsMessage(
+                    host: host,
+                    phase: "upload-mode-switch",
+                    body: [
+                        "reason=\(error.localizedDescription)",
+                        "mode=ssh-streaming"
+                    ]
+                )
+            )
+            try await uploadViaSSH(fileURL: fileURL, to: normalized)
+        }
+
         progress?(.init(bytesTransferred: totalBytes ?? 0, totalBytes: totalBytes))
     }
 
@@ -571,37 +599,24 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         _ = try await runSSHCommandOutput(command)
     }
 
-    private func runSSHCommandOutput(_ command: String, timeout: TimeInterval? = nil) async throws -> String {
+    private func runSSHCommandResult(
+        _ command: String,
+        stdin: Data? = nil,
+        timeout: TimeInterval? = nil,
+        outputLogMode: OutputLogMode = .text,
+        inputLogMode: InputLogMode = .text
+    ) async throws -> ProcessResult {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        let result = try await runSSHCommandWithFallbacks(
-            command: trimmed,
-            timeout: timeout,
-            outputLogMode: .text
-        )
-
-        let stdoutText = String(decoding: result.stdout, as: UTF8.self)
-        let stderrText = String(decoding: result.stderr, as: UTF8.self)
-
-        guard result.status == 0 else {
-            let message = [stderrText, stdoutText]
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first(where: { !$0.isEmpty }) ?? "ssh exited with status \(result.status)"
-            throw SSHError.connectionFailed(message)
+        guard !trimmed.isEmpty else {
+            return ProcessResult(status: 0, stdout: Data(), stderr: Data())
         }
 
-        return stdoutText
-    }
-
-    private func runSSHCommandData(_ command: String, timeout: TimeInterval? = nil) async throws -> Data {
-        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return Data() }
-
         let result = try await runSSHCommandWithFallbacks(
             command: trimmed,
+            stdin: stdin,
             timeout: timeout,
-            outputLogMode: .metadataOnly
+            outputLogMode: outputLogMode,
+            inputLogMode: inputLogMode
         )
         guard result.status == 0 else {
             let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -611,6 +626,24 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 .first(where: { !$0.isEmpty }) ?? "ssh exited with status \(result.status)"
             throw SSHError.connectionFailed(message)
         }
+        return result
+    }
+
+    private func runSSHCommandOutput(_ command: String, timeout: TimeInterval? = nil) async throws -> String {
+        let result = try await runSSHCommandResult(
+            command,
+            timeout: timeout,
+            outputLogMode: .text
+        )
+        return String(decoding: result.stdout, as: UTF8.self)
+    }
+
+    private func runSSHCommandData(_ command: String, timeout: TimeInterval? = nil) async throws -> Data {
+        let result = try await runSSHCommandResult(
+            command,
+            timeout: timeout,
+            outputLogMode: .metadataOnly
+        )
         return result.stdout
     }
 
@@ -624,7 +657,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             timeout: timeout,
             logPhase: "sftp-primary",
             host: host,
-            outputLogMode: .text
+            outputLogMode: .text,
+            inputLogMode: .text
         )
         if result.status == 0 {
             return result
@@ -643,7 +677,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             timeout: timeout,
             logPhase: "sftp-retry-no-reuse",
             host: host,
-            outputLogMode: .text
+            outputLogMode: .text,
+            inputLogMode: .text
         )
         return result
     }
@@ -659,26 +694,48 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return try Data(contentsOf: tempURL)
     }
 
+    private func uploadViaSFTP(fileURL: URL, to path: String) async throws {
+        _ = try await runSFTPBatch(
+            commands: [
+                "put \(Self.quoteBatchArgument(fileURL.path)) \(Self.quoteBatchArgument(path))",
+            ]
+        )
+    }
+
     private func downloadViaSSH(path: String) async throws -> Data {
         let command = "cat -- \(Self.quoteShellArgument(path))"
         return try await runSSHCommandData(command)
     }
 
+    private func uploadViaSSH(fileURL: URL, to path: String) async throws {
+        let payload = try Data(contentsOf: fileURL)
+        let command = "cat > \(Self.quoteShellArgument(path))"
+        _ = try await runSSHCommandResult(
+            command,
+            stdin: payload,
+            outputLogMode: .text,
+            inputLogMode: .metadataOnly
+        )
+    }
+
     private func runSSHCommandWithFallbacks(
         command: String,
+        stdin: Data? = nil,
         timeout: TimeInterval? = nil,
-        outputLogMode: OutputLogMode
+        outputLogMode: OutputLogMode,
+        inputLogMode: InputLogMode
     ) async throws -> ProcessResult {
         let primary = await makePrimarySSHLaunchConfiguration(command: command)
         var result = try await runProcess(
             executablePath: primary.executablePath,
             arguments: primary.arguments,
             environment: primary.environment,
-            stdin: nil,
+            stdin: stdin,
             timeout: timeout,
             logPhase: "ssh-primary",
             host: host,
-            outputLogMode: outputLogMode
+            outputLogMode: outputLogMode,
+            inputLogMode: inputLogMode
         )
         if result.status == 0 {
             return result
@@ -693,11 +750,12 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             executablePath: retry.executablePath,
             arguments: retry.arguments,
             environment: retry.environment,
-            stdin: nil,
+            stdin: stdin,
             timeout: timeout,
             logPhase: "ssh-retry-no-reuse",
             host: host,
-            outputLogMode: outputLogMode
+            outputLogMode: outputLogMode,
+            inputLogMode: inputLogMode
         )
         return result
     }
@@ -710,7 +768,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         timeout: TimeInterval? = nil,
         logPhase: String,
         host: Host,
-        outputLogMode: OutputLogMode
+        outputLogMode: OutputLogMode,
+        inputLogMode: InputLogMode
     ) async throws -> ProcessResult {
         Self.appendDiagnostics(
             Self.formatDiagnosticsMessage(
@@ -720,7 +779,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                     "executable=\(executablePath)",
                     "arguments=\(arguments.joined(separator: " "))",
                     "environment=\(Self.redactedEnvironmentDescription(environment))",
-                    "stdin=\(Self.describeInput(stdin))"
+                    "stdin=\(Self.describeInput(stdin, mode: inputLogMode))"
                 ]
             )
         )
@@ -924,7 +983,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return false
     }
 
-    private static func shouldSwitchToSSHStreamingDownload(for error: Error) -> Bool {
+    private static func shouldSwitchToSSHStreamingTransfer(for error: Error) -> Bool {
         isTransientConnectionFailureMessage(error.localizedDescription)
     }
 
@@ -1031,12 +1090,17 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return "{\(pairs.joined(separator: ", "))}"
     }
 
-    private static func describeInput(_ input: Data?) -> String {
+    private static func describeInput(_ input: Data?, mode: InputLogMode) -> String {
         guard let input, !input.isEmpty else { return "<empty>" }
-        if let text = String(data: input, encoding: .utf8) {
-            return text
+        switch mode {
+        case .text:
+            if let text = String(data: input, encoding: .utf8) {
+                return text
+            }
+            return "<non-utf8 \(input.count) bytes>"
+        case .metadataOnly:
+            return "<\(input.count) bytes omitted>"
         }
-        return "<non-utf8 \(input.count) bytes>"
     }
 
     private static func describeOutput(_ output: Data, mode: OutputLogMode) -> String {
