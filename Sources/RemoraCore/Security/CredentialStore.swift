@@ -1,33 +1,110 @@
 import Foundation
-import Security
 
 public actor CredentialStore {
-    private actor SharedMemoryCache {
-        private var values: [String: String] = [:]
+    private struct CredentialFilePayload: Codable {
+        var version: Int
+        var values: [String: String]
 
-        func set(_ value: String, for key: String) {
-            values[key] = value
-        }
-
-        func value(for key: String) -> String? {
-            values[key]
-        }
-
-        func remove(for key: String) {
-            values.removeValue(forKey: key)
+        init(version: Int = 1, values: [String: String]) {
+            self.version = version
+            self.values = values
         }
     }
 
-    private static let sharedCache = SharedMemoryCache()
-    private let service = "io.lighting-tech.remora.credentials"
+    private actor SharedFileStore {
+        private var loadedPaths: Set<String> = []
+        private var valuesByPath: [String: [String: String]] = [:]
+        private let encoder: JSONEncoder
+        private let decoder: JSONDecoder
+
+        init() {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            self.encoder = encoder
+            self.decoder = JSONDecoder()
+        }
+
+        func value(for key: String, fileURL: URL) -> String? {
+            loadIfNeeded(from: fileURL)
+            return valuesByPath[fileURL.path]?[key]
+        }
+
+        func set(_ value: String, for key: String, fileURL: URL) throws {
+            loadIfNeeded(from: fileURL)
+            var values = valuesByPath[fileURL.path] ?? [:]
+            values[key] = value
+            try persist(values: values, to: fileURL)
+            valuesByPath[fileURL.path] = values
+        }
+
+        func remove(for key: String, fileURL: URL) throws {
+            loadIfNeeded(from: fileURL)
+            var values = valuesByPath[fileURL.path] ?? [:]
+            values.removeValue(forKey: key)
+            try persist(values: values, to: fileURL)
+            valuesByPath[fileURL.path] = values
+        }
+
+        private func loadIfNeeded(from fileURL: URL) {
+            let path = fileURL.path
+            guard !loadedPaths.contains(path) else { return }
+            loadedPaths.insert(path)
+            valuesByPath[path] = loadValuesFromFile(fileURL)
+        }
+
+        private func loadValuesFromFile(_ fileURL: URL) -> [String: String] {
+            guard let data = try? Data(contentsOf: fileURL) else {
+                return [:]
+            }
+
+            if let payload = try? decoder.decode(CredentialFilePayload.self, from: data) {
+                return payload.values
+            }
+
+            if let legacyValues = try? decoder.decode([String: String].self, from: data) {
+                return legacyValues
+            }
+
+            return [:]
+        }
+
+        private func persist(values: [String: String], to fileURL: URL) throws {
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+
+            let payload = CredentialFilePayload(values: values)
+            let data = try encoder.encode(payload)
+            try data.write(to: fileURL, options: [.atomic])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: fileURL.path
+            )
+        }
+    }
+
+    private static let sharedStore = SharedFileStore()
+    private let baseDirectoryURL: URL
+    private let credentialsFileURL: URL
     private var inMemoryStorage: [String: String] = [:]
 
-    public init() {}
+    public init(
+        baseDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".remora/ssh", isDirectory: true),
+        credentialsFilename: String = "credentials.json"
+    ) {
+        self.baseDirectoryURL = baseDirectoryURL
+        self.credentialsFileURL = baseDirectoryURL.appendingPathComponent(credentialsFilename)
+    }
 
     public func setSecret(_ value: String, for key: String) async {
         inMemoryStorage[key] = value
-        await Self.sharedCache.set(value, for: key)
-        _ = saveToKeychain(value, for: key)
+        do {
+            try await Self.sharedStore.set(value, for: key, fileURL: credentialsFileURL)
+        } catch {
+            return
+        }
     }
 
     public func secret(for key: String) async -> String? {
@@ -35,66 +112,15 @@ public actor CredentialStore {
             return value
         }
 
-        if let cached = await Self.sharedCache.value(for: key) {
+        if let cached = await Self.sharedStore.value(for: key, fileURL: credentialsFileURL) {
             inMemoryStorage[key] = cached
             return cached
-        }
-
-        if let value = readFromKeychain(for: key) {
-            inMemoryStorage[key] = value
-            await Self.sharedCache.set(value, for: key)
-            return value
         }
         return nil
     }
 
     public func removeSecret(for key: String) async {
         inMemoryStorage.removeValue(forKey: key)
-        await Self.sharedCache.remove(for: key)
-        deleteFromKeychain(for: key)
-    }
-
-    @discardableResult
-    private func saveToKeychain(_ value: String, for key: String) -> Bool {
-        let data = Data(value.utf8)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-
-        SecItemDelete(query as CFDictionary)
-
-        var attrs = query
-        attrs[kSecValueData as String] = data
-        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-
-        return SecItemAdd(attrs as CFDictionary, nil) == errSecSuccess
-    }
-
-    private func readFromKeychain(for key: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    }
-
-    private func deleteFromKeychain(for key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-        SecItemDelete(query as CFDictionary)
+        _ = try? await Self.sharedStore.remove(for: key, fileURL: credentialsFileURL)
     }
 }

@@ -1,10 +1,24 @@
+import Foundation
 import Testing
 @testable import RemoraCore
 
 struct CredentialStoreTests {
+    private func makeCredentialDirectory() -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remora-credential-store-tests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root.appendingPathComponent(".remora/ssh", isDirectory: true)
+    }
+
     @Test
     func setGetRemoveSecret() async {
-        let store = CredentialStore()
+        let directory = makeCredentialDirectory()
+        defer {
+            let root = directory.deletingLastPathComponent().deletingLastPathComponent()
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = CredentialStore(baseDirectoryURL: directory)
 
         await store.setSecret("secret-value", for: "api-token")
         let value = await store.secret(for: "api-token")
@@ -13,5 +27,21 @@ struct CredentialStoreTests {
         await store.removeSecret(for: "api-token")
         let afterDelete = await store.secret(for: "api-token")
         #expect(afterDelete == nil)
+    }
+
+    @Test
+    func secretPersistsAcrossStoreInstances() async {
+        let directory = makeCredentialDirectory()
+        defer {
+            let root = directory.deletingLastPathComponent().deletingLastPathComponent()
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let first = CredentialStore(baseDirectoryURL: directory)
+        await first.setSecret("db-pass", for: "db-ref")
+
+        let second = CredentialStore(baseDirectoryURL: directory)
+        let loaded = await second.secret(for: "db-ref")
+        #expect(loaded == "db-pass")
     }
 }
