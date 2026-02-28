@@ -175,7 +175,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         try await runSSHCommand(touchCommand)
     }
 
-    static func makeSFTPArguments(for host: Host, batchMode: Bool = true) -> [String] {
+    static func makeSFTPArguments(
+        for host: Host,
+        batchMode: Bool = true,
+        useConnectionReuse: Bool = true
+    ) -> [String] {
         var args: [String] = [
             "-q",
             "-b", "-",
@@ -188,7 +192,9 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         if batchMode {
             args.append(contentsOf: ["-o", "BatchMode=yes"])
         }
-        args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        if useConnectionReuse {
+            args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        }
 
         switch host.auth.method {
         case .privateKey:
@@ -206,7 +212,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return args
     }
 
-    static func makeSSHArguments(for host: Host, batchMode: Bool = true) -> [String] {
+    static func makeSSHArguments(
+        for host: Host,
+        batchMode: Bool = true,
+        useConnectionReuse: Bool = true
+    ) -> [String] {
         var args: [String] = [
             "-p", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
@@ -217,7 +227,9 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         if batchMode {
             args.append(contentsOf: ["-o", "BatchMode=yes"])
         }
-        args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        if useConnectionReuse {
+            args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        }
 
         switch host.auth.method {
         case .privateKey:
@@ -449,29 +461,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             throw SFTPClientError.unsupportedOperation("empty-sftp-command")
         }
 
-        let defaultLaunch = makeDefaultSFTPBatchLaunchConfiguration()
         let payload = Data((normalizedCommands + ["quit"]).joined(separator: "\n").appending("\n").utf8)
-        var result = try await runProcess(
-            executablePath: defaultLaunch.executablePath,
-            arguments: defaultLaunch.arguments,
-            environment: defaultLaunch.environment,
-            stdin: payload
-        )
-
-        if result.status != 0,
-           host.auth.method == .password,
-           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
-               baseExecutable: "/usr/bin/sftp",
-               baseArguments: Self.makeSFTPArguments(for: host, batchMode: false)
-           )
-        {
-            result = try await runProcess(
-                executablePath: passwordLaunch.executablePath,
-                arguments: passwordLaunch.arguments,
-                environment: passwordLaunch.environment,
-                stdin: payload
-            )
-        }
+        let result = try await runSFTPBatchWithFallbacks(stdin: payload)
 
         let stdoutText = String(decoding: result.stdout, as: UTF8.self)
         let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -497,28 +488,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        let defaultLaunch = makeDefaultSSHLaunchConfiguration(command: trimmed)
-        var result = try await runProcess(
-            executablePath: defaultLaunch.executablePath,
-            arguments: defaultLaunch.arguments,
-            environment: defaultLaunch.environment,
-            stdin: nil
-        )
-
-        if result.status != 0,
-           host.auth.method == .password,
-           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
-               baseExecutable: "/usr/bin/ssh",
-               baseArguments: Self.makeSSHArguments(for: host, batchMode: false) + [trimmed]
-           )
-        {
-            result = try await runProcess(
-                executablePath: passwordLaunch.executablePath,
-                arguments: passwordLaunch.arguments,
-                environment: passwordLaunch.environment,
-                stdin: nil
-            )
-        }
+        let result = try await runSSHCommandWithFallbacks(command: trimmed)
 
         let stdoutText = String(decoding: result.stdout, as: UTF8.self)
         let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -531,6 +501,124 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         }
 
         return stdoutText
+    }
+
+    private func runSFTPBatchWithFallbacks(stdin: Data) async throws -> ProcessResult {
+        var result = try await runProcess(
+            executablePath: "/usr/bin/sftp",
+            arguments: Self.makeSFTPArguments(for: host, batchMode: true, useConnectionReuse: true),
+            environment: [:],
+            stdin: stdin
+        )
+        if result.status == 0 {
+            return result
+        }
+
+        if host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/sftp",
+               baseArguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: true)
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: stdin
+            )
+            if result.status == 0 {
+                return result
+            }
+        }
+
+        guard shouldRetryWithoutConnectionReuse(result: result) else {
+            return result
+        }
+
+        result = try await runProcess(
+            executablePath: "/usr/bin/sftp",
+            arguments: Self.makeSFTPArguments(for: host, batchMode: true, useConnectionReuse: false),
+            environment: [:],
+            stdin: stdin
+        )
+        if result.status == 0 {
+            return result
+        }
+
+        if host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/sftp",
+               baseArguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: false)
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: stdin
+            )
+        }
+
+        return result
+    }
+
+    private func runSSHCommandWithFallbacks(command: String) async throws -> ProcessResult {
+        var result = try await runProcess(
+            executablePath: "/usr/bin/ssh",
+            arguments: Self.makeSSHArguments(for: host, batchMode: true, useConnectionReuse: true) + [command],
+            environment: [:],
+            stdin: nil
+        )
+        if result.status == 0 {
+            return result
+        }
+
+        if host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/ssh",
+               baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: true) + [command]
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: nil
+            )
+            if result.status == 0 {
+                return result
+            }
+        }
+
+        guard shouldRetryWithoutConnectionReuse(result: result) else {
+            return result
+        }
+
+        result = try await runProcess(
+            executablePath: "/usr/bin/ssh",
+            arguments: Self.makeSSHArguments(for: host, batchMode: true, useConnectionReuse: false) + [command],
+            environment: [:],
+            stdin: nil
+        )
+        if result.status == 0 {
+            return result
+        }
+
+        if host.auth.method == .password,
+           let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
+               baseExecutable: "/usr/bin/ssh",
+               baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command]
+           )
+        {
+            result = try await runProcess(
+                executablePath: passwordLaunch.executablePath,
+                arguments: passwordLaunch.arguments,
+                environment: passwordLaunch.environment,
+                stdin: nil
+            )
+        }
+
+        return result
     }
 
     private func runProcess(
@@ -592,21 +680,22 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         }
     }
 
-    private func makeDefaultSFTPBatchLaunchConfiguration() -> BatchLaunchConfiguration {
-        return BatchLaunchConfiguration(
-            executablePath: "/usr/bin/sftp",
-            arguments: Self.makeSFTPArguments(for: host),
-            environment: [:]
-        )
-    }
-
-    private func makeDefaultSSHLaunchConfiguration(command: String) -> BatchLaunchConfiguration {
-        let sshArgs = Self.makeSSHArguments(for: host) + [command]
-        return BatchLaunchConfiguration(
-            executablePath: "/usr/bin/ssh",
-            arguments: sshArgs,
-            environment: [:]
-        )
+    private func shouldRetryWithoutConnectionReuse(result: ProcessResult) -> Bool {
+        guard result.status != 0 else { return false }
+        let message = String(decoding: result.stderr + result.stdout, as: UTF8.self).lowercased()
+        if message.contains("connection closed") {
+            return true
+        }
+        if message.contains("control socket") {
+            return true
+        }
+        if message.contains("mux_client") || message.contains("muxserver") {
+            return true
+        }
+        if message.contains("broken pipe") {
+            return true
+        }
+        return false
     }
 
     private func makePasswordLaunchConfigurationIfAvailable(
