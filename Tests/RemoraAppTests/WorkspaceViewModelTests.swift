@@ -43,4 +43,18 @@ struct WorkspaceViewModelTests {
         #expect(titles.contains("prod-api(1)"))
         #expect(titles.contains("prod-api(2)"))
     }
+
+    @Test
+    func createTabCanSkipLocalAutoConnect() async {
+        let workspace = WorkspaceViewModel()
+
+        workspace.createTab(title: "ssh-target", connectLocalShell: false)
+        guard let activePane = workspace.activePane else {
+            Issue.record("Expected active pane after creating tab.")
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        #expect(activePane.runtime.connectionState == "Idle")
+    }
 }

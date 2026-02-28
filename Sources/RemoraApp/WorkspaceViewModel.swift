@@ -82,7 +82,7 @@ final class WorkspaceViewModel: ObservableObject {
         return tabs.first(where: { $0.id == id })
     }
 
-    func createTab(title preferredTitle: String? = nil) {
+    func createTab(title preferredTitle: String? = nil, connectLocalShell: Bool = true) {
         let pane = TerminalPaneModel()
         let baseTitle: String = {
             if let preferredTitle {
@@ -97,7 +97,9 @@ final class WorkspaceViewModel: ObservableObject {
         tabs.append(tab)
         activeTabID = tab.id
         activePaneByTab[tab.id] = pane.id
-        pane.runtime.connectLocalShell()
+        if connectLocalShell {
+            pane.runtime.connectLocalShell()
+        }
         applyPaneVisibility()
     }
 

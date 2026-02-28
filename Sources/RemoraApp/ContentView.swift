@@ -900,7 +900,7 @@ struct ContentView: View {
         guard let host = hostCatalog.host(id: hostID) else { return }
         selectedHostID = hostID
         selectedTemplateID = nil
-        workspace.createTab(title: host.name)
+        workspace.createTab(title: host.name, connectLocalShell: false)
         guard let tabID = workspace.activeTabID else { return }
         workspace.selectTab(tabID)
         workspace.connectActivePane(host: host, template: nil)
