@@ -34,6 +34,10 @@ struct FileManagerPanelView: View {
         viewModel.transferQueue.contains { $0.status == .failed || $0.status == .skipped }
     }
 
+    private var abbreviatedLocalDirectoryPath: String {
+        NSString(string: viewModel.localDirectoryURL.path).abbreviatingWithTildeInPath
+    }
+
     private var currentDestinationDirectoryForPaste: String {
         viewModel.remoteDirectoryPath
     }
@@ -342,6 +346,22 @@ struct FileManagerPanelView: View {
                 }
             }
 
+            HStack(spacing: 8) {
+                Text("Save To: \(abbreviatedLocalDirectoryPath)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button("Open Folder") {
+                    revealInFinder(path: viewModel.localDirectoryURL.path)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .accessibilityIdentifier("file-manager-open-download-folder")
+            }
+
             if let overallProgress = viewModel.overallTransferProgress {
                 ProgressView(value: overallProgress)
                     .progressViewStyle(.linear)
@@ -363,6 +383,18 @@ struct FileManagerPanelView: View {
                                 .lineLimit(1)
                                 .foregroundStyle(VisualStyle.textPrimary)
                             Spacer()
+                            if item.direction == .download, item.status == .success {
+                                Button {
+                                    revealInFinder(path: item.destinationPath)
+                                } label: {
+                                    Image(systemName: "folder")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(!FileManager.default.fileExists(atPath: item.destinationPath))
+                                .help("Reveal Downloaded File")
+                                .accessibilityIdentifier("file-manager-transfer-reveal-\(item.id.uuidString)")
+                            }
                             Text(item.status.rawValue)
                                 .font(.caption.monospaced())
                                 .foregroundStyle(statusColor(item.status))
@@ -392,6 +424,9 @@ struct FileManagerPanelView: View {
                     )
                     .onHover { hovering in
                         hoveredTransferID = hovering ? item.id : nil
+                    }
+                    .contextMenu {
+                        transferContextMenu(for: item)
                     }
                 }
                 .frame(minHeight: 80, maxHeight: 120)
@@ -582,6 +617,34 @@ struct FileManagerPanelView: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
+    }
+
+    private func revealInFinder(path: String) {
+        let url = URL(fileURLWithPath: path)
+        if FileManager.default.fileExists(atPath: path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
+        NSWorkspace.shared.open(url.deletingLastPathComponent())
+    }
+
+    @ViewBuilder
+    private func transferContextMenu(for item: TransferItem) -> some View {
+        if item.direction == .download {
+            Button("Copy Local Path") {
+                copyToPasteboard(item.destinationPath)
+            }
+
+            if FileManager.default.fileExists(atPath: item.destinationPath) {
+                Button("Reveal in Finder") {
+                    revealInFinder(path: item.destinationPath)
+                }
+            }
+        } else {
+            Button("Copy Destination Path") {
+                copyToPasteboard(item.destinationPath)
+            }
+        }
     }
 
     private func presentUploadPanel(targetDirectory: String) {

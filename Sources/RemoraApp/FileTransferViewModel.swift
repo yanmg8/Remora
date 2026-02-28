@@ -168,22 +168,45 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     private static func defaultLocalDirectoryURL(fileManager: FileManager = .default) -> URL {
-        let current = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
-            .standardizedFileURL
-        if fileManager.isWritableFile(atPath: current.path) {
-            return current
-        }
-
         if let downloads = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first {
             if !fileManager.fileExists(atPath: downloads.path) {
                 try? fileManager.createDirectory(at: downloads, withIntermediateDirectories: true)
             }
-            if fileManager.isWritableFile(atPath: downloads.path) {
+            if isWritableDirectory(downloads, fileManager: fileManager) {
                 return downloads
             }
         }
 
+        let current = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
+            .standardizedFileURL
+        if isWritableDirectory(current, fileManager: fileManager) {
+            return current
+        }
+
+        let home = fileManager.homeDirectoryForCurrentUser
+        if isWritableDirectory(home, fileManager: fileManager) {
+            return home
+        }
+
         return fileManager.homeDirectoryForCurrentUser
+    }
+
+    private static func isWritableDirectory(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return false
+        }
+        return fileManager.isWritableFile(atPath: url.path)
+    }
+
+    private func ensureWritableLocalDirectory() -> URL {
+        if Self.isWritableDirectory(localDirectoryURL) {
+            return localDirectoryURL
+        }
+        let fallback = Self.defaultLocalDirectoryURL()
+        localDirectoryURL = fallback
+        refreshLocalEntries()
+        return fallback
     }
 
     func bindSFTPClient(
@@ -370,7 +393,7 @@ final class FileTransferViewModel: ObservableObject {
     func enqueueDownload(remoteEntry: RemoteFileEntry) {
         guard !remoteEntry.isDirectory else { return }
 
-        let destinationURL = localDirectoryURL.appendingPathComponent(remoteEntry.name)
+        let destinationURL = ensureWritableLocalDirectory().appendingPathComponent(remoteEntry.name)
         let item = TransferItem(
             direction: .download,
             name: remoteEntry.name,
@@ -634,7 +657,16 @@ final class FileTransferViewModel: ObservableObject {
                     }
                 )
                 let destinationURL = URL(fileURLWithPath: item.destinationPath)
+                let destinationDirectory = destinationURL.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
                 try data.write(to: destinationURL)
+                guard FileManager.default.fileExists(atPath: destinationURL.path) else {
+                    throw NSError(
+                        domain: "Remora.FileTransfer",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Download finished but local file is missing: \(destinationURL.path)"]
+                    )
+                }
             }
 
             if let doneIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
@@ -642,7 +674,12 @@ final class FileTransferViewModel: ObservableObject {
                 if let total = transferQueue[doneIdx].totalBytes {
                     transferQueue[doneIdx].bytesTransferred = total
                 }
-                transferQueue[doneIdx].message = "Completed"
+                if item.direction == .download {
+                    let displayPath = NSString(string: transferQueue[doneIdx].destinationPath).abbreviatingWithTildeInPath
+                    transferQueue[doneIdx].message = "Saved to: \(displayPath)"
+                } else {
+                    transferQueue[doneIdx].message = "Completed"
+                }
             }
         } catch {
             if let failedIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {

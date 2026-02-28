@@ -50,6 +50,39 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func downloadSuccessIncludesSavedPathMessage() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-download-message-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+        await vm.refreshRemoteEntries()
+        guard let readme = vm.remoteEntries.first(where: { $0.path == "/README.txt" }) else {
+            Issue.record("Remote README not found.")
+            return
+        }
+
+        vm.enqueueDownload(remoteEntry: readme)
+        try await waitUntil(timeoutLoops: 40, intervalMS: 50) {
+            vm.transferQueue.contains(where: { $0.direction == .download && $0.status == .success })
+        }
+
+        guard let done = vm.transferQueue.first(where: { $0.direction == .download && $0.status == .success }) else {
+            Issue.record("Expected successful download transfer.")
+            return
+        }
+        #expect(done.message?.contains("Saved to:") == true)
+        #expect(done.message?.contains("README.txt") == true)
+        #expect(FileManager.default.fileExists(atPath: done.destinationPath))
+    }
+
+    @Test
     func moveAndDeleteRemoteEntries() async throws {
         let vm = FileTransferViewModel(
             sftpClient: MockSFTPClient(),
