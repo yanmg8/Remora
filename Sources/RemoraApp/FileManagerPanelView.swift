@@ -5,12 +5,10 @@ import RemoraCore
 struct FileManagerPanelView: View {
     @ObservedObject var viewModel: FileTransferViewModel
 
-    @AppStorage("file-manager-path-width") private var remotePathFieldWidth: Double = 420
     @State private var selectedRemotePaths: Set<String> = []
     @State private var hoveredRemotePath: String?
     @State private var hoveredTransferID: UUID?
     @State private var remotePathDraft = "/"
-    @State private var pathWidthDragStart: Double?
     @State private var lastTappedRemotePath: String?
     @State private var lastRemoteTapAt = Date.distantPast
     @State private var isMoveSheetPresented = false
@@ -38,10 +36,6 @@ struct FileManagerPanelView: View {
 
     private var currentDestinationDirectoryForPaste: String {
         viewModel.remoteDirectoryPath
-    }
-
-    private var clampedPathFieldWidth: CGFloat {
-        CGFloat(min(max(remotePathFieldWidth, 180), 1200))
     }
 
     var body: some View {
@@ -307,38 +301,15 @@ struct FileManagerPanelView: View {
                 viewModel.performContextAction(.refresh)
             }
 
-            Label("Remote", systemImage: "externaldrive")
-                .font(.subheadline.weight(.semibold))
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.leading, 4)
-
             TextField("/path/to/dir", text: $remotePathDraft)
                 .textFieldStyle(.roundedBorder)
                 .font(.caption.monospaced())
-                .frame(minWidth: 180, maxWidth: min(clampedPathFieldWidth, 520))
+                .frame(minWidth: 180, maxWidth: .infinity)
+                .layoutPriority(1)
                 .onSubmit {
                     jumpToRemotePath()
                 }
                 .accessibilityIdentifier("file-manager-path-field")
-
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(VisualStyle.borderStrong)
-                .frame(width: 4, height: 18)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 1)
-                        .onChanged { value in
-                            if pathWidthDragStart == nil {
-                                pathWidthDragStart = remotePathFieldWidth
-                            }
-                            let start = pathWidthDragStart ?? remotePathFieldWidth
-                            remotePathFieldWidth = min(max(start + value.translation.width, 180), 1200)
-                        }
-                        .onEnded { _ in
-                            pathWidthDragStart = nil
-                        }
-                )
-                .accessibilityIdentifier("file-manager-path-resize")
 
             toolbarIconButton(
                 "arrow.right.circle",
@@ -348,8 +319,6 @@ struct FileManagerPanelView: View {
             ) {
                 jumpToRemotePath()
             }
-
-            Spacer(minLength: 8)
 
             Toggle("Sync Terminal", isOn: $viewModel.isTerminalDirectorySyncEnabled)
                 .toggleStyle(.switch)
