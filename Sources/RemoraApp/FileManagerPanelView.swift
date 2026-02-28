@@ -210,7 +210,8 @@ struct FileManagerPanelView: View {
                 .accessibilityIdentifier("file-manager-go")
             }
 
-            List(viewModel.remoteEntries, id: \.path, selection: $selectedRemotePaths) { entry in
+            List(viewModel.remoteEntries, id: \.path) { entry in
+                let isSelected = selectedRemotePaths.contains(entry.path)
                 HStack {
                     Image(systemName: entry.isDirectory ? "folder" : "doc")
                     Text(entry.name)
@@ -227,9 +228,18 @@ struct FileManagerPanelView: View {
                 .padding(.horizontal, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hoveredRemotePath == entry.path ? VisualStyle.leftInteractiveBackground : Color.clear)
+                        .fill(
+                            isSelected
+                                ? VisualStyle.leftSelectedBackground
+                                : (hoveredRemotePath == entry.path ? VisualStyle.leftHoverBackground : Color.clear)
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isSelected ? VisualStyle.borderStrong : Color.clear, lineWidth: 1)
                 )
                 .contentShape(Rectangle())
+                .listRowBackground(Color.clear)
                 .tag(entry.path)
                 .accessibilityIdentifier(remoteRowIdentifier(entry.path))
                 .onTapGesture {
