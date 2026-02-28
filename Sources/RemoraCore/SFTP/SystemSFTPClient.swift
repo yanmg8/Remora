@@ -12,6 +12,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         var stderr: Data
     }
 
+    private enum OutputLogMode {
+        case text
+        case metadataOnly
+    }
+
     private struct BatchLaunchConfiguration {
         var executablePath: String
         var arguments: [String]
@@ -24,6 +29,18 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private let directoryOperationTimeout: TimeInterval
     private let shellFallbackTimeout: TimeInterval
     private var prefersSSHStreamingDownload = false
+
+    private static let diagnosticsQueue = DispatchQueue(label: "io.lighting-tech.remora.sftp-diagnostics")
+    private static let diagnosticsLogMaxBytes: Int64 = 10 * 1024 * 1024
+    private static let diagnosticsLogURL: URL = {
+        let fm = FileManager.default
+        let baseDirectory = fm.urls(for: .libraryDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("Remora", isDirectory: true)
+            ?? fm.temporaryDirectory.appendingPathComponent("Remora", isDirectory: true)
+        try? fm.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        return baseDirectory.appendingPathComponent("sftp-diagnostics.log")
+    }()
 
     public init(host: Host) {
         self.host = host
@@ -76,6 +93,16 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 throw error
             }
             prefersSSHStreamingDownload = true
+            Self.appendDiagnostics(
+                Self.formatDiagnosticsMessage(
+                    host: host,
+                    phase: "download-mode-switch",
+                    body: [
+                        "reason=\(error.localizedDescription)",
+                        "mode=ssh-streaming"
+                    ]
+                )
+            )
             return try await downloadViaSSH(path: normalized)
         }
     }
@@ -547,7 +574,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        let result = try await runSSHCommandWithFallbacks(command: trimmed, timeout: timeout)
+        let result = try await runSSHCommandWithFallbacks(
+            command: trimmed,
+            timeout: timeout,
+            outputLogMode: .text
+        )
 
         let stdoutText = String(decoding: result.stdout, as: UTF8.self)
         let stderrText = String(decoding: result.stderr, as: UTF8.self)
@@ -566,7 +597,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return Data() }
 
-        let result = try await runSSHCommandWithFallbacks(command: trimmed, timeout: timeout)
+        let result = try await runSSHCommandWithFallbacks(
+            command: trimmed,
+            timeout: timeout,
+            outputLogMode: .metadataOnly
+        )
         guard result.status == 0 else {
             let stderrText = String(decoding: result.stderr, as: UTF8.self)
             let stdoutText = String(decoding: result.stdout, as: UTF8.self)
@@ -585,7 +620,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             arguments: primary.arguments,
             environment: primary.environment,
             stdin: stdin,
-            timeout: timeout
+            timeout: timeout,
+            logPhase: "sftp-primary",
+            host: host,
+            outputLogMode: .text
         )
         if result.status == 0 {
             return result
@@ -601,7 +639,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             arguments: retry.arguments,
             environment: retry.environment,
             stdin: stdin,
-            timeout: timeout
+            timeout: timeout,
+            logPhase: "sftp-retry-no-reuse",
+            host: host,
+            outputLogMode: .text
         )
         return result
     }
@@ -622,14 +663,21 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return try await runSSHCommandData(command)
     }
 
-    private func runSSHCommandWithFallbacks(command: String, timeout: TimeInterval? = nil) async throws -> ProcessResult {
+    private func runSSHCommandWithFallbacks(
+        command: String,
+        timeout: TimeInterval? = nil,
+        outputLogMode: OutputLogMode
+    ) async throws -> ProcessResult {
         let primary = await makePrimarySSHLaunchConfiguration(command: command)
         var result = try await runProcess(
             executablePath: primary.executablePath,
             arguments: primary.arguments,
             environment: primary.environment,
             stdin: nil,
-            timeout: timeout
+            timeout: timeout,
+            logPhase: "ssh-primary",
+            host: host,
+            outputLogMode: outputLogMode
         )
         if result.status == 0 {
             return result
@@ -645,7 +693,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             arguments: retry.arguments,
             environment: retry.environment,
             stdin: nil,
-            timeout: timeout
+            timeout: timeout,
+            logPhase: "ssh-retry-no-reuse",
+            host: host,
+            outputLogMode: outputLogMode
         )
         return result
     }
@@ -655,9 +706,26 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         arguments: [String],
         environment: [String: String],
         stdin: Data?,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        logPhase: String,
+        host: Host,
+        outputLogMode: OutputLogMode
     ) async throws -> ProcessResult {
-        try await withCheckedThrowingContinuation { continuation in
+        Self.appendDiagnostics(
+            Self.formatDiagnosticsMessage(
+                host: host,
+                phase: "\(logPhase)-start",
+                body: [
+                    "executable=\(executablePath)",
+                    "arguments=\(arguments.joined(separator: " "))",
+                    "environment=\(Self.redactedEnvironmentDescription(environment))",
+                    "stdin=\(Self.describeInput(stdin))"
+                ]
+            )
+        )
+        let startedAt = Date()
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ProcessResult, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: executablePath)
@@ -676,6 +744,17 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 do {
                     try process.run()
                 } catch {
+                    let elapsed = Date().timeIntervalSince(startedAt)
+                    Self.appendDiagnostics(
+                        Self.formatDiagnosticsMessage(
+                            host: host,
+                            phase: "\(logPhase)-launch-error",
+                            body: [
+                                "duration_ms=\(Int(elapsed * 1000))",
+                                "error=\(error.localizedDescription)"
+                            ]
+                        )
+                    )
                     continuation.resume(throwing: SSHError.connectionFailed(error.localizedDescription))
                     return
                 }
@@ -718,6 +797,17 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                         try stdinPipe.fileHandleForWriting.write(contentsOf: stdin)
                     } catch {
                         process.terminate()
+                        let elapsed = Date().timeIntervalSince(startedAt)
+                        Self.appendDiagnostics(
+                            Self.formatDiagnosticsMessage(
+                                host: host,
+                                phase: "\(logPhase)-stdin-error",
+                                body: [
+                                    "duration_ms=\(Int(elapsed * 1000))",
+                                    "error=\(error.localizedDescription)"
+                                ]
+                            )
+                        )
                         continuation.resume(throwing: SSHError.connectionFailed("stdin write failed: \(error.localizedDescription)"))
                         return
                     }
@@ -735,9 +825,35 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
                 if waitOutcome == .timedOut {
                     let timeoutText = timeout.map { String(format: "%.1f", $0) } ?? "unknown"
+                    let elapsed = Date().timeIntervalSince(startedAt)
+                    Self.appendDiagnostics(
+                        Self.formatDiagnosticsMessage(
+                            host: host,
+                            phase: "\(logPhase)-timeout",
+                            body: [
+                                "duration_ms=\(Int(elapsed * 1000))",
+                                "stdout=\(Self.describeOutput(capturedStdout, mode: outputLogMode))",
+                                "stderr=\(Self.describeOutput(capturedStderr, mode: .text))"
+                            ]
+                        )
+                    )
                     continuation.resume(throwing: SSHError.connectionFailed("command timed out after \(timeoutText)s"))
                     return
                 }
+
+                let elapsed = Date().timeIntervalSince(startedAt)
+                Self.appendDiagnostics(
+                    Self.formatDiagnosticsMessage(
+                        host: host,
+                        phase: "\(logPhase)-exit",
+                        body: [
+                            "duration_ms=\(Int(elapsed * 1000))",
+                            "status=\(process.terminationStatus)",
+                            "stdout=\(Self.describeOutput(capturedStdout, mode: outputLogMode))",
+                            "stderr=\(Self.describeOutput(capturedStderr, mode: .text))"
+                        ]
+                    )
+                )
 
                 continuation.resume(
                     returning: ProcessResult(
@@ -809,6 +925,95 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     private static func shouldSwitchToSSHStreamingDownload(for error: Error) -> Bool {
         isTransientConnectionFailureMessage(error.localizedDescription)
+    }
+
+    static func diagnosticsLogFilePath() -> String {
+        diagnosticsLogURL.path
+    }
+
+    private static func formatDiagnosticsMessage(host: Host, phase: String, body: [String]) -> String {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let header = "[\(timestamp)] [\(phase)] [\(host.username)@\(host.address):\(host.port)]"
+        let payload = body.joined(separator: "\n")
+        return "\(header)\n\(payload)\n"
+    }
+
+    private static func appendDiagnostics(_ message: String) {
+        diagnosticsQueue.sync {
+            rotateDiagnosticsIfNeeded(fileManager: .default)
+
+            let data = Data((message + "\n").utf8)
+            if FileManager.default.fileExists(atPath: diagnosticsLogURL.path) {
+                do {
+                    let handle = try FileHandle(forWritingTo: diagnosticsLogURL)
+                    defer { try? handle.close() }
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: data)
+                    return
+                } catch {
+                    // Fall through and attempt direct write.
+                }
+            }
+
+            do {
+                try data.write(to: diagnosticsLogURL, options: [.atomic])
+            } catch {
+                // Best-effort diagnostics; ignore write failure.
+            }
+        }
+    }
+
+    private static func rotateDiagnosticsIfNeeded(fileManager: FileManager) {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: diagnosticsLogURL.path),
+              let sizeNumber = attributes[.size] as? NSNumber
+        else {
+            return
+        }
+
+        let fileSize = sizeNumber.int64Value
+        guard fileSize >= diagnosticsLogMaxBytes else { return }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let timestamp = formatter.string(from: Date())
+        let archiveURL = diagnosticsLogURL.deletingPathExtension().appendingPathExtension("\(timestamp).log")
+        try? fileManager.moveItem(at: diagnosticsLogURL, to: archiveURL)
+    }
+
+    private static func redactedEnvironmentDescription(_ environment: [String: String]) -> String {
+        if environment.isEmpty { return "{}" }
+        let pairs = environment
+            .sorted(by: { $0.key < $1.key })
+            .map { key, value in
+                let upperKey = key.uppercased()
+                if upperKey.contains("PASS") || upperKey.contains("TOKEN") || upperKey.contains("SECRET") {
+                    return "\(key)=<redacted>"
+                }
+                return "\(key)=\(value)"
+            }
+        return "{\(pairs.joined(separator: ", "))}"
+    }
+
+    private static func describeInput(_ input: Data?) -> String {
+        guard let input, !input.isEmpty else { return "<empty>" }
+        if let text = String(data: input, encoding: .utf8) {
+            return text
+        }
+        return "<non-utf8 \(input.count) bytes>"
+    }
+
+    private static func describeOutput(_ output: Data, mode: OutputLogMode) -> String {
+        guard !output.isEmpty else { return "<empty>" }
+        switch mode {
+        case .text:
+            if let text = String(data: output, encoding: .utf8) {
+                return text
+            }
+            return "<non-utf8 \(output.count) bytes>"
+        case .metadataOnly:
+            return "<\(output.count) bytes omitted>"
+        }
     }
 
     private func storedPasswordIfAvailable() async -> String? {
