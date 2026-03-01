@@ -48,7 +48,7 @@ struct ContentView: View {
     @State private var renameSessionID: UUID?
     @State private var renameSessionDraft = ""
     @State private var fileManagerSFTPBindingKey = "disconnected"
-    @State private var fileManagerSFTPBindingRetryTask: Task<Void, Never>?
+    @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
 
     private var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
@@ -117,18 +117,18 @@ struct ContentView: View {
                 firstPane.runtime.connectLocalShell()
             }
             directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding(remainingRetries: 120)
+            syncFileManagerSFTPBinding()
         }
         .onChange(of: selectedHostID) {
             selectedTemplateID = availableTemplates.first?.id
         }
         .onChange(of: workspace.activeTabID) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding(remainingRetries: 600)
+            syncFileManagerSFTPBinding()
         }
         .onChange(of: workspace.activePaneByTab) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding(remainingRetries: 600)
+            syncFileManagerSFTPBinding()
         }
         .onReceive(activeRuntimeSFTPStatePublisher) { _ in
             syncFileManagerSFTPBinding()
@@ -1028,6 +1028,7 @@ struct ContentView: View {
         guard let host = selectedHost else { return }
         workspace.selectTab(tabID)
         workspace.connectActivePane(host: host, template: selectedTemplate)
+        bootstrapFileManagerBindingForActiveRuntime()
         hostCatalog.markConnected(hostID: host.id)
     }
 
@@ -1039,6 +1040,7 @@ struct ContentView: View {
         guard let tabID = workspace.activeTabID else { return }
         workspace.selectTab(tabID)
         workspace.connectActivePane(host: host, template: nil)
+        bootstrapFileManagerBindingForActiveRuntime()
         hostCatalog.markConnected(hostID: host.id)
     }
 
@@ -1047,10 +1049,7 @@ struct ContentView: View {
         workspace.disconnectActivePane()
     }
 
-    private func syncFileManagerSFTPBinding(remainingRetries: Int = 0) {
-        fileManagerSFTPBindingRetryTask?.cancel()
-        fileManagerSFTPBindingRetryTask = nil
-
+    private func syncFileManagerSFTPBinding() {
         guard let activeTabID = workspace.activeTabID,
               let activePane = workspace.activePane
         else {
@@ -1081,7 +1080,6 @@ struct ContentView: View {
             || runtime.connectionState.hasPrefix("Waiting")
             || runtime.connectionState.hasPrefix("Connected")
         {
-            scheduleFileManagerSFTPBindingRetry(remainingRetries: remainingRetries)
             return
         }
 
@@ -1090,7 +1088,6 @@ struct ContentView: View {
             paneID: activePane.id
         )
         bindDisconnectedSFTPIfNeeded(bindingKey: disconnectedBindingKey)
-        scheduleFileManagerSFTPBindingRetry(remainingRetries: remainingRetries)
     }
 
     private func bindDisconnectedSFTPIfNeeded(bindingKey: String) {
@@ -1103,14 +1100,27 @@ struct ContentView: View {
         )
     }
 
-    private func scheduleFileManagerSFTPBindingRetry(remainingRetries: Int) {
-        guard remainingRetries > 0 else { return }
-        fileManagerSFTPBindingRetryTask?.cancel()
-        fileManagerSFTPBindingRetryTask = Task {
-            try? await Task.sleep(for: .milliseconds(220))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                syncFileManagerSFTPBinding(remainingRetries: remainingRetries - 1)
+    private func bootstrapFileManagerBindingForActiveRuntime() {
+        fileManagerSFTPBootstrapTask?.cancel()
+        guard let runtime = workspace.activePane?.runtime else { return }
+        let runtimeID = ObjectIdentifier(runtime)
+
+        fileManagerSFTPBootstrapTask = Task {
+            for _ in 0 ..< 160 {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+
+                let completed: Bool = await MainActor.run {
+                    guard let currentRuntime = workspace.activePane?.runtime else { return true }
+                    guard ObjectIdentifier(currentRuntime) == runtimeID else { return true }
+
+                    syncFileManagerSFTPBinding()
+                    return currentRuntime.connectionMode != .ssh || currentRuntime.connectedSSHHost != nil
+                }
+
+                if completed {
+                    return
+                }
             }
         }
     }

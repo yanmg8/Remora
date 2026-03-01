@@ -156,6 +156,7 @@ final class FileTransferViewModel: ObservableObject {
     private var remoteDirectoryHistoryIndex: Int = 0
     private var activeRemoteBindingKey = "__default"
     private var remoteBindingStates: [String: RemoteBindingState] = [:]
+    private var sftpBindingGeneration: Int = 0
     private let logger = Logger(subsystem: "io.lighting-tech.remora", category: "file-transfer")
 
     init(
@@ -226,6 +227,8 @@ final class FileTransferViewModel: ObservableObject {
         initialRemoteDirectory: String? = nil
     ) {
         let normalizedBindingKey = normalizedRemoteBindingKey(bindingKey)
+        sftpBindingGeneration += 1
+        let bindingGeneration = sftpBindingGeneration
         remoteBindingStates[activeRemoteBindingKey] = makeCurrentRemoteBindingState()
 
         sftpClient = client
@@ -242,7 +245,8 @@ final class FileTransferViewModel: ObservableObject {
                     await refreshRemoteEntries(
                         path: remoteDirectoryPath,
                         preferCachedFirst: true,
-                        deduplicateInFlight: true
+                        deduplicateInFlight: true,
+                        bindingGeneration: bindingGeneration
                     )
                 }
             }
@@ -256,14 +260,15 @@ final class FileTransferViewModel: ObservableObject {
         setRemoteDirectory(path: initialPath, recordHistory: false, resetHistory: true)
 
         Task {
-            await refreshRemoteEntries()
+            await refreshRemoteEntries(bindingGeneration: bindingGeneration)
         }
     }
 
     func refreshAll() {
+        let bindingGeneration = sftpBindingGeneration
         refreshLocalEntries()
         Task {
-            await refreshRemoteEntries()
+            await refreshRemoteEntries(bindingGeneration: bindingGeneration)
         }
     }
 
@@ -299,12 +304,13 @@ final class FileTransferViewModel: ObservableObject {
         }
     }
 
-    func refreshRemoteEntries() async {
+    func refreshRemoteEntries(bindingGeneration: Int? = nil) async {
         let path = normalizeRemoteDirectoryPath(remoteDirectoryPath)
         await refreshRemoteEntries(
             path: path,
             preferCachedFirst: false,
-            deduplicateInFlight: false
+            deduplicateInFlight: false,
+            bindingGeneration: bindingGeneration ?? sftpBindingGeneration
         )
     }
 
@@ -989,11 +995,15 @@ final class FileTransferViewModel: ObservableObject {
     private func refreshRemoteEntries(
         path rawPath: String,
         preferCachedFirst: Bool,
-        deduplicateInFlight: Bool
+        deduplicateInFlight: Bool,
+        bindingGeneration: Int? = nil
     ) async {
+        let bindingGeneration = bindingGeneration ?? sftpBindingGeneration
+        guard isActiveBindingGeneration(bindingGeneration) else { return }
         let path = normalizeRemoteDirectoryPath(rawPath)
 
         if preferCachedFirst, let cached = remoteDirectoryCache[path] {
+            guard isActiveBindingGeneration(bindingGeneration) else { return }
             if remoteDirectoryPath == path {
                 remoteEntries = cached.entries
                 remoteLoadErrorMessage = nil
@@ -1006,6 +1016,7 @@ final class FileTransferViewModel: ObservableObject {
             }
         }
 
+        guard isActiveBindingGeneration(bindingGeneration) else { return }
         if deduplicateInFlight, remoteRefreshInFlightPaths.contains(path) {
             updateRemoteLoadingState()
             return
@@ -1014,12 +1025,15 @@ final class FileTransferViewModel: ObservableObject {
         remoteRefreshInFlightPaths.insert(path)
         updateRemoteLoadingState()
         defer {
-            remoteRefreshInFlightPaths.remove(path)
-            updateRemoteLoadingState()
+            if isActiveBindingGeneration(bindingGeneration) {
+                remoteRefreshInFlightPaths.remove(path)
+                updateRemoteLoadingState()
+            }
         }
 
         do {
             let entries = try await sftpClient.list(path: path)
+            guard isActiveBindingGeneration(bindingGeneration) else { return }
             let sorted = sortRemoteEntries(entries)
             remoteDirectoryCache[path] = CachedRemoteDirectory(entries: sorted, fetchedAt: Date())
             if remoteDirectoryPath == path {
@@ -1027,6 +1041,7 @@ final class FileTransferViewModel: ObservableObject {
                 remoteLoadErrorMessage = nil
             }
         } catch {
+            guard isActiveBindingGeneration(bindingGeneration) else { return }
             if let cached = remoteDirectoryCache[path], !cached.entries.isEmpty {
                 if remoteDirectoryPath == path {
                     remoteEntries = cached.entries
@@ -1139,5 +1154,9 @@ final class FileTransferViewModel: ObservableObject {
     private func normalizedRemoteBindingKey(_ rawKey: String) -> String {
         let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "__default" : trimmed
+    }
+
+    private func isActiveBindingGeneration(_ bindingGeneration: Int) -> Bool {
+        bindingGeneration == sftpBindingGeneration
     }
 }
