@@ -394,6 +394,81 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func settingsButtonPresentsFinderStyleSheet() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard let settingsButton = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "Settings"
+            }
+        ) else {
+            Issue.record("Could not find sidebar settings button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(settingsButton, kAXPressAction as CFString)
+
+        guard let doneButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "Done"
+            }
+        ) else {
+            Issue.record("Could not find settings sheet Done button.")
+            return
+        }
+
+        #expect(
+            findElement(in: appElement, matching: { title(of: $0) == "Show these items in the sidebar:" }) != nil,
+            "Expected sidebar section to be the default pane."
+        )
+
+        guard let generalTab = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "General"
+            }
+        ) else {
+            Issue.record("Could not find General tab in settings sheet.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(generalTab, kAXPressAction as CFString)
+
+        let switched = waitUntil(timeout: 5, {
+            findElement(in: appElement, matching: { self.title(of: $0) == "Session" }) != nil
+        })
+        #expect(switched, "Clicking General tab should switch the settings pane.")
+
+        _ = AXUIElementPerformAction(doneButton, kAXPressAction as CFString)
+
+        let dismissed = waitUntil(timeout: 5, {
+            findElement(in: appElement, matching: { element in
+                role(of: element) == kAXButtonRole as String && self.title(of: element) == "Done"
+            }) == nil
+        })
+        #expect(dismissed, "Expected settings sheet to dismiss after clicking Done.")
+    }
+
+    @Test
     func doubleClickHostRowCreatesNewSessionAndConnects() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return

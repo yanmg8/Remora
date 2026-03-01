@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var selectedTemplateID: UUID?
     @State private var splitVisibility: NavigationSplitViewVisibility = .all
     @State private var isFilePanelVisible = false
-    @State private var isSettingsAlertPresented = false
+    @State private var isSettingsSheetPresented = false
     @State private var collapsedGroupNames: Set<String> = []
     @State private var isGroupEditorSheetPresented = false
     @State private var groupEditorMode: SidebarGroupEditorMode = .create
@@ -290,8 +290,9 @@ struct ContentView: View {
                 title: "Settings",
                 systemImage: "gearshape"
             ) {
-                isSettingsAlertPresented = true
+                isSettingsSheetPresented = true
             }
+            .accessibilityIdentifier("sidebar-settings")
             .padding(.horizontal, 8)
             .padding(.bottom, 10)
         }
@@ -302,10 +303,8 @@ struct ContentView: View {
                 .frame(width: 1)
         }
         .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
-        .alert("Settings", isPresented: $isSettingsAlertPresented) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Settings page will be added in the next milestone.")
+        .sheet(isPresented: $isSettingsSheetPresented) {
+            RemoraSettingsSheet(isPresented: $isSettingsSheetPresented)
         }
         .confirmationDialog(
             "Export SSH Connections",
