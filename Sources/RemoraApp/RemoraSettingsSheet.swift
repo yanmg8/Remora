@@ -68,28 +68,23 @@ struct RemoraSettingsSheet: View {
             content
         }
         .frame(minWidth: 660, minHeight: 410)
-        .background(VisualStyle.leftSidebarBackground)
+        .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityIdentifier("settings-window")
     }
 
     private var header: some View {
-        VStack(spacing: 8) {
-            Text("Settings")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(VisualStyle.textPrimary)
-                .accessibilityIdentifier("settings-sheet-title")
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
-                .padding(.horizontal, 14)
-
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
                 ForEach(SettingsPane.allCases) { pane in
                     paneButton(pane)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
             .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
         }
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(maxWidth: .infinity)
     }
 
@@ -109,6 +104,7 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .background(VisualStyle.leftSidebarBackground.opacity(0.62))
     }
 
     private func paneButton(_ pane: SettingsPane) -> some View {

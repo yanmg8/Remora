@@ -441,11 +441,6 @@ struct RemoraUIAutomationTests {
         }
 
         #expect(
-            findElement(in: appElement, matching: { self.title(of: $0) == "Settings" }) != nil,
-            "Expected settings sheet title to use Settings."
-        )
-
-        #expect(
             findElement(in: appElement, matching: { title(of: $0) == "Show these items in the sidebar:" }) != nil,
             "Expected sidebar section to be the default pane."
         )

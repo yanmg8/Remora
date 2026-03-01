@@ -92,5 +92,6 @@ struct RemoraAppMain: App {
         }
         .defaultSize(width: 660, height: 410)
         .windowResizability(.contentSize)
+        .windowToolbarStyle(.unified)
     }
 }
