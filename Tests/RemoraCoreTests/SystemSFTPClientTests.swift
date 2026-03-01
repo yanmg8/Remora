@@ -82,9 +82,11 @@ struct SystemSFTPClientTests {
         #expect(entries.count == 2)
         #expect(entries[0].path == "/logs")
         #expect(entries[0].isDirectory)
+        #expect(entries[0].permissions == 0o755)
         #expect(entries[1].path == "/README.txt")
         #expect(entries[1].size == 16)
         #expect(!entries[1].isDirectory)
+        #expect(entries[1].permissions == 0o644)
     }
 
     @Test

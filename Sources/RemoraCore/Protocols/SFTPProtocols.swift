@@ -104,6 +104,7 @@ public struct RemoteFileEntry: Equatable, Sendable {
     public var name: String
     public var path: String
     public var size: Int64
+    public var permissions: UInt16?
     public var isDirectory: Bool
     public var modifiedAt: Date
 
@@ -111,12 +112,14 @@ public struct RemoteFileEntry: Equatable, Sendable {
         name: String,
         path: String,
         size: Int64,
+        permissions: UInt16? = nil,
         isDirectory: Bool,
         modifiedAt: Date = Date()
     ) {
         self.name = name
         self.path = path
         self.size = size
+        self.permissions = permissions
         self.isDirectory = isDirectory
         self.modifiedAt = modifiedAt
     }

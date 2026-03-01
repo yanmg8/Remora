@@ -26,6 +26,14 @@ struct FileManagerPanelView: View {
         }
     }
 
+    private enum RemoteSortColumn: String {
+        case name
+        case permission
+        case date
+        case size
+        case kind
+    }
+
     @ObservedObject var viewModel: FileTransferViewModel
 
     @State private var selectedRemotePaths: Set<String> = []
@@ -49,6 +57,8 @@ struct FileManagerPanelView: View {
     @State private var createRemoteTargetDirectory = "/"
     @State private var createRemoteNameDraft = ""
     @State private var isTransferQueueExpanded = false
+    @State private var remoteSortColumn: RemoteSortColumn = .name
+    @State private var isRemoteSortAscending = true
 
     private var selectedRemoteEntries: [RemoteFileEntry] {
         viewModel.remoteEntries.filter { selectedRemotePaths.contains($0.path) }
@@ -107,6 +117,43 @@ struct FileManagerPanelView: View {
 
     private var hasTransferTasks: Bool {
         !viewModel.transferQueue.isEmpty
+    }
+
+    private var sortedRemoteEntries: [RemoteFileEntry] {
+        viewModel.remoteEntries.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory && !rhs.isDirectory
+            }
+
+            let order: ComparisonResult = switch remoteSortColumn {
+            case .name:
+                lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+            case .permission:
+                permissionString(for: lhs).localizedCompare(permissionString(for: rhs))
+            case .date:
+                if lhs.modifiedAt == rhs.modifiedAt {
+                    .orderedSame
+                } else {
+                    lhs.modifiedAt < rhs.modifiedAt ? .orderedAscending : .orderedDescending
+                }
+            case .size:
+                if lhs.size == rhs.size {
+                    .orderedSame
+                } else {
+                    lhs.size < rhs.size ? .orderedAscending : .orderedDescending
+                }
+            case .kind:
+                kindString(for: lhs).localizedCaseInsensitiveCompare(kindString(for: rhs))
+            }
+
+            if order == .orderedSame {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            if isRemoteSortAscending {
+                return order == .orderedAscending
+            }
+            return order == .orderedDescending
+        }
     }
 
     var body: some View {
@@ -234,23 +281,13 @@ struct FileManagerPanelView: View {
     private var remotePanel: some View {
         VStack(alignment: .leading, spacing: 6) {
             remoteToolbar
+            remoteListHeader
 
             ScrollViewReader { proxy in
                 List {
-                    ForEach(viewModel.remoteEntries, id: \.path) { entry in
+                    ForEach(sortedRemoteEntries, id: \.path) { entry in
                         let isSelected = selectedRemotePaths.contains(entry.path)
-                        HStack {
-                            Image(systemName: entry.isDirectory ? "folder" : "doc")
-                            Text(entry.name)
-                                .lineLimit(1)
-                                .foregroundStyle(VisualStyle.textPrimary)
-                            Spacer()
-                            if !entry.isDirectory {
-                                Text(ByteSizeFormatter.format(entry.size))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(VisualStyle.textSecondary)
-                            }
-                        }
+                        remoteListRow(entry)
                         .padding(.vertical, 3)
                         .padding(.horizontal, 4)
                         .background(
@@ -286,7 +323,7 @@ struct FileManagerPanelView: View {
                     }
                 }
                 .onChange(of: viewModel.remoteDirectoryPath) {
-                    guard let firstPath = viewModel.remoteEntries.first?.path else {
+                    guard let firstPath = sortedRemoteEntries.first?.path else {
                         return
                     }
                     DispatchQueue.main.async {
@@ -322,7 +359,7 @@ struct FileManagerPanelView: View {
                         )
                         .padding(16)
                         .accessibilityIdentifier("file-manager-remote-loading")
-                    } else if viewModel.remoteEntries.isEmpty,
+                    } else if sortedRemoteEntries.isEmpty,
                               let message = viewModel.remoteLoadErrorMessage,
                               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     {
@@ -349,6 +386,116 @@ struct FileManagerPanelView: View {
                 }
             }
         }
+    }
+
+    private var remoteListHeader: some View {
+        HStack(spacing: 10) {
+            sortHeaderButton("Name", column: .name)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            sortHeaderButton("Permission", column: .permission)
+                .frame(width: 120, alignment: .leading)
+            sortHeaderButton("Date", column: .date)
+                .frame(width: 170, alignment: .leading)
+            sortHeaderButton("Size", column: .size)
+                .frame(width: 90, alignment: .trailing)
+            sortHeaderButton("Kind", column: .kind)
+                .frame(width: 90, alignment: .leading)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(VisualStyle.textSecondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 2)
+    }
+
+    private func sortHeaderButton(_ title: String, column: RemoteSortColumn) -> some View {
+        Button {
+            if remoteSortColumn == column {
+                isRemoteSortAscending.toggle()
+            } else {
+                remoteSortColumn = column
+                isRemoteSortAscending = true
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                    .lineLimit(1)
+                if remoteSortColumn == column {
+                    Image(systemName: isRemoteSortAscending ? "chevron.up" : "chevron.down")
+                        .font(.caption2.weight(.semibold))
+                }
+            }
+            .foregroundStyle(VisualStyle.textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func remoteListRow(_ entry: RemoteFileEntry) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: entry.isDirectory ? "folder" : "doc")
+                Text(entry.name)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(VisualStyle.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(permissionString(for: entry))
+                .font(.caption.monospaced())
+                .foregroundStyle(VisualStyle.textSecondary)
+                .lineLimit(1)
+                .frame(width: 120, alignment: .leading)
+
+            Text(Self.remoteDateFormatter.string(from: entry.modifiedAt))
+                .font(.caption.monospaced())
+                .foregroundStyle(VisualStyle.textSecondary)
+                .lineLimit(1)
+                .frame(width: 170, alignment: .leading)
+
+            Text(ByteSizeFormatter.format(entry.size))
+                .font(.caption.monospaced())
+                .foregroundStyle(VisualStyle.textSecondary)
+                .lineLimit(1)
+                .frame(width: 90, alignment: .trailing)
+
+            Text(kindString(for: entry))
+                .font(.caption)
+                .foregroundStyle(VisualStyle.textSecondary)
+                .lineLimit(1)
+                .frame(width: 90, alignment: .leading)
+        }
+    }
+
+    private static let remoteDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    private func permissionString(for entry: RemoteFileEntry) -> String {
+        guard let permission = entry.permissions else {
+            return entry.isDirectory ? "d---------" : "----------"
+        }
+        return permissionString(mode: permission, isDirectory: entry.isDirectory)
+    }
+
+    private func permissionString(mode: UInt16, isDirectory: Bool) -> String {
+        let prefix = isDirectory ? "d" : "-"
+        let owner = permissionTriad((mode >> 6) & 0b111)
+        let group = permissionTriad((mode >> 3) & 0b111)
+        let other = permissionTriad(mode & 0b111)
+        return "\(prefix)\(owner)\(group)\(other)"
+    }
+
+    private func permissionTriad(_ value: UInt16) -> String {
+        let readable = (value & 0b100) != 0 ? "r" : "-"
+        let writable = (value & 0b010) != 0 ? "w" : "-"
+        let executable = (value & 0b001) != 0 ? "x" : "-"
+        return "\(readable)\(writable)\(executable)"
+    }
+
+    private func kindString(for entry: RemoteFileEntry) -> String {
+        entry.isDirectory ? "Directory" : "File"
     }
 
     private var remoteToolbar: some View {
