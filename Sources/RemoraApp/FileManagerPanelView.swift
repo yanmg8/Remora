@@ -43,6 +43,7 @@ struct FileManagerPanelView: View {
     @State private var remotePathDraft = "/"
     @State private var lastTappedRemotePath: String?
     @State private var lastRemoteTapAt = Date.distantPast
+    @State private var selectionAnchorRemotePath: String?
     @State private var isMoveSheetPresented = false
     @State private var moveTargetPath = "/"
     @State private var moveSourcePaths: [String] = []
@@ -166,7 +167,7 @@ struct FileManagerPanelView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Button {
-                            viewModel.performContextAction(.download(paths: Array(selectedRemotePaths)))
+                            viewModel.performContextAction(.download(paths: selectedRemoteFiles.map(\.path)))
                         } label: {
                             Label("Download", systemImage: "arrow.down.circle.fill")
                         }
@@ -178,6 +179,7 @@ struct FileManagerPanelView: View {
                         Button(role: .destructive) {
                             viewModel.performContextAction(.delete(paths: Array(selectedRemotePaths)))
                             selectedRemotePaths.removeAll()
+                            selectionAnchorRemotePath = nil
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -239,6 +241,7 @@ struct FileManagerPanelView: View {
         .onChange(of: viewModel.remoteDirectoryPath) {
             remotePathDraft = viewModel.remoteDirectoryPath
             selectedRemotePaths.removeAll()
+            selectionAnchorRemotePath = nil
         }
         .sheet(isPresented: $isMoveSheetPresented) {
             moveSheet
@@ -290,24 +293,22 @@ struct FileManagerPanelView: View {
 
             ScrollViewReader { proxy in
                 List {
-                    ForEach(sortedRemoteEntries, id: \.path) { entry in
+                    ForEach(Array(sortedRemoteEntries.enumerated()), id: \.element.path) { rowIndex, entry in
                         let isSelected = selectedRemotePaths.contains(entry.path)
                         remoteListRow(entry)
-                        .padding(.vertical, 3)
-                        .padding(.horizontal, 4)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            Rectangle()
                                 .fill(
                                     isSelected
-                                        ? VisualStyle.leftSelectedBackground
-                                        : (hoveredRemotePath == entry.path ? VisualStyle.leftHoverBackground : Color.clear)
+                                        ? Color.accentColor
+                                        : rowBackgroundColor(rowIndex: rowIndex, isHovered: hoveredRemotePath == entry.path)
                                 )
                         )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(isSelected ? VisualStyle.borderStrong : Color.clear, lineWidth: 1)
-                        )
                         .contentShape(Rectangle())
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                         .listRowBackground(Color.clear)
                         .tag(entry.path)
                         .accessibilityIdentifier(remoteRowIdentifier(entry.path))
@@ -397,19 +398,28 @@ struct FileManagerPanelView: View {
         HStack(spacing: 10) {
             sortHeaderButton("Name", column: .name)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+                .frame(height: 14)
             sortHeaderButton("Permission", column: .permission)
                 .frame(width: 120, alignment: .leading)
+            Divider()
+                .frame(height: 14)
             sortHeaderButton("Date", column: .date)
                 .frame(width: 170, alignment: .leading)
+            Divider()
+                .frame(height: 14)
             sortHeaderButton("Size", column: .size)
                 .frame(width: 90, alignment: .trailing)
+            Divider()
+                .frame(height: 14)
             sortHeaderButton("Kind", column: .kind)
                 .frame(width: 90, alignment: .leading)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(VisualStyle.textSecondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 2)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private func sortHeaderButton(_ title: String, column: RemoteSortColumn) -> some View {
@@ -438,33 +448,35 @@ struct FileManagerPanelView: View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: entry.isDirectory ? "folder" : "doc")
+                    .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 Text(entry.name)
                     .lineLimit(1)
             }
-            .foregroundStyle(VisualStyle.textPrimary)
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(remotePrimaryTextColor(for: entry.path))
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(permissionString(for: entry))
-                .font(.caption.monospaced())
-                .foregroundStyle(VisualStyle.textSecondary)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
                 .frame(width: 120, alignment: .leading)
 
             Text(Self.remoteDateFormatter.string(from: entry.modifiedAt))
-                .font(.caption.monospaced())
-                .foregroundStyle(VisualStyle.textSecondary)
+                .font(.system(size: 13))
+                .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
                 .frame(width: 170, alignment: .leading)
 
             Text(ByteSizeFormatter.format(entry.size))
-                .font(.caption.monospaced())
-                .foregroundStyle(VisualStyle.textSecondary)
+                .font(.system(size: 13))
+                .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
                 .frame(width: 90, alignment: .trailing)
 
             Text(kindString(for: entry))
-                .font(.caption)
-                .foregroundStyle(VisualStyle.textSecondary)
+                .font(.system(size: 13))
+                .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
                 .frame(width: 90, alignment: .leading)
         }
@@ -472,8 +484,9 @@ struct FileManagerPanelView: View {
 
     private static let remoteDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.doesRelativeDateFormatting = true
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
         return formatter
     }()
 
@@ -500,7 +513,7 @@ struct FileManagerPanelView: View {
     }
 
     private func kindString(for entry: RemoteFileEntry) -> String {
-        entry.isDirectory ? "Directory" : "File"
+        entry.isDirectory ? "Folder" : "File"
     }
 
     private func cachedRemoteAttributes(for path: String) -> RemoteFileAttributes? {
@@ -766,6 +779,9 @@ struct FileManagerPanelView: View {
         Button("Delete", role: .destructive) {
             viewModel.performContextAction(.delete(paths: [entry.path]))
             selectedRemotePaths.remove(entry.path)
+            if selectionAnchorRemotePath == entry.path {
+                selectionAnchorRemotePath = nil
+            }
         }
 
         Button("Rename") {
@@ -900,15 +916,17 @@ struct FileManagerPanelView: View {
     }
 
     private func handleRemoteRowTap(_ entry: RemoteFileEntry) {
-        if NSEvent.modifierFlags.contains(.command) {
-            if selectedRemotePaths.contains(entry.path) {
-                selectedRemotePaths.remove(entry.path)
-            } else {
-                selectedRemotePaths.insert(entry.path)
-            }
-        } else {
-            selectedRemotePaths = [entry.path]
-        }
+        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+        let orderedPaths = sortedRemoteEntries.map(\.path)
+        let result = RemoteListSelection.applyClick(
+            currentSelection: selectedRemotePaths,
+            anchorPath: selectionAnchorRemotePath,
+            orderedPaths: orderedPaths,
+            clickedPath: entry.path,
+            modifiers: modifiers
+        )
+        selectedRemotePaths = result.selectedPaths
+        selectionAnchorRemotePath = result.anchorPath
 
         let now = Date()
         if entry.isDirectory,
@@ -917,6 +935,7 @@ struct FileManagerPanelView: View {
         {
             viewModel.openRemote(entry)
             selectedRemotePaths.removeAll()
+            selectionAnchorRemotePath = nil
             lastTappedRemotePath = nil
             lastRemoteTapAt = .distantPast
             return
@@ -929,11 +948,13 @@ struct FileManagerPanelView: View {
     private func jumpToRemotePath() {
         viewModel.navigateRemote(to: remotePathDraft)
         selectedRemotePaths.removeAll()
+        selectionAnchorRemotePath = nil
     }
 
     private func navigateToRoot() {
         viewModel.navigateRemote(to: "/")
         selectedRemotePaths.removeAll()
+        selectionAnchorRemotePath = nil
     }
 
     private func beginRename(path: String) {
@@ -967,6 +988,7 @@ struct FileManagerPanelView: View {
             viewModel.createRemoteDirectory(named: trimmedName, in: createRemoteTargetDirectory)
         }
         selectedRemotePaths.removeAll()
+        selectionAnchorRemotePath = nil
         isCreateRemoteSheetPresented = false
     }
 
@@ -1117,6 +1139,7 @@ struct FileManagerPanelView: View {
                     )
                     moveSourcePaths.removeAll()
                     selectedRemotePaths.removeAll()
+                    selectionAnchorRemotePath = nil
                     isMoveSheetPresented = false
                 }
                 .buttonStyle(.borderedProminent)
@@ -1124,6 +1147,25 @@ struct FileManagerPanelView: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+
+    private func rowBackgroundColor(rowIndex: Int, isHovered: Bool) -> Color {
+        if isHovered {
+            return Color(nsColor: NSColor.alternatingContentBackgroundColors.first ?? .controlBackgroundColor)
+                .opacity(0.9)
+        }
+        let stripe = rowIndex.isMultiple(of: 2)
+            ? NSColor.white
+            : NSColor.alternatingContentBackgroundColors.first ?? .controlBackgroundColor
+        return Color(nsColor: stripe)
+    }
+
+    private func remotePrimaryTextColor(for path: String) -> Color {
+        selectedRemotePaths.contains(path) ? Color.white : VisualStyle.textPrimary
+    }
+
+    private func remoteSecondaryTextColor(for path: String) -> Color {
+        selectedRemotePaths.contains(path) ? Color.white.opacity(0.8) : VisualStyle.textSecondary
     }
 
     private func remoteRowIdentifier(_ path: String) -> String {
