@@ -1320,6 +1320,45 @@ private struct SidebarHostRow: View {
     @State private var isHovering = false
 
     var body: some View {
+        Button(action: onSelect) {
+            rowContent
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("sidebar-host-row-\(host.name)")
+        .onTapGesture(count: 2) {
+            onOpen()
+        }
+        .animation(nil, value: isSelected)
+        .contextMenu {
+            Button(host.favorite ? "Unpin connection" : "Pin connection") {
+                onPin()
+            }
+            Button("Edit connection") {
+                onEdit()
+            }
+            Button("Archive connection") {
+                onArchive()
+            }
+            Divider()
+            Menu("Copy") {
+                Button("Copy connection info") {
+                    onCopyConnectionInfo()
+                }
+                Button("Copy address") {
+                    onCopyAddress()
+                }
+                Button("Copy SSH command") {
+                    onCopySSHCommand()
+                }
+            }
+            Divider()
+            Button("Delete connection", role: .destructive) {
+                onDelete()
+            }
+        }
+    }
+
+    private var rowContent: some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: host.favorite ? "star.fill" : "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
@@ -1382,39 +1421,6 @@ private struct SidebarHostRow: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            onOpen()
-        }
-        .onTapGesture {
-            onSelect()
-        }
-        .contextMenu {
-            Button(host.favorite ? "Unpin connection" : "Pin connection") {
-                onPin()
-            }
-            Button("Edit connection") {
-                onEdit()
-            }
-            Button("Archive connection") {
-                onArchive()
-            }
-            Divider()
-            Menu("Copy") {
-                Button("Copy connection info") {
-                    onCopyConnectionInfo()
-                }
-                Button("Copy address") {
-                    onCopyAddress()
-                }
-                Button("Copy SSH command") {
-                    onCopySSHCommand()
-                }
-            }
-            Divider()
-            Button("Delete connection", role: .destructive) {
-                onDelete()
-            }
-        }
     }
 
     private var backgroundColor: Color {

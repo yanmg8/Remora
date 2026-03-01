@@ -288,6 +288,7 @@ struct RemoraUIAutomationTests {
             .activate()
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
+        let hostIdentifier = sidebarHostRowIdentifier(for: "prod-api")
 
         guard let groupHeaderButton = waitForElement(
             in: appElement,
@@ -301,21 +302,27 @@ struct RemoraUIAutomationTests {
         }
 
         let hostVisibleInitially = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { title(of: $0) == "prod-api" }) != nil
+            findElement(in: appElement, matching: { element in
+                self.identifier(of: element) == hostIdentifier || self.isSidebarHostRow(element, named: "prod-api")
+            }) != nil
         })
         #expect(hostVisibleInitially, "Expected prod-api row to be visible before collapsing group.")
 
         _ = AXUIElementPerformAction(groupHeaderButton, kAXPressAction as CFString)
 
         let hostHiddenAfterCollapse = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { title(of: $0) == "prod-api" }) == nil
+            findElement(in: appElement, matching: { element in
+                self.identifier(of: element) == hostIdentifier || self.isSidebarHostRow(element, named: "prod-api")
+            }) == nil
         })
         #expect(hostHiddenAfterCollapse, "Expected prod-api row to be hidden after collapsing group.")
 
         _ = AXUIElementPerformAction(groupHeaderButton, kAXPressAction as CFString)
 
         let hostVisibleAfterExpand = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { title(of: $0) == "prod-api" }) != nil
+            findElement(in: appElement, matching: { element in
+                self.identifier(of: element) == hostIdentifier || self.isSidebarHostRow(element, named: "prod-api")
+            }) != nil
         })
         #expect(hostVisibleAfterExpand, "Expected prod-api row to be visible after expanding group.")
     }
@@ -519,7 +526,8 @@ struct RemoraUIAutomationTests {
             in: appElement,
             timeout: 8,
             matching: { element in
-                role(of: element) == kAXStaticTextRole as String && title(of: element) == "prod-api"
+                identifier(of: element) == sidebarHostRowIdentifier(for: "prod-api")
+                    || isSidebarHostRow(element, named: "prod-api")
             }
         ) else {
             Issue.record("Could not find prod-api row.")
@@ -564,7 +572,8 @@ struct RemoraUIAutomationTests {
             in: appElement,
             timeout: 8,
             matching: { element in
-                role(of: element) == kAXStaticTextRole as String && title(of: element) == "prod-api"
+                identifier(of: element) == sidebarHostRowIdentifier(for: "prod-api")
+                    || isSidebarHostRow(element, named: "prod-api")
             }
         ) else {
             Issue.record("Could not find prod-api row.")
@@ -1538,13 +1547,24 @@ struct RemoraUIAutomationTests {
             in: appElement,
             timeout: 3,
             matching: { element in
-                role(of: element) == kAXStaticTextRole as String && title(of: element) == hostName
+                identifier(of: element) == sidebarHostRowIdentifier(for: hostName)
+                    || isSidebarHostRow(element, named: hostName)
             }
         ), let hostFrame = frame(of: hostRow) else {
             return false
         }
         doubleClick(point: CGPoint(x: hostFrame.midX, y: hostFrame.midY))
         return true
+    }
+
+    private func isSidebarHostRow(_ element: AXUIElement, named hostName: String) -> Bool {
+        guard title(of: element) == hostName else { return false }
+        let elementRole = role(of: element)
+        return elementRole == kAXStaticTextRole as String || elementRole == kAXButtonRole as String
+    }
+
+    private func sidebarHostRowIdentifier(for hostName: String) -> String {
+        "sidebar-host-row-\(hostName)"
     }
 
     private func openFirstSidebarHost(in appElement: AXUIElement) -> Bool {
