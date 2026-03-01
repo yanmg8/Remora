@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var renameSessionID: UUID?
     @State private var renameSessionDraft = ""
     @State private var fileManagerSFTPBindingKey = "disconnected"
+    @State private var fileManagerSFTPBindingRetryTask: Task<Void, Never>?
 
     private var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
@@ -116,18 +117,18 @@ struct ContentView: View {
                 firstPane.runtime.connectLocalShell()
             }
             directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding()
+            syncFileManagerSFTPBinding(remainingRetries: 120)
         }
         .onChange(of: selectedHostID) {
             selectedTemplateID = availableTemplates.first?.id
         }
         .onChange(of: workspace.activeTabID) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding()
+            syncFileManagerSFTPBinding(remainingRetries: 600)
         }
         .onChange(of: workspace.activePaneByTab) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding()
+            syncFileManagerSFTPBinding(remainingRetries: 600)
         }
         .onReceive(activeRuntimeSFTPStatePublisher) { _ in
             syncFileManagerSFTPBinding()
@@ -1046,7 +1047,10 @@ struct ContentView: View {
         workspace.disconnectActivePane()
     }
 
-    private func syncFileManagerSFTPBinding() {
+    private func syncFileManagerSFTPBinding(remainingRetries: Int = 0) {
+        fileManagerSFTPBindingRetryTask?.cancel()
+        fileManagerSFTPBindingRetryTask = nil
+
         guard let activeTabID = workspace.activeTabID,
               let activePane = workspace.activePane
         else {
@@ -1071,11 +1075,22 @@ struct ContentView: View {
             return
         }
 
+        // Keep current binding while SSH runtime is transitioning, then retry binding.
+        if runtime.connectionMode == .ssh,
+           runtime.connectionState == "Connecting"
+            || runtime.connectionState.hasPrefix("Waiting")
+            || runtime.connectionState.hasPrefix("Connected")
+        {
+            scheduleFileManagerSFTPBindingRetry(remainingRetries: remainingRetries)
+            return
+        }
+
         let disconnectedBindingKey = Self.fileManagerDisconnectedBindingKey(
             tabID: activeTabID,
             paneID: activePane.id
         )
         bindDisconnectedSFTPIfNeeded(bindingKey: disconnectedBindingKey)
+        scheduleFileManagerSFTPBindingRetry(remainingRetries: remainingRetries)
     }
 
     private func bindDisconnectedSFTPIfNeeded(bindingKey: String) {
@@ -1086,6 +1101,18 @@ struct ContentView: View {
             bindingKey: bindingKey,
             initialRemoteDirectory: "/"
         )
+    }
+
+    private func scheduleFileManagerSFTPBindingRetry(remainingRetries: Int) {
+        guard remainingRetries > 0 else { return }
+        fileManagerSFTPBindingRetryTask?.cancel()
+        fileManagerSFTPBindingRetryTask = Task {
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                syncFileManagerSFTPBinding(remainingRetries: remainingRetries - 1)
+            }
+        }
     }
 
     private static func sftpHostSignature(for host: RemoraCore.Host) -> String {
