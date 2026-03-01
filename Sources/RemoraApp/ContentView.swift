@@ -1320,14 +1320,16 @@ private struct SidebarHostRow: View {
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: onSelect) {
+        Button {
+            onSelect()
+            if NSApp.currentEvent?.clickCount == 2 {
+                onOpen()
+            }
+        } label: {
             rowContent
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar-host-row-\(host.name)")
-        .onTapGesture(count: 2) {
-            onOpen()
-        }
         .animation(nil, value: isSelected)
         .contextMenu {
             Button(host.favorite ? "Unpin connection" : "Pin connection") {
