@@ -560,9 +560,7 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -672,9 +670,7 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -757,9 +753,7 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -876,9 +870,7 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -962,9 +954,7 @@ struct RemoraUIAutomationTests {
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
         let expectedUser = NSUserName()
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -1049,9 +1039,7 @@ struct RemoraUIAutomationTests {
             .activate()
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected terminal connection to be established.")
         guard connected else { return }
 
@@ -1160,9 +1148,7 @@ struct RemoraUIAutomationTests {
             .activate()
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
-        let connected = waitUntil(timeout: 8, {
-            hasConnectedStatus(in: appElement)
-        })
+        let connected = ensureConnectedSession(in: appElement, timeout: 8)
         #expect(connected, "Expected initial terminal connection.")
         guard connected else { return }
 
@@ -1405,6 +1391,27 @@ struct RemoraUIAutomationTests {
             guard let text = title(of: element) else { return false }
             return text.hasPrefix("Connected (")
         }) != nil
+    }
+
+    private func ensureConnectedSession(in appElement: AXUIElement, timeout: TimeInterval) -> Bool {
+        if hasConnectedStatus(in: appElement) {
+            return true
+        }
+
+        let hasTerminal = findElement(in: appElement, matching: { identifier(of: $0) == "terminal-view" }) != nil
+        if !hasTerminal,
+           let addSessionButton = waitForElement(
+               in: appElement,
+               timeout: 4,
+               matching: { self.identifier(of: $0) == "session-tab-add" }
+           )
+        {
+            _ = AXUIElementPerformAction(addSessionButton, kAXPressAction as CFString)
+        }
+
+        return waitUntil(timeout: timeout) {
+            hasConnectedStatus(in: appElement)
+        }
     }
 
     private func findElements(

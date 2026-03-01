@@ -4,24 +4,40 @@ import Testing
 @MainActor
 struct WorkspaceViewModelTests {
     @Test
+    func startsWithoutDefaultSessionTab() {
+        let workspace = WorkspaceViewModel()
+
+        #expect(workspace.tabs.isEmpty)
+        #expect(workspace.activeTabID == nil)
+        #expect(workspace.activePane == nil)
+    }
+
+    @Test
     func createAndCloseTab() {
         let workspace = WorkspaceViewModel()
 
-        #expect(workspace.tabs.count == 1)
-        let firstTabID = workspace.tabs[0].id
+        #expect(workspace.tabs.count == 0)
 
         workspace.createTab()
-        #expect(workspace.tabs.count == 2)
-        #expect(workspace.activeTabID != firstTabID)
-
-        workspace.closeTab(firstTabID)
         #expect(workspace.tabs.count == 1)
+        guard let createdTabID = workspace.activeTabID else {
+            Issue.record("Expected active tab after creating one.")
+            return
+        }
+
+        workspace.closeTab(createdTabID)
+        #expect(workspace.tabs.count == 0)
+        #expect(workspace.activeTabID == nil)
     }
 
     @Test
     func splitActiveTabCreatesSecondPane() {
         let workspace = WorkspaceViewModel()
-        let tab = workspace.tabs[0]
+        workspace.createTab(connectLocalShell: false)
+        guard let tab = workspace.tabs.first else {
+            Issue.record("Expected tab before split.")
+            return
+        }
 
         workspace.splitActiveTab(orientation: .vertical)
 
@@ -61,7 +77,11 @@ struct WorkspaceViewModelTests {
     @Test
     func closeTabCanRemoveLastTab() {
         let workspace = WorkspaceViewModel()
-        let firstTabID = workspace.tabs[0].id
+        workspace.createTab(connectLocalShell: false)
+        guard let firstTabID = workspace.tabs.first?.id else {
+            Issue.record("Expected tab for close-last test.")
+            return
+        }
 
         workspace.closeTab(firstTabID)
 
@@ -73,6 +93,7 @@ struct WorkspaceViewModelTests {
     func closeAllInactiveTabsKeepsActiveTab() {
         let workspace = WorkspaceViewModel()
 
+        workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
         let secondTabID = workspace.tabs.last?.id
         workspace.createTab(title: "Session 3", connectLocalShell: false)
@@ -95,6 +116,7 @@ struct WorkspaceViewModelTests {
     func closeTabsLeftAndRightUseReferenceTab() {
         let workspace = WorkspaceViewModel()
 
+        workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
         workspace.createTab(title: "Session 3", connectLocalShell: false)
         workspace.createTab(title: "Session 4", connectLocalShell: false)
@@ -120,6 +142,7 @@ struct WorkspaceViewModelTests {
     func closeAllTabsRemovesEverything() {
         let workspace = WorkspaceViewModel()
 
+        workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
         workspace.createTab(title: "Session 3", connectLocalShell: false)
 

@@ -392,11 +392,7 @@ struct ContentView: View {
                 .overlay(VisualStyle.borderSoft)
             Group {
                 if workspace.tabs.isEmpty {
-                    ContentUnavailableView(
-                        "No Session",
-                        systemImage: "rectangle.slash",
-                        description: Text("Create a new session from tab bar.")
-                    )
+                    emptySessionPlaceholder
                 } else {
                     ZStack {
                         ForEach(workspace.tabs) { tab in
@@ -413,6 +409,36 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft)
+    }
+
+    private var emptySessionPlaceholder: some View {
+        ContentUnavailableView {
+            Label("No Session Open", systemImage: "rectangle.stack.badge.plus")
+        } description: {
+            Text("Create a local session or open the selected SSH host.")
+        } actions: {
+            HStack(spacing: 8) {
+                Button("New Local Session") {
+                    workspace.createTab()
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("session-placeholder-new-local")
+
+                Button("Open Selected Host") {
+                    guard let selectedHostID else { return }
+                    openHostInNewSession(selectedHostID)
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedHostID == nil)
+                .accessibilityIdentifier("session-placeholder-open-selected-host")
+            }
+
+            Button("New SSH Connection") {
+                beginCreateHostInPreferredGroup()
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("session-placeholder-new-ssh")
+        }
     }
 
     private var sessionTabBar: some View {
