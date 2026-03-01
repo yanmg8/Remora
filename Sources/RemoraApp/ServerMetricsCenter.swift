@@ -282,10 +282,10 @@ final class ServerMetricsCenter: ObservableObject {
     @Published private(set) var states: [SSHHostMetricsKey: ServerHostMetricsState] = [:]
 
     private let probe = RemoteServerMetricsProbe()
-    private let activeRefreshInterval: TimeInterval
-    private let inactiveRefreshInterval: TimeInterval
+    private var activeRefreshInterval: TimeInterval
+    private var inactiveRefreshInterval: TimeInterval
     private let retentionInterval: TimeInterval
-    private let maxConcurrentFetches: Int
+    private var maxConcurrentFetches: Int
 
     private var trackedHosts: [SSHHostMetricsKey: RemoraCore.Host] = [:]
     private var activeHostKey: SSHHostMetricsKey?
@@ -295,15 +295,18 @@ final class ServerMetricsCenter: ObservableObject {
     private var pollingTask: Task<Void, Never>?
 
     init(
-        activeRefreshInterval: TimeInterval = 4,
-        inactiveRefreshInterval: TimeInterval = 10,
+        activeRefreshInterval: TimeInterval = TimeInterval(AppSettings.defaultServerMetricsActiveRefreshSeconds),
+        inactiveRefreshInterval: TimeInterval = TimeInterval(AppSettings.defaultServerMetricsInactiveRefreshSeconds),
         retentionInterval: TimeInterval = 45,
-        maxConcurrentFetches: Int = 2
+        maxConcurrentFetches: Int = AppSettings.defaultServerMetricsMaxConcurrentFetches
     ) {
-        self.activeRefreshInterval = activeRefreshInterval
-        self.inactiveRefreshInterval = inactiveRefreshInterval
+        let normalizedActive = TimeInterval(AppSettings.clampedServerMetricsActiveRefreshSeconds(Int(activeRefreshInterval.rounded())))
+        let normalizedInactiveCandidate = TimeInterval(AppSettings.clampedServerMetricsInactiveRefreshSeconds(Int(inactiveRefreshInterval.rounded())))
+        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
+        self.activeRefreshInterval = normalizedActive
+        self.inactiveRefreshInterval = normalizedInactive
         self.retentionInterval = retentionInterval
-        self.maxConcurrentFetches = max(1, maxConcurrentFetches)
+        self.maxConcurrentFetches = AppSettings.clampedServerMetricsMaxConcurrentFetches(maxConcurrentFetches)
         startPollingLoop()
     }
 
@@ -328,6 +331,26 @@ final class ServerMetricsCenter: ObservableObject {
     func state(for host: RemoraCore.Host?) -> ServerHostMetricsState? {
         guard let host else { return nil }
         return states[SSHHostMetricsKey(host: host)]
+    }
+
+    func configure(
+        activeRefreshInterval: TimeInterval,
+        inactiveRefreshInterval: TimeInterval,
+        maxConcurrentFetches: Int
+    ) {
+        let normalizedActive = TimeInterval(
+            AppSettings.clampedServerMetricsActiveRefreshSeconds(Int(activeRefreshInterval.rounded()))
+        )
+        let normalizedInactiveCandidate = TimeInterval(
+            AppSettings.clampedServerMetricsInactiveRefreshSeconds(Int(inactiveRefreshInterval.rounded()))
+        )
+        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
+        let normalizedConcurrent = AppSettings.clampedServerMetricsMaxConcurrentFetches(maxConcurrentFetches)
+
+        self.activeRefreshInterval = normalizedActive
+        self.inactiveRefreshInterval = normalizedInactive
+        self.maxConcurrentFetches = normalizedConcurrent
+        scheduleDueFetches()
     }
 
     private func startPollingLoop() {

@@ -2,6 +2,13 @@ import Foundation
 
 enum AppSettings {
     static let downloadDirectoryPathKey = "settings.fileManager.downloadDirectoryPath"
+    static let serverMetricsActiveRefreshSecondsKey = "settings.metrics.activeRefreshSeconds"
+    static let serverMetricsInactiveRefreshSecondsKey = "settings.metrics.inactiveRefreshSeconds"
+    static let serverMetricsMaxConcurrentFetchesKey = "settings.metrics.maxConcurrentFetches"
+
+    static let defaultServerMetricsActiveRefreshSeconds = 4
+    static let defaultServerMetricsInactiveRefreshSeconds = 10
+    static let defaultServerMetricsMaxConcurrentFetches = 2
 
     static func resolvedDownloadDirectoryURL(
         from rawPath: String?,
@@ -49,6 +56,18 @@ enum AppSettings {
             return false
         }
         return fileManager.isWritableFile(atPath: url.path)
+    }
+
+    static func clampedServerMetricsActiveRefreshSeconds(_ value: Int) -> Int {
+        min(max(value, 2), 30)
+    }
+
+    static func clampedServerMetricsInactiveRefreshSeconds(_ value: Int) -> Int {
+        min(max(value, 4), 90)
+    }
+
+    static func clampedServerMetricsMaxConcurrentFetches(_ value: Int) -> Int {
+        min(max(value, 1), 6)
     }
 }
 

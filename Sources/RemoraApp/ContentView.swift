@@ -51,6 +51,12 @@ struct ContentView: View {
     @State private var renameSessionDraft = ""
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
+    @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
+    private var serverMetricsActiveRefreshSeconds = AppSettings.defaultServerMetricsActiveRefreshSeconds
+    @AppStorage(AppSettings.serverMetricsInactiveRefreshSecondsKey)
+    private var serverMetricsInactiveRefreshSeconds = AppSettings.defaultServerMetricsInactiveRefreshSeconds
+    @AppStorage(AppSettings.serverMetricsMaxConcurrentFetchesKey)
+    private var serverMetricsMaxConcurrentFetches = AppSettings.defaultServerMetricsMaxConcurrentFetches
     private let serverMetricsTrackingTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var selectedHost: RemoraCore.Host? {
@@ -120,6 +126,7 @@ struct ContentView: View {
                 firstPane.runtime.connectLocalShell()
             }
             directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
+            syncServerMetricsConfiguration()
             syncFileManagerSFTPBinding()
             syncServerMetricsTracking()
         }
@@ -152,6 +159,15 @@ struct ContentView: View {
         }
         .onChange(of: hostCatalog.groups) {
             collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
+        }
+        .onChange(of: serverMetricsActiveRefreshSeconds) {
+            syncServerMetricsConfiguration()
+        }
+        .onChange(of: serverMetricsInactiveRefreshSeconds) {
+            syncServerMetricsConfiguration()
+        }
+        .onChange(of: serverMetricsMaxConcurrentFetches) {
+            syncServerMetricsConfiguration()
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
         .animation(.spring(response: 0.32, dampingFraction: 0.84), value: isFilePanelVisible)
@@ -1095,6 +1111,29 @@ struct ContentView: View {
         }
         let activeHost = workspace.activePane?.runtime.connectedSSHHost
         serverMetricsCenter.updateTrackedHosts(connectedHosts, activeHost: activeHost)
+    }
+
+    private func syncServerMetricsConfiguration() {
+        let normalizedActive = AppSettings.clampedServerMetricsActiveRefreshSeconds(serverMetricsActiveRefreshSeconds)
+        let normalizedInactiveCandidate = AppSettings.clampedServerMetricsInactiveRefreshSeconds(serverMetricsInactiveRefreshSeconds)
+        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
+        let normalizedConcurrent = AppSettings.clampedServerMetricsMaxConcurrentFetches(serverMetricsMaxConcurrentFetches)
+
+        if normalizedActive != serverMetricsActiveRefreshSeconds {
+            serverMetricsActiveRefreshSeconds = normalizedActive
+        }
+        if normalizedInactive != serverMetricsInactiveRefreshSeconds {
+            serverMetricsInactiveRefreshSeconds = normalizedInactive
+        }
+        if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
+            serverMetricsMaxConcurrentFetches = normalizedConcurrent
+        }
+
+        serverMetricsCenter.configure(
+            activeRefreshInterval: TimeInterval(normalizedActive),
+            inactiveRefreshInterval: TimeInterval(normalizedInactive),
+            maxConcurrentFetches: normalizedConcurrent
+        )
     }
 
     private func openServerStatusWindow(for host: RemoraCore.Host, runtime: TerminalRuntime) {

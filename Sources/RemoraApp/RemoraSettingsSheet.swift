@@ -70,6 +70,12 @@ struct RemoraSettingsSheet: View {
     @AppStorage("settings.advanced.preferSFTP") private var preferSFTP = true
     @AppStorage("settings.advanced.showConnectionDiagnostics") private var showConnectionDiagnostics = false
     @AppStorage("settings.advanced.sshConnectTimeout") private var sshConnectTimeout = 10
+    @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
+    private var serverMetricsActiveRefreshSeconds = AppSettings.defaultServerMetricsActiveRefreshSeconds
+    @AppStorage(AppSettings.serverMetricsInactiveRefreshSecondsKey)
+    private var serverMetricsInactiveRefreshSeconds = AppSettings.defaultServerMetricsInactiveRefreshSeconds
+    @AppStorage(AppSettings.serverMetricsMaxConcurrentFetchesKey)
+    private var serverMetricsMaxConcurrentFetches = AppSettings.defaultServerMetricsMaxConcurrentFetches
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,9 +88,19 @@ struct RemoraSettingsSheet: View {
         .accessibilityIdentifier("settings-window")
         .onAppear {
             syncDownloadDirectoryDraftFromStorage()
+            normalizeServerMetricsSettings()
         }
         .onReceive(NotificationCenter.default.publisher(for: .remoraOpenDownloadDirectorySetting)) { _ in
             focusDownloadDirectorySetting()
+        }
+        .onChange(of: serverMetricsActiveRefreshSeconds) {
+            normalizeServerMetricsSettings()
+        }
+        .onChange(of: serverMetricsInactiveRefreshSeconds) {
+            normalizeServerMetricsSettings()
+        }
+        .onChange(of: serverMetricsMaxConcurrentFetches) {
+            normalizeServerMetricsSettings()
         }
     }
 
@@ -311,11 +327,46 @@ struct RemoraSettingsSheet: View {
                     }
                     .frame(width: 120)
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Server metrics sampling")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    HStack(spacing: 12) {
+                        Text("Active tab refresh (seconds)")
+                        Stepper(value: $serverMetricsActiveRefreshSeconds, in: 2...30) {
+                            Text("\(serverMetricsActiveRefreshSeconds)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 120)
+                        .accessibilityIdentifier("settings-metrics-active-refresh")
+                    }
+
+                    HStack(spacing: 12) {
+                        Text("Inactive tab refresh (seconds)")
+                        Stepper(value: $serverMetricsInactiveRefreshSeconds, in: 4...90) {
+                            Text("\(serverMetricsInactiveRefreshSeconds)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 120)
+                        .accessibilityIdentifier("settings-metrics-inactive-refresh")
+                    }
+
+                    HStack(spacing: 12) {
+                        Text("Max concurrent metric fetches")
+                        Stepper(value: $serverMetricsMaxConcurrentFetches, in: 1...6) {
+                            Text("\(serverMetricsMaxConcurrentFetches)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 120)
+                        .accessibilityIdentifier("settings-metrics-max-concurrency")
+                    }
+                }
             }
             .formStyle(.grouped)
             .font(.system(size: 13))
 
-            Text("These options are intended for troubleshooting and larger team setups.")
+            Text("Higher refresh and concurrency improve responsiveness but increase local and remote load.")
                 .font(.system(size: 12))
                 .foregroundStyle(VisualStyle.textSecondary)
         }
@@ -383,6 +434,23 @@ struct RemoraSettingsSheet: View {
         downloadDirectoryHighlight = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             downloadDirectoryHighlight = false
+        }
+    }
+
+    private func normalizeServerMetricsSettings() {
+        let normalizedActive = AppSettings.clampedServerMetricsActiveRefreshSeconds(serverMetricsActiveRefreshSeconds)
+        let normalizedInactiveCandidate = AppSettings.clampedServerMetricsInactiveRefreshSeconds(serverMetricsInactiveRefreshSeconds)
+        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
+        let normalizedConcurrent = AppSettings.clampedServerMetricsMaxConcurrentFetches(serverMetricsMaxConcurrentFetches)
+
+        if normalizedActive != serverMetricsActiveRefreshSeconds {
+            serverMetricsActiveRefreshSeconds = normalizedActive
+        }
+        if normalizedInactive != serverMetricsInactiveRefreshSeconds {
+            serverMetricsInactiveRefreshSeconds = normalizedInactive
+        }
+        if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
+            serverMetricsMaxConcurrentFetches = normalizedConcurrent
         }
     }
 

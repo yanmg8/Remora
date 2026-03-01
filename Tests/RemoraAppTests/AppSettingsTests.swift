@@ -33,4 +33,16 @@ struct AppSettingsTests {
         #expect(resolved.path != invalidPath)
         #expect(AppSettings.isWritableDirectory(resolved))
     }
+
+    @Test
+    func metricsSettingsAreClampedIntoSafeRanges() {
+        #expect(AppSettings.clampedServerMetricsActiveRefreshSeconds(-1) == 2)
+        #expect(AppSettings.clampedServerMetricsActiveRefreshSeconds(100) == 30)
+
+        #expect(AppSettings.clampedServerMetricsInactiveRefreshSeconds(1) == 4)
+        #expect(AppSettings.clampedServerMetricsInactiveRefreshSeconds(999) == 90)
+
+        #expect(AppSettings.clampedServerMetricsMaxConcurrentFetches(0) == 1)
+        #expect(AppSettings.clampedServerMetricsMaxConcurrentFetches(99) == 6)
+    }
 }
