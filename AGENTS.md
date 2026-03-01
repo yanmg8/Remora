@@ -12,3 +12,4 @@
      (plain `swift test` is not sufficient because UI tests are gated by env var).
 4. The app logo source of truth is the repository root file: `logo.png`.
 5. After each completed sub-task, create a git commit immediately (small, focused, and verifiable).
+6. For `SystemSFTPClient` operations that should prefer SFTP and fallback to SSH (e.g., metadata updates), always use the unified helper `executeSFTPPrimaryWithSSHFallback(...)` instead of ad-hoc `do/catch` fallback code.

@@ -174,16 +174,19 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     public func rename(from: String, to: String) async throws {
         let source = normalize(from)
         let destination = normalize(to)
-        do {
-            _ = try await runSFTPBatch(
-                commands: [
-                    "rename \(Self.quoteBatchArgument(source)) \(Self.quoteBatchArgument(destination))",
-                ]
-            )
-        } catch {
-            let command = "mv -- \(Self.quoteShellArgument(source)) \(Self.quoteShellArgument(destination))"
-            try await runSSHCommand(command)
-        }
+        let fallbackCommand = "mv -- \(Self.quoteShellArgument(source)) \(Self.quoteShellArgument(destination))"
+        try await executeSFTPPrimaryWithSSHFallback(
+            sftpOperation: {
+                _ = try await runSFTPBatch(
+                    commands: [
+                        "rename \(Self.quoteBatchArgument(source)) \(Self.quoteBatchArgument(destination))",
+                    ]
+                )
+            },
+            sshFallback: {
+                try await runSSHCommand(fallbackCommand)
+            }
+        )
     }
 
     public func move(from: String, to: String) async throws {
@@ -199,12 +202,15 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public func mkdir(path: String) async throws {
         let normalized = normalize(path)
-        do {
-            _ = try await runSFTPBatch(commands: ["mkdir \(Self.quoteBatchArgument(normalized))"])
-        } catch {
-            let command = "mkdir -p -- \(Self.quoteShellArgument(normalized))"
-            try await runSSHCommand(command)
-        }
+        let fallbackCommand = "mkdir -p -- \(Self.quoteShellArgument(normalized))"
+        try await executeSFTPPrimaryWithSSHFallback(
+            sftpOperation: {
+                _ = try await runSFTPBatch(commands: ["mkdir \(Self.quoteBatchArgument(normalized))"])
+            },
+            sshFallback: {
+                try await runSSHCommand(fallbackCommand)
+            }
+        )
     }
 
     public func remove(path: String) async throws {
@@ -221,55 +227,61 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public func stat(path: String) async throws -> RemoteFileAttributes {
         let normalized = normalize(path)
-        do {
-            let output = try await runSFTPBatch(
-                commands: ["ls -ldn \(Self.quoteBatchArgument(normalized))"],
-                timeout: directoryOperationTimeout
-            )
-            guard let parsed = Self.parseLongListEntries(output).first else {
-                throw SFTPClientError.notFound(normalized)
+        let output = try await executeSFTPPrimaryWithSSHFallback(
+            sftpOperation: {
+                try await runSFTPBatch(
+                    commands: ["ls -ldn \(Self.quoteBatchArgument(normalized))"],
+                    timeout: directoryOperationTimeout
+                )
+            },
+            sshFallback: {
+                let command = "LC_ALL=C ls -ldn -- \(Self.quoteShellArgument(normalized))"
+                return try await runSSHCommandOutput(command, timeout: shellFallbackTimeout)
             }
-            return RemoteFileAttributes(
-                permissions: parsed.permissions,
-                owner: parsed.owner,
-                group: parsed.group,
-                size: parsed.size,
-                modifiedAt: parsed.modifiedAt,
-                isDirectory: parsed.isDirectory
-            )
-        } catch {
-            let command = "LC_ALL=C ls -ldn -- \(Self.quoteShellArgument(normalized))"
-            let output = try await runSSHCommandOutput(command, timeout: shellFallbackTimeout)
-            guard let parsed = Self.parseLongListEntries(output).first else {
-                throw SFTPClientError.notFound(normalized)
-            }
-            return RemoteFileAttributes(
-                permissions: parsed.permissions,
-                owner: parsed.owner,
-                group: parsed.group,
-                size: parsed.size,
-                modifiedAt: parsed.modifiedAt,
-                isDirectory: parsed.isDirectory
-            )
+        )
+        guard let parsed = Self.parseLongListEntries(output).first else {
+            throw SFTPClientError.notFound(normalized)
         }
+        return RemoteFileAttributes(
+            permissions: parsed.permissions,
+            owner: parsed.owner,
+            group: parsed.group,
+            size: parsed.size,
+            modifiedAt: parsed.modifiedAt,
+            isDirectory: parsed.isDirectory
+        )
     }
 
     public func setAttributes(path: String, attributes: RemoteFileAttributes) async throws {
         let normalized = normalize(path)
-        var commands: [String] = []
+        var sftpCommands: [String] = []
+        var sshCommands: [String] = []
 
         if let permissions = attributes.permissions {
-            commands.append("chmod \(String(permissions, radix: 8)) \(Self.quoteBatchArgument(normalized))")
+            let permissionText = String(permissions, radix: 8)
+            sftpCommands.append("chmod \(permissionText) \(Self.quoteBatchArgument(normalized))")
+            sshCommands.append("chmod \(permissionText) -- \(Self.quoteShellArgument(normalized))")
         }
         if let owner = attributes.owner, !owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            commands.append("chown \(Self.quoteBatchArgument(owner)) \(Self.quoteBatchArgument(normalized))")
+            sftpCommands.append("chown \(Self.quoteBatchArgument(owner)) \(Self.quoteBatchArgument(normalized))")
+            sshCommands.append("chown \(Self.quoteShellArgument(owner)) -- \(Self.quoteShellArgument(normalized))")
         }
         if let group = attributes.group, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            commands.append("chgrp \(Self.quoteBatchArgument(group)) \(Self.quoteBatchArgument(normalized))")
+            sftpCommands.append("chgrp \(Self.quoteBatchArgument(group)) \(Self.quoteBatchArgument(normalized))")
+            sshCommands.append("chgrp \(Self.quoteShellArgument(group)) -- \(Self.quoteShellArgument(normalized))")
         }
 
-        if !commands.isEmpty {
-            _ = try await runSFTPBatch(commands: commands)
+        if !sftpCommands.isEmpty {
+            try await executeSFTPPrimaryWithSSHFallback(
+                sftpOperation: {
+                    _ = try await runSFTPBatch(commands: sftpCommands)
+                },
+                sshFallback: {
+                    for command in sshCommands {
+                        try await runSSHCommand(command)
+                    }
+                }
+            )
         }
 
         let gnuFormatter = DateFormatter()
@@ -286,6 +298,17 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let bsdTimestamp = bsdFormatter.string(from: attributes.modifiedAt)
         let touchCommand = "touch -m -d \(Self.quoteShellArgument(gnuTimestamp)) -- \(Self.quoteShellArgument(normalized)) 2>/dev/null || touch -m -t \(bsdTimestamp) -- \(Self.quoteShellArgument(normalized))"
         try await runSSHCommand(touchCommand)
+    }
+
+    private func executeSFTPPrimaryWithSSHFallback<T>(
+        sftpOperation: () async throws -> T,
+        sshFallback: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await sftpOperation()
+        } catch {
+            return try await sshFallback()
+        }
     }
 
     static func makeSFTPArguments(

@@ -4,12 +4,11 @@ import RemoraCore
 @MainActor
 final class RemoteFilePropertiesViewModel: ObservableObject {
     @Published var permissionsText: String = ""
-    @Published var ownerText: String = ""
-    @Published var groupText: String = ""
     @Published var modifiedAt: Date = Date()
     @Published private(set) var isLoading = false
     @Published private(set) var isSaving = false
     @Published var errorMessage: String?
+    @Published var successMessage: String?
 
     @Published private(set) var isDirectory = false
     @Published private(set) var size: Int64 = 0
@@ -23,11 +22,21 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
         self.path = path
         self.fileTransfer = fileTransfer
         self.initialAttributes = initialAttributes
+        if let initialAttributes {
+            apply(attributes: initialAttributes)
+        }
+    }
+
+    var modifiedAtDisplayText: String {
+        Self.modifiedAtFormatter.string(from: modifiedAt)
+    }
+
+    var sizeDisplayText: String {
+        ByteSizeFormatter.format(size)
     }
 
     func load() async {
         if let initialAttributes {
-            apply(attributes: initialAttributes)
             errorMessage = nil
             if !needsRemoteAttributeFetch(for: initialAttributes) {
                 return
@@ -41,6 +50,7 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
             let attrs = try await fileTransfer.loadRemoteAttributes(path: path)
             apply(attributes: attrs)
             errorMessage = nil
+            successMessage = nil
         } catch {
             if initialAttributes == nil {
                 errorMessage = error.localizedDescription
@@ -51,6 +61,7 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
     func save() async {
         isSaving = true
         defer { isSaving = false }
+        successMessage = nil
 
         let trimmedPermissions = permissionsText.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedPermissions: UInt16? = {
@@ -65,8 +76,6 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
 
         let attributes = RemoteFileAttributes(
             permissions: parsedPermissions,
-            owner: ownerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : ownerText,
-            group: groupText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : groupText,
             size: size,
             modifiedAt: modifiedAt,
             isDirectory: isDirectory
@@ -75,6 +84,7 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
         do {
             try await fileTransfer.saveRemoteAttributes(path: path, attributes: attributes)
             errorMessage = nil
+            successMessage = "Saved"
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -82,14 +92,19 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
 
     private func apply(attributes: RemoteFileAttributes) {
         permissionsText = attributes.permissions.map { String($0, radix: 8) } ?? ""
-        ownerText = attributes.owner ?? ""
-        groupText = attributes.group ?? ""
         modifiedAt = attributes.modifiedAt
         isDirectory = attributes.isDirectory
         size = attributes.size
     }
 
     private func needsRemoteAttributeFetch(for attributes: RemoteFileAttributes) -> Bool {
-        attributes.permissions == nil || attributes.owner == nil || attributes.group == nil
+        attributes.permissions == nil
     }
+
+    private static let modifiedAtFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
 }

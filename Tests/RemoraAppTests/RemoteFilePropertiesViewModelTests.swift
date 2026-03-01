@@ -27,8 +27,6 @@ struct RemoteFilePropertiesViewModelTests {
         await vm.load()
 
         #expect(vm.permissionsText == "640")
-        #expect(vm.ownerText == "root")
-        #expect(vm.groupText == "root")
         #expect(vm.size == 321)
         #expect(vm.modifiedAt == expectedDate)
         #expect(await countingClient.statCallCount() == 0)
@@ -39,7 +37,7 @@ struct RemoteFilePropertiesViewModelTests {
         let countingClient = StatCountingMockSFTPClient()
         let fileTransfer = FileTransferViewModel(sftpClient: countingClient, remoteDirectoryPath: "/")
         let initial = RemoteFileAttributes(
-            permissions: 0o644,
+            permissions: nil,
             owner: nil,
             group: nil,
             size: 1,
@@ -54,8 +52,7 @@ struct RemoteFilePropertiesViewModelTests {
 
         await vm.load()
 
-        #expect(vm.ownerText == "mock")
-        #expect(vm.groupText == "mock")
+        #expect(vm.permissionsText == "644")
         #expect(await countingClient.statCallCount() == 1)
     }
 }

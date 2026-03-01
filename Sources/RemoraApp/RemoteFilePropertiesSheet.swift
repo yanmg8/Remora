@@ -33,25 +33,21 @@ struct RemoteFilePropertiesSheet: View {
                         .font(.body.monospaced())
                 }
                 GridRow {
-                    Text("Owner")
-                    TextField("owner", text: $viewModel.ownerText)
-                        .textFieldStyle(.roundedBorder)
-                }
-                GridRow {
-                    Text("Group")
-                    TextField("group", text: $viewModel.groupText)
-                        .textFieldStyle(.roundedBorder)
-                }
-                GridRow {
-                    Text("Modified")
-                    DatePicker("", selection: $viewModel.modifiedAt)
-                        .labelsHidden()
+                    Text("Date")
+                    Text(viewModel.modifiedAtDisplayText)
+                        .font(.caption.monospaced())
                 }
                 GridRow {
                     Text("Size")
-                    Text("\(viewModel.size)")
+                    Text(viewModel.sizeDisplayText)
                         .font(.caption.monospaced())
                 }
+            }
+
+            if let successMessage = viewModel.successMessage {
+                Text(successMessage)
+                    .font(.caption)
+                    .foregroundStyle(.green)
             }
 
             if let errorMessage = viewModel.errorMessage {
