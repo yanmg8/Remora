@@ -589,6 +589,26 @@ struct ContentView: View {
         hostEditorDraft = SidebarHostEditorDraft(host: host)
         hostEditorTestState = .idle
         isHostEditorSheetPresented = true
+
+        guard host.auth.method == .password,
+              let passwordReference = host.auth.passwordReference?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !passwordReference.isEmpty
+        else {
+            return
+        }
+
+        Task {
+            let originalPassword = await CredentialStore().secret(for: passwordReference) ?? ""
+            await MainActor.run {
+                guard case .edit(let editingHostID) = hostEditorMode,
+                      editingHostID == hostID,
+                      isHostEditorSheetPresented
+                else {
+                    return
+                }
+                hostEditorDraft.password = originalPassword
+            }
+        }
     }
 
     @MainActor
@@ -1531,6 +1551,7 @@ private struct SidebarHostEditorSheet: View {
     let onCancel: () -> Void
     let onTestConnection: () -> Void
     let onConfirm: () -> Void
+    @State private var isPasswordVisible = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1563,7 +1584,27 @@ private struct SidebarHostEditorSheet: View {
                 }
 
                 if draft.authMethod == .password {
-                    SecureField("Password", text: $draft.password)
+                    HStack(spacing: 8) {
+                        Group {
+                            if isPasswordVisible {
+                                TextField("Password", text: $draft.password)
+                            } else {
+                                SecureField("Password", text: $draft.password)
+                            }
+                        }
+
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(VisualStyle.textSecondary)
+                                .frame(width: 18, height: 18)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                        .help(isPasswordVisible ? "Hide password" : "Show password")
+                    }
                     Toggle("Save password", isOn: $draft.savePassword)
                         .toggleStyle(.checkbox)
                 }
@@ -1596,6 +1637,11 @@ private struct SidebarHostEditorSheet: View {
         }
         .padding(16)
         .frame(width: 420)
+        .onChange(of: draft.authMethod) {
+            if draft.authMethod != .password {
+                isPasswordVisible = false
+            }
+        }
     }
 }
 
