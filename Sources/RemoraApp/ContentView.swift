@@ -12,6 +12,7 @@ private struct ActiveRuntimeSFTPState: Equatable {
 }
 
 struct ContentView: View {
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var workspace = WorkspaceViewModel()
     @StateObject private var hostCatalog = HostCatalogStore()
     @StateObject private var fileTransfer = FileTransferViewModel()
@@ -22,7 +23,6 @@ struct ContentView: View {
     @State private var selectedTemplateID: UUID?
     @State private var splitVisibility: NavigationSplitViewVisibility = .all
     @State private var isFilePanelVisible = false
-    @State private var isSettingsSheetPresented = false
     @State private var collapsedGroupNames: Set<String> = []
     @State private var isGroupEditorSheetPresented = false
     @State private var groupEditorMode: SidebarGroupEditorMode = .create
@@ -290,7 +290,7 @@ struct ContentView: View {
                 title: "Settings",
                 systemImage: "gearshape"
             ) {
-                isSettingsSheetPresented = true
+                openWindow(id: "settings")
             }
             .accessibilityIdentifier("sidebar-settings")
             .padding(.horizontal, 8)
@@ -303,9 +303,6 @@ struct ContentView: View {
                 .frame(width: 1)
         }
         .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
-        .sheet(isPresented: $isSettingsSheetPresented) {
-            RemoraSettingsSheet(isPresented: $isSettingsSheetPresented)
-        }
         .confirmationDialog(
             "Export SSH Connections",
             isPresented: $isExportFormatDialogPresented,

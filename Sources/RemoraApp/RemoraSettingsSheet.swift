@@ -40,8 +40,6 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
 }
 
 struct RemoraSettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var isPresented: Bool
     @State private var selectedPane: SettingsPane = .sidebar
 
     @AppStorage("settings.general.openSessionOnLaunch") private var openSessionOnLaunch = true
@@ -68,13 +66,10 @@ struct RemoraSettingsSheet: View {
             header
             Divider()
             content
-            Divider()
-            footer
         }
-        .frame(width: 660, height: 410)
+        .frame(minWidth: 660, minHeight: 410)
         .background(VisualStyle.leftSidebarBackground)
-        .accessibilityIdentifier("settings-sheet")
-        .onExitCommand(perform: closeSheet)
+        .accessibilityIdentifier("settings-window")
     }
 
     private var header: some View {
@@ -84,17 +79,6 @@ struct RemoraSettingsSheet: View {
                 .foregroundStyle(VisualStyle.textPrimary)
                 .accessibilityIdentifier("settings-sheet-title")
                 .frame(maxWidth: .infinity)
-                .overlay(alignment: .trailing) {
-                    Button(action: closeSheet) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(VisualStyle.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityLabel("Close")
-                    .accessibilityIdentifier("settings-close")
-                }
                 .padding(.top, 10)
                 .padding(.horizontal, 14)
 
@@ -125,23 +109,6 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-    }
-
-    private var footer: some View {
-        HStack {
-            Text("Changes are saved automatically.")
-                .font(.system(size: 12))
-                .foregroundStyle(VisualStyle.textSecondary)
-            Spacer()
-            Button("Done") {
-                closeSheet()
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .accessibilityIdentifier("settings-done")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
     }
 
     private func paneButton(_ pane: SettingsPane) -> some View {
@@ -293,8 +260,4 @@ struct RemoraSettingsSheet: View {
         .accessibilityIdentifier("settings-section-advanced")
     }
 
-    private func closeSheet() {
-        isPresented = false
-        dismiss()
-    }
 }

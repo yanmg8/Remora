@@ -401,7 +401,7 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
-    func settingsButtonPresentsFinderStyleSheet() throws {
+    func settingsButtonOpensSettingsWindowAndSwitchesTabs() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
         }
@@ -434,11 +434,9 @@ struct RemoraUIAutomationTests {
         guard waitForElement(
             in: appElement,
             timeout: 5,
-            matching: { element in
-                role(of: element) == kAXButtonRole as String && title(of: element) == "Done"
-            }
+            matching: { identifier(of: $0) == "settings-window" }
         ) != nil else {
-            Issue.record("Could not find settings sheet Done button.")
+            Issue.record("Could not find settings window.")
             return
         }
 
@@ -470,25 +468,7 @@ struct RemoraUIAutomationTests {
         })
         #expect(switched, "Clicking General tab should switch the settings pane.")
 
-        guard let doneButton = waitForElement(
-            in: appElement,
-            timeout: 5,
-            matching: { element in
-                role(of: element) == kAXButtonRole as String && title(of: element) == "Done"
-            }
-        ) else {
-            Issue.record("Could not find settings Done button for dismissal.")
-            return
-        }
-
-        _ = AXUIElementPerformAction(doneButton, kAXPressAction as CFString)
-
-        let dismissed = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { element in
-                role(of: element) == kAXButtonRole as String && self.title(of: element) == "Done"
-            }) == nil
-        })
-        #expect(dismissed, "Expected settings sheet to dismiss after clicking Done.")
+        // Keep the window open; tests terminate the app process after assertions.
     }
 
     @Test
