@@ -17,6 +17,8 @@ struct ContentView: View {
     @StateObject private var hostCatalog = HostCatalogStore()
     @StateObject private var fileTransfer = FileTransferViewModel()
     @StateObject private var directorySyncBridge = TerminalDirectorySyncBridge()
+    @StateObject private var serverMetricsCenter = ServerMetricsCenter()
+    @StateObject private var serverStatusWindowManager = ServerStatusWindowManager()
 
     @State private var hostSearchQuery = ""
     @State private var selectedHostID: UUID?
@@ -49,6 +51,7 @@ struct ContentView: View {
     @State private var renameSessionDraft = ""
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
+    private let serverMetricsTrackingTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
@@ -118,6 +121,7 @@ struct ContentView: View {
             }
             directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
             syncFileManagerSFTPBinding()
+            syncServerMetricsTracking()
         }
         .onChange(of: selectedHostID) {
             selectedTemplateID = availableTemplates.first?.id
@@ -125,13 +129,19 @@ struct ContentView: View {
         .onChange(of: workspace.activeTabID) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
             syncFileManagerSFTPBinding()
+            syncServerMetricsTracking()
         }
         .onChange(of: workspace.activePaneByTab) {
             directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
             syncFileManagerSFTPBinding()
+            syncServerMetricsTracking()
         }
         .onReceive(activeRuntimeSFTPStatePublisher) { _ in
             syncFileManagerSFTPBinding()
+            syncServerMetricsTracking()
+        }
+        .onReceive(serverMetricsTrackingTimer) { _ in
+            syncServerMetricsTracking()
         }
         .onChange(of: hostCatalog.hosts) {
             if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
@@ -496,19 +506,27 @@ struct ContentView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(workspace.tabs) { tab in
-                    SessionTabBarItem(
-                        title: tab.title,
-                        isActive: workspace.activeTabID == tab.id,
-                        canClose: workspace.tabs.count > 1,
-                        onSelect: {
-                            workspace.selectTab(tab.id)
-                        },
-                        onClose: {
-                            workspace.closeTab(tab.id)
+                    if let runtime = runtimeForTab(tab) {
+                        SessionTabBarItem(
+                            title: tab.title,
+                            runtime: runtime,
+                            metricsState: serverMetricsCenter.state(for: runtime.connectedSSHHost),
+                            isActive: workspace.activeTabID == tab.id,
+                            canClose: workspace.tabs.count > 1,
+                            onSelect: {
+                                workspace.selectTab(tab.id)
+                            },
+                            onOpenMetricsWindow: {
+                                guard let host = runtime.connectedSSHHost else { return }
+                                openServerStatusWindow(for: host, runtime: runtime)
+                            },
+                            onClose: {
+                                workspace.closeTab(tab.id)
+                            }
+                        )
+                        .contextMenu {
+                            sessionContextMenu(for: tab)
                         }
-                    )
-                    .contextMenu {
-                        sessionContextMenu(for: tab)
                     }
                 }
 
@@ -672,6 +690,16 @@ struct ContentView: View {
             }
         )
         .id(pane.id)
+    }
+
+    private func runtimeForTab(_ tab: TerminalTabModel) -> TerminalRuntime? {
+        let preferredPaneID = workspace.activePaneByTab[tab.id]
+        if let preferredPaneID,
+           let preferredPane = tab.panes.first(where: { $0.id == preferredPaneID })
+        {
+            return preferredPane.runtime
+        }
+        return tab.panes.first?.runtime
     }
 
     private func toggleGroupCollapse(_ groupName: String) {
@@ -1059,6 +1087,22 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             NotificationCenter.default.post(name: .remoraOpenDownloadDirectorySetting, object: nil)
         }
+    }
+
+    private func syncServerMetricsTracking() {
+        let connectedHosts = workspace.tabs.compactMap { tab in
+            runtimeForTab(tab)?.connectedSSHHost
+        }
+        let activeHost = workspace.activePane?.runtime.connectedSSHHost
+        serverMetricsCenter.updateTrackedHosts(connectedHosts, activeHost: activeHost)
+    }
+
+    private func openServerStatusWindow(for host: RemoraCore.Host, runtime: TerminalRuntime) {
+        serverStatusWindowManager.present(
+            host: host,
+            runtime: runtime,
+            metricsCenter: serverMetricsCenter
+        )
     }
 
     private func syncFileManagerSFTPBinding() {
@@ -1883,11 +1927,33 @@ private struct SidebarRenameSheet: View {
 
 private struct SessionTabBarItem: View {
     let title: String
+    @ObservedObject var runtime: TerminalRuntime
+    let metricsState: ServerHostMetricsState?
     let isActive: Bool
     let canClose: Bool
     let onSelect: () -> Void
+    let onOpenMetricsWindow: () -> Void
     let onClose: () -> Void
     @State private var isHovering = false
+    @State private var isMetricsPopoverPresented = false
+
+    private var shouldShowMetrics: Bool {
+        runtime.connectionMode == .ssh
+    }
+
+    private var hostDisplayTitle: String {
+        guard let host = runtime.connectedSSHHost else { return title }
+        return "\(host.username)@\(host.address):\(host.port)"
+    }
+
+    private var compactFractions: [Double?] {
+        let snapshot = metricsState?.snapshot
+        return [
+            snapshot?.cpuFraction,
+            snapshot?.memoryFraction,
+            snapshot?.diskFraction,
+        ]
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1898,6 +1964,32 @@ private struct SessionTabBarItem: View {
                     .foregroundStyle(VisualStyle.textPrimary)
             }
             .buttonStyle(.plain)
+
+            if shouldShowMetrics {
+                Button(action: onOpenMetricsWindow) {
+                    SessionMetricCompactBars(
+                        fractions: compactFractions,
+                        isLoading: metricsState?.isLoading ?? false
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(runtime.connectedSSHHost == nil)
+                .help("Open server status window")
+                .onHover { hovering in
+                    isMetricsPopoverPresented = hovering
+                }
+                .popover(isPresented: $isMetricsPopoverPresented, arrowEdge: .bottom) {
+                    SessionMetricHoverCard(
+                        hostTitle: hostDisplayTitle,
+                        connectionState: runtime.connectionState,
+                        snapshot: metricsState?.snapshot,
+                        isLoading: metricsState?.isLoading ?? false,
+                        errorMessage: metricsState?.errorMessage
+                    )
+                    .padding(10)
+                }
+                .accessibilityIdentifier("session-tab-metrics")
+            }
 
             if canClose {
                 Button(action: onClose) {
@@ -1924,5 +2016,166 @@ private struct SessionTabBarItem: View {
                 isHovering = hovering
             }
         }
+        .onChange(of: runtime.connectionMode) {
+            if runtime.connectionMode != .ssh {
+                isMetricsPopoverPresented = false
+            }
+        }
     }
+}
+
+private struct SessionMetricCompactBars: View {
+    let fractions: [Double?]
+    let isLoading: Bool
+
+    private let colors: [Color] = [.green, .orange, .blue]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(fractions.enumerated()), id: \.offset) { index, fraction in
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 1.6, style: .continuous)
+                        .fill(Color.black.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 1.6, style: .continuous)
+                        .fill(colors[index].opacity(0.9))
+                        .frame(height: barHeight(for: fraction))
+                }
+                .frame(width: 4, height: 13)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.white.opacity(0.4))
+        )
+    }
+
+    private func barHeight(for fraction: Double?) -> CGFloat {
+        let fallback = isLoading ? 0.16 : 0.05
+        let resolved = fraction ?? fallback
+        return max(1, CGFloat(min(max(resolved, 0), 1)) * 13)
+    }
+}
+
+private struct SessionMetricHoverCard: View {
+    let hostTitle: String
+    let connectionState: String
+    let snapshot: ServerResourceMetricsSnapshot?
+    let isLoading: Bool
+    let errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(hostTitle)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(VisualStyle.textPrimary)
+                .lineLimit(1)
+
+            Text(connectionState)
+                .font(.system(size: 11))
+                .foregroundStyle(VisualStyle.textSecondary)
+                .lineLimit(1)
+
+            HStack(alignment: .bottom, spacing: 12) {
+                SessionMetricDetailBar(
+                    title: "CPU",
+                    fraction: snapshot?.cpuFraction,
+                    color: .green,
+                    isLoading: isLoading
+                )
+                SessionMetricDetailBar(
+                    title: "MEM",
+                    fraction: snapshot?.memoryFraction,
+                    color: .orange,
+                    isLoading: isLoading
+                )
+                SessionMetricDetailBar(
+                    title: "DISK",
+                    fraction: snapshot?.diskFraction,
+                    color: .blue,
+                    isLoading: isLoading
+                )
+            }
+
+            if let snapshot {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Memory: \(formatByteValue(snapshot.memoryUsedBytes))/\(formatByteValue(snapshot.memoryTotalBytes))")
+                    Text("Disk: \(formatByteValue(snapshot.diskUsedBytes))/\(formatByteValue(snapshot.diskTotalBytes))")
+                    Text("Sampled: \(formatSampleTimestamp(snapshot.sampledAt))")
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(VisualStyle.textSecondary)
+            } else if isLoading {
+                Text("Loading server metrics…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(VisualStyle.textSecondary)
+            } else if let errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+            } else {
+                Text("No metrics yet.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(VisualStyle.textSecondary)
+            }
+        }
+        .frame(width: 250, alignment: .leading)
+    }
+}
+
+private struct SessionMetricDetailBar: View {
+    let title: String
+    let fraction: Double?
+    let color: Color
+    let isLoading: Bool
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.black.opacity(0.12))
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(color.opacity(0.9))
+                    .frame(height: resolvedHeight)
+            }
+            .frame(width: 16, height: 72)
+
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(VisualStyle.textSecondary)
+            Text(formatFractionAsPercent(fraction))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(VisualStyle.textPrimary)
+        }
+    }
+
+    private var resolvedHeight: CGFloat {
+        let fallback = isLoading ? 0.16 : 0.05
+        let resolved = fraction ?? fallback
+        return max(1, CGFloat(min(max(resolved, 0), 1)) * 72)
+    }
+}
+
+private func formatFractionAsPercent(_ value: Double?) -> String {
+    guard let value else { return "--" }
+    return "\(Int((min(max(value, 0), 1) * 100).rounded()))%"
+}
+
+private func formatByteValue(_ bytes: Int64?) -> String {
+    guard let bytes else { return "--" }
+    let formatter = ByteCountFormatter()
+    formatter.allowedUnits = [.useGB, .useMB]
+    formatter.countStyle = .binary
+    formatter.includesUnit = true
+    formatter.isAdaptive = true
+    return formatter.string(fromByteCount: bytes)
+}
+
+private func formatSampleTimestamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "HH:mm:ss"
+    return formatter.string(from: date)
 }
