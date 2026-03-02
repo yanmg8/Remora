@@ -81,15 +81,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct RemoraAppMain: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
+    @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
 
     private var preferredScheme: ColorScheme? {
         AppAppearanceMode.resolved(from: appearanceModeRawValue).colorScheme
+    }
+
+    private var preferredLocale: Locale {
+        AppLanguageMode.resolved(from: languageModeRawValue).locale ?? .autoupdatingCurrent
     }
 
     var body: some Scene {
         WindowGroup("Remora") {
             ContentView()
                 .preferredColorScheme(preferredScheme)
+                .environment(\.locale, preferredLocale)
         }
         .windowResizability(.contentSize)
 
@@ -99,6 +105,7 @@ struct RemoraAppMain: App {
         ) {
             RemoraSettingsSheet()
                 .preferredColorScheme(preferredScheme)
+                .environment(\.locale, preferredLocale)
         }
         .defaultSize(width: 660, height: 410)
         .windowResizability(.contentSize)
