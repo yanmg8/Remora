@@ -55,6 +55,7 @@ struct RemoraSettingsSheet: View {
     @AppStorage("settings.general.confirmBeforeClosingTab") private var confirmBeforeClosingTab = true
     @AppStorage("settings.general.reopenLastWorkspace") private var reopenLastWorkspace = true
     @AppStorage("settings.general.defaultShell") private var defaultShell = "/bin/zsh"
+    @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
     @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
     @AppStorage(AppSettings.downloadDirectoryPathKey) private var downloadDirectoryPath = AppSettings.defaultDownloadDirectoryURL().path
 
@@ -183,6 +184,21 @@ struct RemoraSettingsSheet: View {
                     Text("zsh").tag("/bin/zsh")
                     Text("bash").tag("/bin/bash")
                     Text("fish").tag("/opt/homebrew/bin/fish")
+                }
+                .frame(maxWidth: 260, alignment: .leading)
+
+                Picker(
+                    "Language",
+                    selection: Binding(
+                        get: { AppLanguageMode.resolved(from: languageModeRawValue) },
+                        set: { mode in
+                            languageModeRawValue = mode.rawValue
+                        }
+                    )
+                ) {
+                    Text("Follow System").tag(AppLanguageMode.system)
+                    Text("English").tag(AppLanguageMode.english)
+                    Text("Simplified Chinese").tag(AppLanguageMode.simplifiedChinese)
                 }
                 .frame(maxWidth: 260, alignment: .leading)
 

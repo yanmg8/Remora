@@ -14,6 +14,10 @@
 "Reopen the last selected workspace on launch" = "启动时恢复上次选中的工作区";
 "Default local shell" = "默认本地 Shell";
 "Appearance" = "外观";
+"Language" = "语言";
+"Follow System" = "跟随系统";
+"English" = "英文";
+"Simplified Chinese" = "简体中文";
 "System" = "跟随系统";
 "Light" = "浅色";
 "Dark" = "深色";

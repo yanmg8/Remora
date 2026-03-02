@@ -15,6 +15,10 @@
 "Reopen the last selected workspace on launch" = "Reopen the last selected workspace on launch";
 "Default local shell" = "Default local shell";
 "Appearance" = "Appearance";
+"Language" = "Language";
+"Follow System" = "Follow System";
+"English" = "English";
+"Simplified Chinese" = "Simplified Chinese";
 "System" = "System";
 "Light" = "Light";
 "Dark" = "Dark";
