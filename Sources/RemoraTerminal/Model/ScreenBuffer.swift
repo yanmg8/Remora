@@ -1,5 +1,17 @@
 import Foundation
 
+public struct CursorState: Sendable {
+    public var row: Int
+    public var column: Int
+    public var attributes: TerminalAttributes
+
+    public init(row: Int, column: Int, attributes: TerminalAttributes) {
+        self.row = row
+        self.column = column
+        self.attributes = attributes
+    }
+}
+
 public final class ScreenBuffer {
     public private(set) var rows: Int
     public private(set) var columns: Int
@@ -12,6 +24,12 @@ public final class ScreenBuffer {
     private var lines: [TerminalLine]
     private var dirtyRows: Set<Int> = []
     private var viewportOffset: Int = 0
+
+    // Alternate screen buffer support
+    private var alternateLines: [TerminalLine]?
+    private var savedMainState: (lines: [TerminalLine], cursorRow: Int, cursorColumn: Int, attributes: TerminalAttributes, viewportOffset: Int)?
+    private var savedCursor: CursorState?
+    public private(set) var isAlternateBuffer: Bool = false
 
     public init(rows: Int, columns: Int, scrollbackSegmentSize: Int = 1024) {
         self.rows = max(1, rows)
@@ -240,5 +258,66 @@ public final class ScreenBuffer {
         let start = max(0, endExclusive - rows)
         guard start < endExclusive else { return [] }
         return Array(combined[start ..< endExclusive])
+    }
+
+    // MARK: - Alternate Screen Buffer
+
+    public func enterAlternateBuffer() {
+        guard !isAlternateBuffer else { return }
+        
+        // Save main buffer state
+        savedMainState = (
+            lines: lines,
+            cursorRow: cursorRow,
+            cursorColumn: cursorColumn,
+            attributes: activeAttributes,
+            viewportOffset: viewportOffset
+        )
+        
+        // Switch to alternate buffer (blank screen)
+        alternateLines = nil
+        lines = Array(repeating: TerminalLine(columns: columns, attributes: .default), count: rows)
+        cursorRow = 0
+        cursorColumn = 0
+        activeAttributes = .default
+        viewportOffset = 0
+        isAlternateBuffer = true
+        
+        markAllDirty()
+    }
+
+    public func leaveAlternateBuffer() {
+        guard isAlternateBuffer else { return }
+        
+        // Discard alternate buffer content
+        alternateLines = nil
+        
+        // Restore main buffer state
+        if let saved = savedMainState {
+            lines = saved.lines
+            cursorRow = saved.cursorRow
+            cursorColumn = saved.cursorColumn
+            activeAttributes = saved.attributes
+            viewportOffset = saved.viewportOffset
+            savedMainState = nil
+        }
+        
+        isAlternateBuffer = false
+        markAllDirty()
+    }
+
+    // MARK: - Cursor Save/Restore (DECSC/DECRC)
+
+    public func saveCursor() {
+        savedCursor = CursorState(row: cursorRow, column: cursorColumn, attributes: activeAttributes)
+    }
+
+    public func restoreCursor() {
+        guard let saved = savedCursor else { return }
+        cursorRow = saved.row
+        cursorColumn = saved.column
+        activeAttributes = saved.attributes
+        savedCursor = nil
+        markAllDirty()
     }
 }
