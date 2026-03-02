@@ -1,6 +1,10 @@
 import Foundation
 
 public final class ANSIParser {
+    // Terminal modes
+    public var mouseReportingEnabled: Bool = false
+    public var bracketedPasteEnabled: Bool = false
+    
     private enum State {
         case ground
         case escape
@@ -28,6 +32,14 @@ public final class ANSIParser {
                 state = .csi([])
             } else if byte == UInt8(ascii: "]") {
                 state = .osc
+            } else if byte == UInt8(ascii: "7") {
+                // DECSC - Save Cursor
+                screen.saveCursor()
+                state = .ground
+            } else if byte == UInt8(ascii: "8") {
+                // DECRC - Restore Cursor
+                screen.restoreCursor()
+                state = .ground
             } else {
                 state = .ground
             }
@@ -100,8 +112,64 @@ public final class ANSIParser {
             screen.moveCursor(deltaColumn: params.first ?? 1)
         case UInt8(ascii: "D"):
             screen.moveCursor(deltaColumn: -(params.first ?? 1))
+        case UInt8(ascii: "h"):
+            // Private mode set (DECSET)
+            handlePrivateModeSet(paramsString: paramsString, screen: screen)
+        case UInt8(ascii: "l"):
+            // Private mode reset (DECRST)
+            handlePrivateModeReset(paramsString: paramsString, screen: screen)
         default:
             break
+        }
+    }
+    
+    // MARK: - Private Mode Handlers
+    
+    private func handlePrivateModeSet(paramsString: String, screen: ScreenBuffer) {
+        // Handle ?XXXXh sequences
+        if paramsString.hasPrefix("?") {
+            let modeStr = String(paramsString.dropFirst())
+            
+            switch modeStr {
+            case "1049":
+                // Enter alternate screen buffer
+                screen.enterAlternateBuffer()
+            case "1048":
+                // Save cursor (handled by ESC 7)
+                screen.saveCursor()
+            case "1000", "1002", "1003":
+                // Mouse tracking modes
+                mouseReportingEnabled = true
+            case "2004":
+                // Bracketed paste
+                bracketedPasteEnabled = true
+            default:
+                break
+            }
+        }
+    }
+    
+    private func handlePrivateModeReset(paramsString: String, screen: ScreenBuffer) {
+        // Handle ?XXXXl sequences
+        if paramsString.hasPrefix("?") {
+            let modeStr = String(paramsString.dropFirst())
+            
+            switch modeStr {
+            case "1049":
+                // Leave alternate screen buffer
+                screen.leaveAlternateBuffer()
+            case "1048":
+                // Restore cursor (handled by ESC 8)
+                screen.restoreCursor()
+            case "1000", "1002", "1003":
+                // Disable mouse tracking
+                mouseReportingEnabled = false
+            case "2004":
+                // Disable bracketed paste
+                bracketedPasteEnabled = false
+            default:
+                break
+            }
         }
     }
 
