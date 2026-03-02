@@ -4,6 +4,7 @@ enum AppSettings {
     static let downloadDirectoryPathKey = "settings.fileManager.downloadDirectoryPath"
     static let appearanceModeKey = "settings.appearance.mode"
     static let languageModeKey = "settings.language.mode"
+    static let keyboardShortcutsStorageKey = "settings.keyboardShortcuts.bindings"
     static let serverMetricsActiveRefreshSecondsKey = "settings.metrics.activeRefreshSeconds"
     static let serverMetricsInactiveRefreshSecondsKey = "settings.metrics.inactiveRefreshSeconds"
     static let serverMetricsMaxConcurrentFetchesKey = "settings.metrics.maxConcurrentFetches"
