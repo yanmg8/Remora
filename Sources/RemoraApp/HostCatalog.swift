@@ -96,10 +96,6 @@ final class HostCatalogStore: ObservableObject {
         }
     }
 
-    func favorites(matching query: String) -> [RemoraCore.Host] {
-        filter(hosts.filter(\.favorite), query: query)
-    }
-
     func recents(matching query: String) -> [RemoraCore.Host] {
         let mapped = recentHostIDs.compactMap { id in
             hosts.first(where: { $0.id == id })
@@ -206,11 +202,6 @@ final class HostCatalogStore: ObservableObject {
         recentHostIDs.removeAll { $0 == id }
     }
 
-    func toggleFavorite(hostID: UUID) {
-        guard let idx = hosts.firstIndex(where: { $0.id == hostID }) else { return }
-        hosts[idx].favorite.toggle()
-    }
-
     @discardableResult
     func renameHost(id: UUID, to requestedName: String) -> String? {
         guard let idx = hosts.firstIndex(where: { $0.id == id }) else { return nil }
@@ -220,13 +211,6 @@ final class HostCatalogStore: ObservableObject {
         let uniqueName = uniqueHostName(base: trimmed, excludingID: id)
         hosts[idx].name = uniqueName
         return uniqueName
-    }
-
-    func archiveHost(id: UUID) {
-        guard let idx = hosts.firstIndex(where: { $0.id == id }) else { return }
-        let archivedGroup = ensureGroupExists("Archived")
-        hosts[idx].group = archivedGroup
-        hosts[idx].favorite = false
     }
 
     @discardableResult

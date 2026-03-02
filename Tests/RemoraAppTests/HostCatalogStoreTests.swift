@@ -52,7 +52,7 @@ struct HostCatalogStoreTests {
     }
 
     @Test
-    func supportsRenamePinAndArchiveForHostAndGroup() {
+    func supportsRenameForHostAndGroup() {
         let store = HostCatalogStore()
         let originalGroup = store.groups.first ?? store.addGroup(named: "Default")
         let host = store.addHost(in: originalGroup)
@@ -65,13 +65,6 @@ struct HostCatalogStoreTests {
         let renamedHost = store.renameHost(id: host.id, to: "my-ssh")
         #expect(renamedHost == "my-ssh")
         #expect(store.host(id: host.id)?.name == "my-ssh")
-
-        store.toggleFavorite(hostID: host.id)
-        #expect(store.host(id: host.id)?.favorite == true)
-
-        store.archiveHost(id: host.id)
-        #expect(store.host(id: host.id)?.group == "Archived")
-        #expect(store.groups.contains("Archived"))
     }
 
     @Test

@@ -116,7 +116,6 @@
 "(not saved)" = "（未保存）";
 "(not set)" = "（未设置）";
 "All Connections" = "所有连接";
-"Archive connection" = "归档连接";
 "Auth" = "认证";
 "CPU" = "CPU";
 "Cannot locate Downloads directory." = "无法定位下载目录。";
@@ -200,7 +199,6 @@
 "Parsing records" = "正在解析记录";
 "Password" = "密码";
 "Permissions" = "权限";
-"Pin connection" = "置顶连接";
 "Port" = "端口";
 "Port must be between 1 and 65535." = "端口必须在 1 到 65535 之间。";
 "Preparing" = "准备中";
@@ -228,7 +226,6 @@
 "Transferring" = "传输中";
 "Trust" = "信任";
 "Trust SSH Host Key?" = "信任 SSH 主机密钥？";
-"Unpin connection" = "取消置顶连接";
 "Unsaved changes" = "未保存的更改";
 "Unsupported import format. Please select a Remora JSON/CSV export file." = "不支持的导入格式。请选择 Remora 导出的 JSON/CSV 文件。";
 "Username" = "用户名";

@@ -119,7 +119,6 @@
 "(not saved)" = "(not saved)";
 "(not set)" = "(not set)";
 "All Connections" = "All Connections";
-"Archive connection" = "Archive connection";
 "Auth" = "Auth";
 "CPU" = "CPU";
 "Cannot locate Downloads directory." = "Cannot locate Downloads directory.";
@@ -203,7 +202,6 @@
 "Parsing records" = "Parsing records";
 "Password" = "Password";
 "Permissions" = "Permissions";
-"Pin connection" = "Pin connection";
 "Port" = "Port";
 "Port must be between 1 and 65535." = "Port must be between 1 and 65535.";
 "Preparing" = "Preparing";
@@ -231,7 +229,6 @@
 "Transferring" = "Transferring";
 "Trust" = "Trust";
 "Trust SSH Host Key?" = "Trust SSH Host Key?";
-"Unpin connection" = "Unpin connection";
 "Unsaved changes" = "Unsaved changes";
 "Unsupported import format. Please select a Remora JSON/CSV export file." = "Unsupported import format. Please select a Remora JSON/CSV export file.";
 "Username" = "Username";

@@ -296,14 +296,8 @@ struct ContentView: View {
                                 onOpenThread: { hostID in
                                     openHostInNewSession(hostID)
                                 },
-                                onPinThread: { hostID in
-                                    togglePinHost(hostID)
-                                },
                                 onEditThread: { hostID in
                                     beginEditHost(hostID)
-                                },
-                                onArchiveThread: { hostID in
-                                    archiveHost(hostID)
                                 },
                                 onCopyConnectionInfo: { host in
                                     copyConnectionInfo(host)
@@ -1063,15 +1057,6 @@ struct ContentView: View {
         self.renameSessionID = nil
     }
 
-    private func togglePinHost(_ hostID: UUID) {
-        hostCatalog.toggleFavorite(hostID: hostID)
-    }
-
-    private func archiveHost(_ hostID: UUID) {
-        hostCatalog.archiveHost(id: hostID)
-        collapsedGroupNames.remove("Archived")
-    }
-
     private func copyToPasteboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -1365,9 +1350,7 @@ private struct SidebarGroupSectionView: View {
     let onDeleteGroup: () -> Void
     let onSelectThread: (UUID) -> Void
     let onOpenThread: (UUID) -> Void
-    let onPinThread: (UUID) -> Void
     let onEditThread: (UUID) -> Void
-    let onArchiveThread: (UUID) -> Void
     let onCopyConnectionInfo: (RemoraCore.Host) -> Void
     let onCopyAddress: (RemoraCore.Host) -> Void
     let onCopySSHCommand: (RemoraCore.Host) -> Void
@@ -1441,14 +1424,8 @@ private struct SidebarGroupSectionView: View {
                             onOpen: {
                                 onOpenThread(host.id)
                             },
-                            onPin: {
-                                onPinThread(host.id)
-                            },
                             onEdit: {
                                 onEditThread(host.id)
-                            },
-                            onArchive: {
-                                onArchiveThread(host.id)
                             },
                             onCopyConnectionInfo: {
                                 onCopyConnectionInfo(host)
@@ -1475,9 +1452,7 @@ private struct SidebarHostRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
-    let onPin: () -> Void
     let onEdit: () -> Void
-    let onArchive: () -> Void
     let onCopyConnectionInfo: () -> Void
     let onCopyAddress: () -> Void
     let onCopySSHCommand: () -> Void
@@ -1497,14 +1472,8 @@ private struct SidebarHostRow: View {
         .accessibilityIdentifier("sidebar-host-row-\(host.name)")
         .animation(nil, value: isSelected)
         .contextMenu {
-            Button(host.favorite ? tr("Unpin connection") : tr("Pin connection")) {
-                onPin()
-            }
             Button(tr("Edit connection")) {
                 onEdit()
-            }
-            Button(tr("Archive connection")) {
-                onArchive()
             }
             Divider()
             Menu(tr("Copy")) {
@@ -1527,7 +1496,7 @@ private struct SidebarHostRow: View {
 
     private var rowContent: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: host.favorite ? "star.fill" : "chevron.right")
+            Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(VisualStyle.textSecondary)
                 .frame(width: 12, height: 12)
