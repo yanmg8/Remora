@@ -29,15 +29,21 @@ private struct GlassCardModifier: ViewModifier {
     var radius: CGFloat
     var fill: Color
     var border: Color
+    var showsShadow: Bool
 
     func body(content: Content) -> some View {
-        content
+        let base = content
             .background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .stroke(border, lineWidth: 1)
             )
-            .shadow(color: VisualStyle.shadowColor, radius: 10, x: 0, y: 4)
+
+        if showsShadow {
+            base.shadow(color: VisualStyle.shadowColor, radius: 10, x: 0, y: 4)
+        } else {
+            base
+        }
     }
 }
 
@@ -45,9 +51,10 @@ extension View {
     func glassCard(
         radius: CGFloat = VisualStyle.cardRadius,
         fill: Color = VisualStyle.rightPanelBackground,
-        border: Color = VisualStyle.borderNormal
+        border: Color = VisualStyle.borderNormal,
+        showsShadow: Bool = true
     ) -> some View {
-        modifier(GlassCardModifier(radius: radius, fill: fill, border: border))
+        modifier(GlassCardModifier(radius: radius, fill: fill, border: border, showsShadow: showsShadow))
     }
 
     func panelTitleStyle() -> some View {

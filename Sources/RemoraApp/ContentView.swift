@@ -447,7 +447,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft)
+        .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
     }
 
     private var emptySessionPlaceholder: some View {
