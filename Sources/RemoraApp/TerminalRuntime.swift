@@ -36,6 +36,12 @@ final class TerminalRuntime: ObservableObject {
     @Published private(set) var connectedSSHHost: RemoraCore.Host?
     @Published private(set) var lastConnectedSSHHost: RemoraCore.Host?
 
+    // Connection state constants for safer string comparisons
+    static let connectedPrefix = "Connected"
+    static let failedPrefix = "Failed"
+    static let connectingState = "Connecting"
+    static let waitingPrefix = "Waiting"
+
     private let localSessionManager: SessionManager
     private let sshSessionManager: SessionManager
 

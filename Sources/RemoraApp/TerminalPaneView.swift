@@ -100,13 +100,13 @@ struct TerminalPaneView: View {
     }
 
     private var statusColor: Color {
-        if runtime.connectionState.hasPrefix("Connected") {
+        if runtime.connectionState.hasPrefix(TerminalRuntime.connectedPrefix) {
             return .green
         }
-        if runtime.connectionState.hasPrefix("Failed") {
+        if runtime.connectionState.hasPrefix(TerminalRuntime.failedPrefix) {
             return .red
         }
-        if runtime.connectionState == "Connecting" || runtime.connectionState.hasPrefix("Waiting") {
+        if runtime.connectionState == TerminalRuntime.connectingState || runtime.connectionState.hasPrefix(TerminalRuntime.waitingPrefix) {
             return .orange
         }
         return .secondary
@@ -114,7 +114,7 @@ struct TerminalPaneView: View {
 
     private var canReconnect: Bool {
         guard runtime.reconnectableSSHHost != nil else { return false }
-        if runtime.connectionState == "Connecting" || runtime.connectionState.hasPrefix("Waiting") {
+        if runtime.connectionState == TerminalRuntime.connectingState || runtime.connectionState.hasPrefix(TerminalRuntime.waitingPrefix) {
             return false
         }
         return true
