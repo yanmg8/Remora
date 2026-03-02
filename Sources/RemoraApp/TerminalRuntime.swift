@@ -67,6 +67,7 @@ final class TerminalRuntime: ObservableObject {
     private var awaitingPwdResponse = false
     private var workingDirectoryLineBuffer = ""
 
+    private var isReconnecting = false
     init(
         localSessionManager: SessionManager = SessionManager(sshClientFactory: { LocalShellClient() }),
         sshSessionManager: SessionManager = SessionManager(sshClientFactory: { OpenSSHProcessClient() })
@@ -138,7 +139,8 @@ final class TerminalRuntime: ObservableObject {
     }
 
     func reconnectSSHSession() {
-        guard let host = reconnectableSSHHost else { return }
+        guard !isReconnecting, let host = reconnectableSSHHost else { return }
+        isReconnecting = true
         connectSSH(host: host)
     }
 
@@ -183,6 +185,7 @@ final class TerminalRuntime: ObservableObject {
                     connectedSSHHost = config.mode == .ssh ? descriptor.host : nil
                     bindOutput(for: descriptor.id, manager: manager)
                     bindSessionState(for: descriptor.id, manager: manager)
+                    isReconnecting = false
                 }
                 await self.applyPendingResizeIfNeeded()
                 if await MainActor.run(body: { isWorkingDirectoryTrackingEnabled }) {
@@ -194,6 +197,7 @@ final class TerminalRuntime: ObservableObject {
                 await MainActor.run {
                     connectionState = "Failed: \(error.localizedDescription)"
                     connectedSSHHost = nil
+                    isReconnecting = false
                 }
             }
         }
@@ -206,6 +210,7 @@ final class TerminalRuntime: ObservableObject {
                 self.connectionState = "Disconnected"
                 self.workingDirectory = nil
                 self.connectedSSHHost = nil
+                self.isReconnecting = false
             }
         }
     }
