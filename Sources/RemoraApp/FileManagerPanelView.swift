@@ -844,7 +844,7 @@ struct FileManagerPanelView: View {
 
         if !entry.isDirectory {
             Button(tr("Edit")) {
-                editorTargetPath = entry.path
+                beginEdit(entry)
             }
         }
 
@@ -978,6 +978,33 @@ struct FileManagerPanelView: View {
         renameTargetPath = path
         renameDraft = URL(fileURLWithPath: path).lastPathComponent
         isRenameSheetPresented = true
+    }
+
+    private func beginEdit(_ entry: RemoteFileEntry) {
+        guard !entry.isDirectory else { return }
+        if entry.size > Int64(FileTransferViewModel.maxInlineEditableTextDocumentBytes) {
+            presentLargeFileEditPrompt(for: entry)
+            return
+        }
+        editorTargetPath = entry.path
+    }
+
+    private func presentLargeFileEditPrompt(for entry: RemoteFileEntry) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr("Large file detected")
+        alert.informativeText = String(
+            format: tr("This file is too large for in-app editing (%@ > %@). Download it and open locally to avoid high memory usage."),
+            ByteSizeFormatter.format(entry.size),
+            ByteSizeFormatter.format(Int64(FileTransferViewModel.maxInlineEditableTextDocumentBytes))
+        )
+        alert.addButton(withTitle: tr("Download"))
+        alert.addButton(withTitle: tr("Cancel"))
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            viewModel.performContextAction(.download(paths: [entry.path]))
+            isTransferQueueExpanded = true
+        }
     }
 
     private func commitRename() {

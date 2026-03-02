@@ -367,6 +367,33 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func largeTextDocumentIsRejectedBeforeDownloadToProtectMemory() async throws {
+        let largeClient = LargeTextFileGuardSFTPClient()
+        let vm = FileTransferViewModel(
+            sftpClient: largeClient,
+            remoteDirectoryPath: "/"
+        )
+
+        do {
+            _ = try await vm.loadTextDocument(path: "/huge.log")
+            Issue.record("Expected large text document load to fail.")
+            return
+        } catch let error as RemoteTextDocumentError {
+            switch error {
+            case .fileTooLarge(let actualBytes, let maxBytes):
+                #expect(actualBytes > maxBytes)
+                #expect(maxBytes == Int64(FileTransferViewModel.maxInlineEditableTextDocumentBytes))
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+            return
+        }
+
+        let downloadCalls = await largeClient.downloadCallCount()
+        #expect(downloadCalls == 0)
+    }
+
+    @Test
     func remotePropertiesRoundTripSupportsLoadAndSave() async throws {
         let vm = FileTransferViewModel(
             sftpClient: MockSFTPClient(),
@@ -631,6 +658,80 @@ actor CountingMockSFTPClient: SFTPClientProtocol {
 
     func stat(path: String) async throws -> RemoteFileAttributes {
         try await base.stat(path: path)
+    }
+
+    func setAttributes(path: String, attributes: RemoteFileAttributes) async throws {
+        try await base.setAttributes(path: path, attributes: attributes)
+    }
+}
+
+actor LargeTextFileGuardSFTPClient: SFTPClientProtocol {
+    private let base = MockSFTPClient()
+    private var downloadCalls = 0
+    private let largeSize = Int64(2 * 1024 * 1024) + 1
+
+    func downloadCallCount() -> Int {
+        downloadCalls
+    }
+
+    func list(path: String) async throws -> [RemoteFileEntry] {
+        try await base.list(path: path)
+    }
+
+    func download(path: String) async throws -> Data {
+        downloadCalls += 1
+        return try await base.download(path: path)
+    }
+
+    func download(path: String, progress: TransferProgressHandler?) async throws -> Data {
+        downloadCalls += 1
+        return try await base.download(path: path, progress: progress)
+    }
+
+    func upload(data: Data, to path: String) async throws {
+        try await base.upload(data: data, to: path)
+    }
+
+    func upload(data: Data, to path: String, progress: TransferProgressHandler?) async throws {
+        try await base.upload(data: data, to: path, progress: progress)
+    }
+
+    func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws {
+        try await base.upload(fileURL: fileURL, to: path, progress: progress)
+    }
+
+    func rename(from: String, to: String) async throws {
+        try await base.rename(from: from, to: to)
+    }
+
+    func move(from: String, to: String) async throws {
+        try await base.move(from: from, to: to)
+    }
+
+    func copy(from: String, to: String) async throws {
+        try await base.copy(from: from, to: to)
+    }
+
+    func mkdir(path: String) async throws {
+        try await base.mkdir(path: path)
+    }
+
+    func remove(path: String) async throws {
+        try await base.remove(path: path)
+    }
+
+    func stat(path: String) async throws -> RemoteFileAttributes {
+        if path == "/huge.log" {
+            return RemoteFileAttributes(
+                permissions: 0o644,
+                owner: "root",
+                group: "wheel",
+                size: largeSize,
+                modifiedAt: Date(),
+                isDirectory: false
+            )
+        }
+        return try await base.stat(path: path)
     }
 
     func setAttributes(path: String, attributes: RemoteFileAttributes) async throws {

@@ -64,6 +64,10 @@ struct RemoteTextDocument: Sendable {
     var isReadOnly: Bool
 }
 
+enum RemoteTextDocumentError: Error, Equatable, Sendable {
+    case fileTooLarge(actualBytes: Int64, maxBytes: Int64)
+}
+
 struct TransferItem: Identifiable, Sendable {
     let id: UUID
     var direction: TransferDirection
@@ -121,6 +125,8 @@ struct LocalFileEntry: Identifiable, Hashable {
 
 @MainActor
 final class FileTransferViewModel: ObservableObject {
+    static let maxInlineEditableTextDocumentBytes = 2 * 1024 * 1024
+
     private struct CachedRemoteDirectory {
         var entries: [RemoteFileEntry]
         var fetchedAt: Date
@@ -636,19 +642,35 @@ final class FileTransferViewModel: ObservableObject {
         }
     }
 
-    func loadTextDocument(path: String, maxBytes: Int = 2 * 1024 * 1024) async throws -> RemoteTextDocument {
+    func loadTextDocument(
+        path: String,
+        maxBytes: Int = FileTransferViewModel.maxInlineEditableTextDocumentBytes
+    ) async throws -> RemoteTextDocument {
         let normalizedPath = normalizeRemoteDirectoryPath(path)
-        let attributes = try? await sftpClient.stat(path: normalizedPath)
+        let attributes = try await sftpClient.stat(path: normalizedPath)
+        let maxAllowedBytes = Int64(maxBytes)
+        if attributes.size > maxAllowedBytes {
+            throw RemoteTextDocumentError.fileTooLarge(
+                actualBytes: attributes.size,
+                maxBytes: maxAllowedBytes
+            )
+        }
+
         let payload = try await sftpClient.download(path: normalizedPath)
-        let isReadOnly = payload.count > maxBytes
+        if payload.count > maxBytes {
+            throw RemoteTextDocumentError.fileTooLarge(
+                actualBytes: Int64(payload.count),
+                maxBytes: maxAllowedBytes
+            )
+        }
 
         if let utf8 = String(data: payload, encoding: .utf8) {
             return RemoteTextDocument(
                 path: normalizedPath,
                 text: utf8,
                 encoding: "UTF-8",
-                modifiedAt: attributes?.modifiedAt,
-                isReadOnly: isReadOnly
+                modifiedAt: attributes.modifiedAt,
+                isReadOnly: false
             )
         }
 
@@ -657,8 +679,8 @@ final class FileTransferViewModel: ObservableObject {
                 path: normalizedPath,
                 text: latin1,
                 encoding: "ISO-8859-1",
-                modifiedAt: attributes?.modifiedAt,
-                isReadOnly: isReadOnly
+                modifiedAt: attributes.modifiedAt,
+                isReadOnly: false
             )
         }
 

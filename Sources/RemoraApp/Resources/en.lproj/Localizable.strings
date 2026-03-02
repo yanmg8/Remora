@@ -101,6 +101,8 @@
 "Retry Failed" = "Retry Failed";
 "Loading directory..." = "Loading directory...";
 "Failed to load remote directory" = "Failed to load remote directory";
+"Large file detected" = "Large file detected";
+"This file is too large for in-app editing (%@ > %@). Download it and open locally to avoid high memory usage." = "This file is too large for in-app editing (%@ > %@). Download it and open locally to avoid high memory usage.";
 "Name" = "Name";
 "Permission" = "Permission";
 "Date" = "Date";
@@ -189,6 +191,7 @@
 "Exporting..." = "Exporting...";
 "Failed" = "Failed";
 "File Properties" = "File Properties";
+"File is too large to edit in-app (%@ > %@). Please download and open it locally." = "File is too large to edit in-app (%@ > %@). Please download and open it locally.";
 "Finished with Issues" = "Finished with Issues";
 "Group" = "Group";
 "Group name" = "Group name";

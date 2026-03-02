@@ -98,6 +98,8 @@
 "Save" = "保存";
 "Loading directory..." = "正在加载目录...";
 "Failed to load remote directory" = "加载远程目录失败";
+"Large file detected" = "检测到大文件";
+"This file is too large for in-app editing (%@ > %@). Download it and open locally to avoid high memory usage." = "该文件过大，不适合在应用内编辑（%@ > %@）。请先下载到本地后再打开，以避免占用过高内存。";
 "Name" = "名称";
 "Permission" = "权限";
 "Date" = "日期";
@@ -186,6 +188,7 @@
 "Exporting..." = "导出中...";
 "Failed" = "失败";
 "File Properties" = "文件属性";
+"File is too large to edit in-app (%@ > %@). Please download and open it locally." = "文件过大，无法在应用内编辑（%@ > %@）。请下载到本地后再打开。";
 "Finished with Issues" = "已完成（有问题）";
 "Group" = "分组";
 "Group name" = "分组名称";

@@ -36,6 +36,17 @@ final class RemoteTextEditorViewModel: ObservableObject {
             expectedModifiedAt = doc.modifiedAt
             isReadOnly = doc.isReadOnly
             errorMessage = nil
+        } catch let error as RemoteTextDocumentError {
+            switch error {
+            case .fileTooLarge(let actualBytes, let maxBytes):
+                let actualText = ByteSizeFormatter.format(actualBytes)
+                let maxText = ByteSizeFormatter.format(maxBytes)
+                errorMessage = String(
+                    format: tr("File is too large to edit in-app (%@ > %@). Please download and open it locally."),
+                    actualText,
+                    maxText
+                )
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
