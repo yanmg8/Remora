@@ -3,6 +3,7 @@ import SwiftUI
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
     case general
+    case shortcuts
     case advanced
 
     var id: String { rawValue }
@@ -11,6 +12,8 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return "General"
+        case .shortcuts:
+            return "Shortcuts"
         case .advanced:
             return "Advanced"
         }
@@ -20,6 +23,8 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         switch self {
         case .general:
             return "gearshape"
+        case .shortcuts:
+            return "keyboard"
         case .advanced:
             return "slider.horizontal.3"
         }
@@ -39,7 +44,12 @@ struct RemoraSettingsSheet: View {
     @State private var downloadDirectoryDraft = ""
     @State private var downloadDirectoryHighlight = false
     @State private var downloadDirectoryJumpToken = 0
+    @State private var recordingShortcutCommand: AppShortcutCommand?
+    @State private var shortcutRecorderMonitor: Any?
+    @State private var shortcutRecorderMessage: String?
+    @State private var shortcutRecorderIsError = false
     @FocusState private var focusedField: SettingsFocusField?
+    @EnvironmentObject private var keyboardShortcutStore: AppKeyboardShortcutStore
 
     @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
     @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
@@ -66,6 +76,9 @@ struct RemoraSettingsSheet: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .remoraOpenDownloadDirectorySetting)) { _ in
             focusDownloadDirectorySetting()
+        }
+        .onDisappear {
+            stopShortcutCapture(clearSelection: true)
         }
         .onChange(of: serverMetricsActiveRefreshSeconds) {
             normalizeServerMetricsSettings()
@@ -96,6 +109,8 @@ struct RemoraSettingsSheet: View {
             switch selectedPane {
             case .general:
                 generalPane
+            case .shortcuts:
+                shortcutsPane
             case .advanced:
                 advancedPane
             }
@@ -275,6 +290,213 @@ struct RemoraSettingsSheet: View {
             Spacer(minLength: 0)
         }
         .accessibilityIdentifier("settings-section-advanced")
+    }
+
+    private var shortcutsPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(tr("Keyboard Shortcuts"))
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(VisualStyle.textPrimary)
+
+                Text(tr("Use common shortcuts and customize them for your workflow."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(VisualStyle.textSecondary)
+
+                shortcutConflictsCard
+
+                if let shortcutRecorderMessage {
+                    Label(shortcutRecorderMessage, systemImage: shortcutRecorderIsError ? "exclamationmark.triangle.fill" : "keyboard")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(shortcutRecorderIsError ? Color.orange : VisualStyle.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Color.white.opacity(0.68))
+                        )
+                }
+
+                VStack(spacing: 8) {
+                    ForEach(AppShortcutCommand.allCases) { command in
+                        shortcutRow(for: command)
+                    }
+                }
+            }
+            .padding(.bottom, 8)
+        }
+        .accessibilityIdentifier("settings-section-shortcuts")
+    }
+
+    private var shortcutConflictsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: keyboardShortcutStore.conflicts.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(keyboardShortcutStore.conflicts.isEmpty ? Color.green : Color.orange)
+                Text(tr("Shortcut conflicts"))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(VisualStyle.textPrimary)
+            }
+
+            if keyboardShortcutStore.conflicts.isEmpty {
+                Text(tr("No shortcut conflicts detected."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(VisualStyle.textSecondary)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(keyboardShortcutStore.conflicts) { conflict in
+                        let commandNames = conflict.commands
+                            .map { commandTitle(for: $0) }
+                            .joined(separator: " / ")
+                        Text("\(conflict.shortcut.displayText)  \(commandNames)")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(VisualStyle.textPrimary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.82))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(keyboardShortcutStore.conflicts.isEmpty ? VisualStyle.borderSoft : Color.orange.opacity(0.8), lineWidth: 1)
+        )
+    }
+
+    private func shortcutRow(for command: AppShortcutCommand) -> some View {
+        let isRecording = recordingShortcutCommand == command
+        let displayShortcut = keyboardShortcutStore.shortcut(for: command)?.displayText ?? tr("Not Set")
+        let hasConflict = keyboardShortcutStore.conflict(for: command) != nil
+        let isCustomized = keyboardShortcutStore.hasCustomBinding(for: command)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(commandTitle(for: command))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(VisualStyle.textPrimary)
+
+                    if hasConflict {
+                        Text(tr("Conflict with another command"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.orange)
+                    } else if isCustomized {
+                        Text(tr("Customized"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(VisualStyle.textSecondary)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Button {
+                    beginShortcutCapture(for: command)
+                } label: {
+                    Text(isRecording ? tr("Press shortcut...") : displayShortcut)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(isRecording ? Color.accentColor : VisualStyle.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(minWidth: 116)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.white.opacity(0.9))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    isRecording ? Color.accentColor : (hasConflict ? Color.orange.opacity(0.85) : VisualStyle.borderSoft),
+                                    lineWidth: isRecording ? 1.5 : 1
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button(tr("Unbind")) {
+                    keyboardShortcutStore.unbindShortcut(for: command)
+                    if recordingShortcutCommand == command {
+                        stopShortcutCapture(clearSelection: true)
+                    }
+                }
+                .controlSize(.small)
+
+                Button(tr("Default")) {
+                    keyboardShortcutStore.restoreDefault(for: command)
+                    if recordingShortcutCommand == command {
+                        stopShortcutCapture(clearSelection: true)
+                    }
+                }
+                .controlSize(.small)
+                .disabled(!isCustomized)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.84))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(hasConflict ? Color.orange.opacity(0.85) : VisualStyle.borderSoft, lineWidth: 1)
+        )
+    }
+
+    private func beginShortcutCapture(for command: AppShortcutCommand) {
+        stopShortcutCapture(clearSelection: true)
+        recordingShortcutCommand = command
+        shortcutRecorderMessage = tr("Press a key combination now. Press Esc to cancel.")
+        shortcutRecorderIsError = false
+
+        shortcutRecorderMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            handleShortcutRecorderEvent(event)
+        }
+    }
+
+    private func stopShortcutCapture(clearSelection: Bool) {
+        if let shortcutRecorderMonitor {
+            NSEvent.removeMonitor(shortcutRecorderMonitor)
+            self.shortcutRecorderMonitor = nil
+        }
+        if clearSelection {
+            recordingShortcutCommand = nil
+        }
+    }
+
+    private func handleShortcutRecorderEvent(_ event: NSEvent) -> NSEvent? {
+        guard let command = recordingShortcutCommand else {
+            return event
+        }
+
+        if event.keyCode == 53 {
+            shortcutRecorderMessage = tr("Shortcut update canceled.")
+            shortcutRecorderIsError = false
+            stopShortcutCapture(clearSelection: true)
+            return nil
+        }
+
+        guard let shortcut = AppKeyboardShortcut.from(event: event) else {
+            shortcutRecorderMessage = tr("Shortcut must include Command, Option, or Control.")
+            shortcutRecorderIsError = true
+            NSSound.beep()
+            return nil
+        }
+
+        keyboardShortcutStore.setShortcut(shortcut, for: command)
+        shortcutRecorderMessage = "\(commandTitle(for: command)) \(tr("updated to")) \(shortcut.displayText)"
+        shortcutRecorderIsError = false
+        stopShortcutCapture(clearSelection: true)
+        return nil
+    }
+
+    private func commandTitle(for command: AppShortcutCommand) -> String {
+        L10n.tr(command.titleKey, fallback: command.fallbackTitle)
     }
 
     private func focusDownloadDirectorySetting() {
