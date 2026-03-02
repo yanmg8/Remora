@@ -25,7 +25,7 @@ enum AppLanguageMode: String, CaseIterable, Identifiable {
         case .english:
             return "en"
         case .simplifiedChinese:
-            return "zh-Hans"
+            return "zh-hans"
         }
     }
 

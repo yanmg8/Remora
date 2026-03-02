@@ -1,8 +1,8 @@
 import Foundation
 
 enum L10n {
-    static func tr(_ key: String, fallback: String) -> String {
-        let mode = AppLanguageMode.resolved(
+    static func tr(_ key: String, fallback: String, modeOverride: AppLanguageMode? = nil) -> String {
+        let mode: AppLanguageMode = modeOverride ?? AppLanguageMode.resolved(
             from: UserDefaults.standard.string(forKey: AppSettings.languageModeKey) ?? AppLanguageMode.system.rawValue
         )
 
