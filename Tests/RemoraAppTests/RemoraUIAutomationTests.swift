@@ -37,8 +37,8 @@ struct RemoraUIAutomationTests {
             .activate(options: [.activateAllWindows])
 
         let appElement = AXUIElementCreateApplication(process.processIdentifier)
-        guard ensureSessionAvailable(in: appElement, timeout: 8) else {
-            Issue.record("Could not create an initial session before opening File Manager.")
+        guard ensureSSHSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create an SSH session before opening File Manager.")
             return
         }
 
@@ -70,6 +70,37 @@ struct RemoraUIAutomationTests {
             findElement(in: appElement, matching: { self.identifier(of: $0) == "file-manager-refresh" }) == nil
         })
         #expect(collapsed, "File Manager should collapse and hide Refresh button.")
+    }
+
+    @Test
+    func fileManagerIsHiddenForLocalSession() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create an initial local session.")
+            return
+        }
+
+        let hasFileManagerHeader = waitUntil(timeout: 3) {
+            findElement(in: appElement, matching: { element in
+                role(of: element) == kAXButtonRole as String && title(of: element) == "File Manager"
+            }) != nil
+        }
+        #expect(!hasFileManagerHeader, "File Manager should be hidden when active session is local.")
     }
 
     @Test
@@ -1544,7 +1575,7 @@ struct RemoraUIAutomationTests {
     }
 
     private func expandFileManager(in appElement: AXUIElement) -> Bool {
-        guard ensureSessionAvailable(in: appElement, timeout: 8) else { return false }
+        guard ensureSSHSessionAvailable(in: appElement, timeout: 8) else { return false }
 
         guard let fileManagerButton = waitForElement(
             in: appElement,
@@ -1635,6 +1666,13 @@ struct RemoraUIAutomationTests {
         }) != nil
     }
 
+    private func hasConnectedSSHStatus(in appElement: AXUIElement) -> Bool {
+        findElement(in: appElement, matching: { element in
+            guard let text = title(of: element) else { return false }
+            return text.hasPrefix("Connected (SSH")
+        }) != nil
+    }
+
     private func ensureConnectedSession(in appElement: AXUIElement, timeout: TimeInterval) -> Bool {
         if hasConnectedStatus(in: appElement) {
             return true
@@ -1644,6 +1682,25 @@ struct RemoraUIAutomationTests {
 
         return waitUntil(timeout: timeout) {
             hasConnectedStatus(in: appElement)
+        }
+    }
+
+    private func ensureSSHSessionAvailable(in appElement: AXUIElement, timeout: TimeInterval) -> Bool {
+        if hasConnectedSSHStatus(in: appElement) {
+            return true
+        }
+
+        guard ensureSessionAvailable(in: appElement, timeout: timeout) else {
+            return false
+        }
+
+        if !openHostInSidebar(named: "prod-api", in: appElement),
+           !openHostInSidebar(named: "staging-api", in: appElement) {
+            return false
+        }
+
+        return waitUntil(timeout: timeout) {
+            hasConnectedSSHStatus(in: appElement)
         }
     }
 

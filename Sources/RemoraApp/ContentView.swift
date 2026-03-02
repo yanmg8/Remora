@@ -415,11 +415,15 @@ struct ContentView: View {
         VStack(spacing: VisualStyle.panelSpacing) {
             sessionContainer
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if !workspace.tabs.isEmpty {
+            if !workspace.tabs.isEmpty, shouldShowFileManager {
                 fileManagerDisclosure
             }
         }
         .padding(VisualStyle.pagePadding)
+    }
+
+    private var shouldShowFileManager: Bool {
+        workspace.activePane?.runtime.connectionMode == .ssh
     }
 
     private var sessionContainer: some View {
