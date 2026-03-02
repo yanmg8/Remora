@@ -421,9 +421,7 @@ struct RemoraUIAutomationTests {
         guard let settingsButton = waitForElement(
             in: appElement,
             timeout: 8,
-            matching: { element in
-                role(of: element) == kAXButtonRole as String && title(of: element) == "Settings"
-            }
+            matching: { identifier(of: $0) == "sidebar-settings" }
         ) else {
             Issue.record("Could not find sidebar settings button.")
             return
@@ -441,7 +439,13 @@ struct RemoraUIAutomationTests {
         }
 
         #expect(
-            findElement(in: appElement, matching: { title(of: $0) == "Download directory" }) != nil,
+            findElement(
+                in: appElement,
+                matching: { element in
+                    let text = title(of: element) ?? ""
+                    return text == "Download directory" || text == "下载目录"
+                }
+            ) != nil,
             "Expected General pane to be the default settings pane."
         )
 
@@ -449,7 +453,11 @@ struct RemoraUIAutomationTests {
             in: appElement,
             timeout: 5,
             matching: { element in
-                role(of: element) == kAXButtonRole as String && title(of: element) == "Advanced"
+                role(of: element) == kAXButtonRole as String
+                    && {
+                        let text = title(of: element) ?? ""
+                        return text == "Advanced" || text == "高级"
+                    }()
             }
         ) else {
             Issue.record("Could not find Advanced tab in settings sheet.")
@@ -459,7 +467,13 @@ struct RemoraUIAutomationTests {
         _ = AXUIElementPerformAction(advancedTab, kAXPressAction as CFString)
 
         let switched = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { self.title(of: $0) == "Server metrics sampling" }) != nil
+            findElement(
+                in: appElement,
+                matching: { element in
+                    let text = self.title(of: element) ?? ""
+                    return text == "Server metrics sampling" || text == "服务器指标采样"
+                }
+            ) != nil
         })
         #expect(switched, "Clicking Advanced tab should switch the settings pane.")
 

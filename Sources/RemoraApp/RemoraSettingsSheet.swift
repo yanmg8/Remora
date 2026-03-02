@@ -116,7 +116,7 @@ struct RemoraSettingsSheet: View {
             VStack(spacing: 8) {
                 Image(systemName: pane.icon)
                     .font(.system(size: 18, weight: .regular))
-                Text(pane.title)
+                Text(tr(pane.title))
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(isSelected ? Color.accentColor : VisualStyle.textSecondary)
@@ -134,13 +134,13 @@ struct RemoraSettingsSheet: View {
 
     private var generalPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Application")
+            Text(tr("Application"))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(VisualStyle.textPrimary)
 
             Form {
                 Picker(
-                    "Language",
+                    tr("Language"),
                     selection: Binding(
                         get: { AppLanguageMode.resolved(from: languageModeRawValue) },
                         set: { mode in
@@ -148,14 +148,14 @@ struct RemoraSettingsSheet: View {
                         }
                     )
                 ) {
-                    Text("Follow System").tag(AppLanguageMode.system)
-                    Text("English").tag(AppLanguageMode.english)
-                    Text("Simplified Chinese").tag(AppLanguageMode.simplifiedChinese)
+                    Text(tr("Follow System")).tag(AppLanguageMode.system)
+                    Text(tr("English")).tag(AppLanguageMode.english)
+                    Text(tr("Simplified Chinese")).tag(AppLanguageMode.simplifiedChinese)
                 }
                 .frame(maxWidth: 260, alignment: .leading)
 
                 Picker(
-                    "Appearance",
+                    tr("Appearance"),
                     selection: Binding(
                         get: { AppAppearanceMode.resolved(from: appearanceModeRawValue) },
                         set: { mode in
@@ -163,30 +163,30 @@ struct RemoraSettingsSheet: View {
                         }
                     )
                 ) {
-                    Text("System").tag(AppAppearanceMode.system)
-                    Text("Light").tag(AppAppearanceMode.light)
-                    Text("Dark").tag(AppAppearanceMode.dark)
+                    Text(tr("System")).tag(AppAppearanceMode.system)
+                    Text(tr("Light")).tag(AppAppearanceMode.light)
+                    Text(tr("Dark")).tag(AppAppearanceMode.dark)
                 }
                 .frame(maxWidth: 260, alignment: .leading)
             }
             .formStyle(.grouped)
             .font(.system(size: 13))
 
-            Text("Language changes are applied immediately.")
+            Text(tr("Language changes are applied immediately."))
                 .font(.system(size: 12))
                 .foregroundStyle(VisualStyle.textSecondary)
 
-            Text("File Manager")
+            Text(tr("File Manager"))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(VisualStyle.textPrimary)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Download directory")
+                Text(tr("Download directory"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(VisualStyle.textPrimary)
 
                 HStack(spacing: 8) {
-                    TextField("Download directory", text: $downloadDirectoryDraft)
+                    TextField(tr("Download directory"), text: $downloadDirectoryDraft)
                         .textFieldStyle(.roundedBorder)
                         .font(.caption.monospaced())
                         .focused($focusedField, equals: .downloadDirectoryPath)
@@ -195,14 +195,14 @@ struct RemoraSettingsSheet: View {
                         }
                         .accessibilityIdentifier("settings-download-path-field")
 
-                    Button("Choose…") {
+                    Button(tr("Choose…")) {
                         chooseDownloadDirectory()
                     }
                     .controlSize(.small)
                     .accessibilityIdentifier("settings-download-path-choose")
                 }
 
-                Text("Used by File Manager downloads and transfer queue.")
+                Text(tr("Used by File Manager downloads and transfer queue."))
                     .font(.caption)
                     .foregroundStyle(VisualStyle.textSecondary)
             }
@@ -231,13 +231,13 @@ struct RemoraSettingsSheet: View {
 
     private var advancedPane: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Server metrics sampling")
+            Text(tr("Server metrics sampling"))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(VisualStyle.textPrimary)
 
             Form {
                 HStack(spacing: 12) {
-                    Text("Active tab refresh (seconds)")
+                    Text(tr("Active tab refresh (seconds)"))
                     Stepper(value: $serverMetricsActiveRefreshSeconds, in: 2...30) {
                         Text("\(serverMetricsActiveRefreshSeconds)")
                             .font(.system(.body, design: .monospaced))
@@ -247,7 +247,7 @@ struct RemoraSettingsSheet: View {
                 }
 
                 HStack(spacing: 12) {
-                    Text("Inactive tab refresh (seconds)")
+                    Text(tr("Inactive tab refresh (seconds)"))
                     Stepper(value: $serverMetricsInactiveRefreshSeconds, in: 4...90) {
                         Text("\(serverMetricsInactiveRefreshSeconds)")
                             .font(.system(.body, design: .monospaced))
@@ -257,7 +257,7 @@ struct RemoraSettingsSheet: View {
                 }
 
                 HStack(spacing: 12) {
-                    Text("Max concurrent metric fetches")
+                    Text(tr("Max concurrent metric fetches"))
                     Stepper(value: $serverMetricsMaxConcurrentFetches, in: 1...6) {
                         Text("\(serverMetricsMaxConcurrentFetches)")
                             .font(.system(.body, design: .monospaced))
@@ -269,7 +269,7 @@ struct RemoraSettingsSheet: View {
             .formStyle(.grouped)
             .font(.system(size: 13))
 
-            Text("Higher refresh and concurrency improve responsiveness but increase local and remote load.")
+            Text(tr("Higher refresh and concurrency improve responsiveness but increase local and remote load."))
                 .font(.system(size: 12))
                 .foregroundStyle(VisualStyle.textSecondary)
             Spacer(minLength: 0)
@@ -293,7 +293,7 @@ struct RemoraSettingsSheet: View {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
+        panel.prompt = tr("Choose…")
         panel.directoryURL = resolvedDownloadDirectoryURL(from: downloadDirectoryDraft)
 
         guard panel.runModal() == .OK, let selectedURL = panel.url else {
@@ -356,5 +356,9 @@ struct RemoraSettingsSheet: View {
         if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
             serverMetricsMaxConcurrentFetches = normalizedConcurrent
         }
+    }
+
+    private func tr(_ key: String) -> String {
+        L10n.tr(key, fallback: key)
     }
 }
