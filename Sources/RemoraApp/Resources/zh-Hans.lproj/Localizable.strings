@@ -6,9 +6,11 @@
 "Session" = "会话";
 "Tagging" = "标签";
 "File Manager" = "文件管理";
+"Application" = "应用";
 "Download directory" = "下载目录";
 "Choose…" = "选择…";
 "Used by File Manager downloads and transfer queue." = "用于文件管理器下载和传输队列。";
+"Language changes are applied immediately." = "语言切换会立即生效。";
 "Open one local terminal session on launch" = "启动时打开一个本地终端会话";
 "Confirm before closing an active session tab" = "关闭活动会话标签前确认";
 "Reopen the last selected workspace on launch" = "启动时恢复上次选中的工作区";

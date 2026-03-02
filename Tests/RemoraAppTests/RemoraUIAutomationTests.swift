@@ -441,27 +441,27 @@ struct RemoraUIAutomationTests {
         }
 
         #expect(
-            findElement(in: appElement, matching: { title(of: $0) == "Show these items in the sidebar:" }) != nil,
-            "Expected sidebar section to be the default pane."
+            findElement(in: appElement, matching: { title(of: $0) == "Download directory" }) != nil,
+            "Expected General pane to be the default settings pane."
         )
 
-        guard let generalTab = waitForElement(
+        guard let advancedTab = waitForElement(
             in: appElement,
             timeout: 5,
             matching: { element in
-                role(of: element) == kAXButtonRole as String && title(of: element) == "General"
+                role(of: element) == kAXButtonRole as String && title(of: element) == "Advanced"
             }
         ) else {
-            Issue.record("Could not find General tab in settings sheet.")
+            Issue.record("Could not find Advanced tab in settings sheet.")
             return
         }
 
-        _ = AXUIElementPerformAction(generalTab, kAXPressAction as CFString)
+        _ = AXUIElementPerformAction(advancedTab, kAXPressAction as CFString)
 
         let switched = waitUntil(timeout: 5, {
-            findElement(in: appElement, matching: { self.title(of: $0) == "Session" }) != nil
+            findElement(in: appElement, matching: { self.title(of: $0) == "Server metrics sampling" }) != nil
         })
-        #expect(switched, "Clicking General tab should switch the settings pane.")
+        #expect(switched, "Clicking Advanced tab should switch the settings pane.")
 
         // Keep the window open; tests terminate the app process after assertions.
     }
