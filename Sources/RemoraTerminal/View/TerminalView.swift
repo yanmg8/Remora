@@ -20,6 +20,8 @@ public final class TerminalView: NSView {
     public var onInput: (@Sendable (Data) -> Void)?
     public var onFocus: (() -> Void)?
     public var onResize: ((Int, Int) -> Void)?
+    /// Callback when user double-clicks on a line: (text, clickColumnIndex)
+    public var onDoubleClick: ((String, Int) -> Void)?
     public var isDisplayActive: Bool = true {
         didSet {
             guard isDisplayActive else { return }
@@ -42,6 +44,11 @@ public final class TerminalView: NSView {
     private var flushSequence: UInt64 = 0
     private var accessibilityTextSnapshot = ""
     private var scrollbackOffset = 0
+
+    // Double-click tracking
+    private var lastClickTime: TimeInterval = 0
+    private var lastClickRow: Int = -1
+    private let doubleClickInterval: TimeInterval = 0.3
 
     public init(rows: Int = 30, columns: Int = 120) {
         self.screenBuffer = ScreenBuffer(rows: rows, columns: columns)
@@ -150,8 +157,28 @@ public final class TerminalView: NSView {
     public override func mouseDown(with event: NSEvent) {
         onFocus?()
         window?.makeFirstResponder(self)
+        
         let point = convert(event.locationInWindow, from: nil)
         let location = cellLocation(from: point)
+        
+        // Check for double-click
+        let now = Date().timeIntervalSince1970
+        let isDoubleClick = (now - lastClickTime) < doubleClickInterval 
+                            && location.row == lastClickRow
+        
+        lastClickTime = now
+        lastClickRow = location.row
+        
+        if isDoubleClick {
+            // Double-click: extract text from the clicked line and trigger callback
+            let lineText = extractTextFromLine(at: location.row)
+            if !lineText.isEmpty {
+                onDoubleClick?(lineText, location.column)
+            }
+            return
+        }
+        
+        // Single click: start selection
         selection = TerminalSelection(
             startRow: location.row,
             startColumn: location.column,
@@ -159,6 +186,16 @@ public final class TerminalView: NSView {
             endColumn: location.column
         )
         needsDisplay = true
+    }
+    
+    /// Extract plain text from a screen line
+    private func extractTextFromLine(at row: Int) -> String {
+        let line = screenBuffer.line(at: row)
+        var text = ""
+        for i in 0..<line.count {
+            text.append(line[i].character)
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public override func scrollWheel(with event: NSEvent) {
