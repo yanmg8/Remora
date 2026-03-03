@@ -4,6 +4,14 @@ public final class ANSIParser {
     // Terminal modes
     public var mouseReportingEnabled: Bool = false
     public var bracketedPasteEnabled: Bool = false
+
+    // Callbacks for terminal queries
+    public var onDSR: ((_ row: Int, _ col: Int) -> Void)?
+    public var onDA: (() -> Void)?
+    public var onCUU: (() -> Void)?  // Cursor up
+    public var onCUD: (() -> Void)?  // Cursor down
+    public var onCUF: (() -> Void)?  // Cursor forward
+    public var onCUB: (() -> Void)?  // Cursor back
     
     private enum State {
         case ground
@@ -119,7 +127,33 @@ case UInt8(ascii: "J"):
         case UInt8(ascii: "l"):
             // Private mode reset (DECRST)
             handlePrivateModeReset(paramsString: paramsString, screen: screen)
+        case UInt8(ascii: "n"):
+            // DSR - Device Status Report (CSI 6n)
+            // Reports cursor position as ESC[row;colR
+            if paramsString.isEmpty || paramsString == "5" {
+                // DSR 5 = Status report (OK)
+                // Not typically used, but we handle it
+            } else if paramsString == "6" {
+                // DSR 6 = Cursor position report
+                // Callback will handle sending response
+                onDSR?(screen.cursorRow + 1, screen.cursorColumn + 1)
+            }
+        case UInt8(ascii: "c"):
+            // DA - Device Attributes (CSI c)
+            // Response: ESC[?1;2c (VT100 with advanced video option)
+            if paramsString.isEmpty || paramsString == "0" {
+                onDA?()
+            }
+        case UInt8(ascii: "s"):
+            // SCP - Save Cursor Position (alternative to ESC 7)
+            screen.saveCursor()
+            onCUU?()  // Notify (same as ESC 7)
+        case UInt8(ascii: "u"):
+            // RCP - Restore Cursor Position (alternative to ESC 8)
+            screen.restoreCursor()
+            onCUD?()  // Notify (same as ESC 8)
         default:
+            // Unknown CSI sequence - swallow (do nothing, don't output garbage)
             break
         }
     }

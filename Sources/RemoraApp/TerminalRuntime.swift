@@ -90,6 +90,12 @@ final class TerminalRuntime: ObservableObject {
                 self?.enqueueInput(data)
             }
         }
+        view.onTerminalQueryResponse = { [weak self] data in
+            // Inject response back into PTY input
+            DispatchQueue.main.async {
+                self?.enqueueInput(data)
+            }
+        }
         flushPendingOutputIfNeeded()
     }
 

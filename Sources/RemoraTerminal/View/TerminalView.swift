@@ -22,6 +22,22 @@ public final class TerminalView: NSView {
     public var onResize: ((Int, Int) -> Void)?
     /// Callback when user double-clicks on a line: (text, clickColumnIndex)
     public var onDoubleClick: ((String, Int) -> Void)?
+    /// Callback for terminal query responses (DSR, DA, etc) - injects response back to PTY
+    public var onTerminalQueryResponse: ((Data) -> Void)? {
+        didSet {
+            // Wire up parser callbacks when this is set
+            parser.onDSR = { [weak self] row, col in
+                // Format: ESC [ row ; col R
+                let response = "\u{001B}[\(row);\(col)R"
+                self?.onTerminalQueryResponse?(Data(response.utf8))
+            }
+            parser.onDA = { [weak self] in
+                // Format: ESC [ ? 1 ; 2 c (VT100 with advanced video)
+                let response = "\u{001B}[?1;2c"
+                self?.onTerminalQueryResponse?(Data(response.utf8))
+            }
+        }
+    }
     public var isDisplayActive: Bool = true {
         didSet {
             guard isDisplayActive else { return }
