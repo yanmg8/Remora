@@ -255,10 +255,13 @@ final class TerminalRuntime: ObservableObject {
 
     func resize(columns: Int, rows: Int) {
         let nextSize = PTYSize(columns: max(1, columns), rows: max(1, rows))
+        if pendingPTYSize == nextSize || lastAppliedPTYSize == nextSize {
+            return
+        }
         pendingPTYSize = nextSize
         pendingResizeApplyTask?.cancel()
         pendingResizeApplyTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(180))
+            try? await Task.sleep(for: .milliseconds(50))
             guard let self, !Task.isCancelled else { return }
             await self.applyPendingResizeIfNeeded()
         }
@@ -610,12 +613,18 @@ final class TerminalRuntime: ObservableObject {
 
         while true {
             guard let pendingSize = pendingPTYSize else { return }
-            guard pendingSize != lastAppliedPTYSize else { return }
+            guard pendingSize != lastAppliedPTYSize else {
+                pendingPTYSize = nil
+                return
+            }
             guard let sessionID, let manager = activeSessionManager else { return }
 
             do {
                 try await manager.resize(sessionID: sessionID, pty: pendingSize)
                 lastAppliedPTYSize = pendingSize
+                if pendingPTYSize == pendingSize {
+                    pendingPTYSize = nil
+                }
             } catch {
                 connectionState = "Resize failed: \(error.localizedDescription)"
                 return

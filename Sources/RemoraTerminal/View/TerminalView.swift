@@ -36,6 +36,11 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
                 let response = "\u{001B}[?1;2c"
                 self?.onTerminalQueryResponse?(Data(response.utf8))
             }
+            parser.onKittyKeyboardQuery = { [weak self] flags in
+                // Format: ESC [ ? <flags> u
+                let response = "\u{001B}[?\(flags)u"
+                self?.onTerminalQueryResponse?(Data(response.utf8))
+            }
         }
     }
     public var isDisplayActive: Bool = true {
@@ -184,6 +189,14 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         interpretKeyEvents([event])
     }
 
+    public override func keyUp(with event: NSEvent) {
+        if let input = inputMapper.mapKeyUp(event: event) {
+            onInput?(input)
+            return
+        }
+        super.keyUp(with: event)
+    }
+
     public func paste(_ sender: Any?) {
         scrollToBottom()
         guard let value = NSPasteboard.general.string(forType: .string) else { return }
@@ -307,6 +320,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
         parser.parse(chunk, into: screenBuffer)
         inputMapper.applicationCursorKeysEnabled = parser.applicationCursorKeysEnabled
+        inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
         focusReportingEnabled = parser.focusReportingEnabled
         bracketedPasteEnabled = parser.bracketedPasteEnabled
         let maxOffset = screenBuffer.maxViewportOffset()
@@ -345,10 +359,12 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     private func resizeBufferToBounds() {
         guard bounds.width > 0, bounds.height > 0 else { return }
+        flushPendingInputBeforeResize()
 
         let drawableWidth = max(bounds.width - renderer.horizontalInset * 2, renderer.cellWidth)
         let columns = max(Int(drawableWidth / renderer.cellWidth), 1)
         let rows = max(Int(bounds.height / renderer.lineHeight), 1)
+        guard columns != screenBuffer.columns || rows != screenBuffer.rows else { return }
         screenBuffer.resize(rows: rows, columns: columns)
         let maxOffset = screenBuffer.maxViewportOffset()
         if scrollbackOffset > maxOffset {
@@ -361,6 +377,18 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         dirtyRows.formUnion(screenBuffer.consumeDirtyRows())
         updateAccessibilitySnapshot()
         needsDisplay = true
+    }
+
+    private func flushPendingInputBeforeResize() {
+        let pending = ringBuffer.drainAll()
+        guard !pending.isEmpty else { return }
+
+        parser.parse(pending, into: screenBuffer)
+        inputMapper.applicationCursorKeysEnabled = parser.applicationCursorKeysEnabled
+        inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
+        focusReportingEnabled = parser.focusReportingEnabled
+        bracketedPasteEnabled = parser.bracketedPasteEnabled
+        dirtyRows.formUnion(screenBuffer.consumeDirtyRows())
     }
 
     private func drawCursor(in context: CGContext) {
