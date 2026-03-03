@@ -43,7 +43,14 @@ public final class CoreTextTerminalRenderer {
         case .default:
             return isBackground ? NSColor.black : NSColor(calibratedWhite: 0.9, alpha: 1)
         case .indexed(let idx):
-            return palette[Int(idx) % palette.count]
+            return indexedColor(idx)
+        case .trueColor(let red, let green, let blue):
+            return NSColor(
+                calibratedRed: CGFloat(red) / 255.0,
+                green: CGFloat(green) / 255.0,
+                blue: CGFloat(blue) / 255.0,
+                alpha: 1
+            )
         }
     }
 
@@ -83,14 +90,48 @@ public final class CoreTextTerminalRenderer {
         lineHeight = ceil(size.height + 2)
     }
 
-    private let palette: [NSColor] = [
-        .black,
-        .systemRed,
-        .systemGreen,
-        .systemYellow,
-        .systemBlue,
-        .systemPurple,
-        .systemTeal,
-        .white,
+    private func indexedColor(_ index: UInt8) -> NSColor {
+        let idx = Int(index)
+        if idx < 16 {
+            return ansi16Palette[idx]
+        }
+        if idx < 232 {
+            let cube = idx - 16
+            let red = cube / 36
+            let green = (cube % 36) / 6
+            let blue = cube % 6
+            return NSColor(
+                calibratedRed: colorCubeComponent(red),
+                green: colorCubeComponent(green),
+                blue: colorCubeComponent(blue),
+                alpha: 1
+            )
+        }
+        let grayscale = CGFloat(8 + (idx - 232) * 10) / 255.0
+        return NSColor(calibratedRed: grayscale, green: grayscale, blue: grayscale, alpha: 1)
+    }
+
+    private func colorCubeComponent(_ value: Int) -> CGFloat {
+        if value == 0 { return 0 }
+        return CGFloat(55 + value * 40) / 255.0
+    }
+
+    private let ansi16Palette: [NSColor] = [
+        NSColor(calibratedRed: 0, green: 0, blue: 0, alpha: 1),
+        NSColor(calibratedRed: 0.804, green: 0.200, blue: 0.200, alpha: 1),
+        NSColor(calibratedRed: 0.525, green: 0.600, blue: 0.000, alpha: 1),
+        NSColor(calibratedRed: 0.745, green: 0.600, blue: 0.000, alpha: 1),
+        NSColor(calibratedRed: 0.200, green: 0.400, blue: 0.800, alpha: 1),
+        NSColor(calibratedRed: 0.600, green: 0.400, blue: 0.800, alpha: 1),
+        NSColor(calibratedRed: 0.200, green: 0.600, blue: 0.600, alpha: 1),
+        NSColor(calibratedRed: 0.800, green: 0.800, blue: 0.800, alpha: 1),
+        NSColor(calibratedRed: 0.337, green: 0.341, blue: 0.325, alpha: 1),
+        NSColor(calibratedRed: 0.937, green: 0.161, blue: 0.161, alpha: 1),
+        NSColor(calibratedRed: 0.729, green: 0.839, blue: 0.102, alpha: 1),
+        NSColor(calibratedRed: 0.984, green: 0.831, blue: 0.176, alpha: 1),
+        NSColor(calibratedRed: 0.443, green: 0.624, blue: 0.902, alpha: 1),
+        NSColor(calibratedRed: 0.749, green: 0.498, blue: 0.902, alpha: 1),
+        NSColor(calibratedRed: 0.278, green: 0.729, blue: 0.729, alpha: 1),
+        NSColor(calibratedRed: 0.933, green: 0.933, blue: 0.933, alpha: 1),
     ]
 }

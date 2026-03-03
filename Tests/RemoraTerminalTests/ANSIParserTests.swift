@@ -182,6 +182,30 @@ struct ANSIParserTests {
         #expect(row1 == "WXYZ!")
     }
 
+    @Test
+    func parserAppliesExtendedSGRColors() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 2, columns: 8)
+
+        parser.parse(Data("\u{001B}[38;2;255;136;0;48;5;24mX".utf8), into: screen)
+
+        let line = screen.line(at: 0)
+        #expect(line[0].attributes.foreground == .trueColor(255, 136, 0))
+        #expect(line[0].attributes.background == .indexed(24))
+    }
+
+    @Test
+    func parserAppliesBrightANSIColors() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 2, columns: 8)
+
+        parser.parse(Data("\u{001B}[93;104mX".utf8), into: screen)
+
+        let line = screen.line(at: 0)
+        #expect(line[0].attributes.foreground == .indexed(11))
+        #expect(line[0].attributes.background == .indexed(12))
+    }
+
     private func rstrip(_ text: String) -> String {
         var output = text
         while output.last == " " {

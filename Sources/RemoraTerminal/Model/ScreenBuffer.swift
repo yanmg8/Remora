@@ -119,7 +119,9 @@ public final class ScreenBuffer {
             return
         }
 
-        for code in parameters {
+        var index = 0
+        while index < parameters.count {
+            let code = parameters[index]
             switch code {
             case 0:
                 activeAttributes = .default
@@ -139,9 +141,16 @@ public final class ScreenBuffer {
                 activeAttributes.background = .indexed(UInt8(code - 40))
             case 49:
                 activeAttributes.background = .default
+            case 90 ... 97:
+                activeAttributes.foreground = .indexed(UInt8(code - 90 + 8))
+            case 100 ... 107:
+                activeAttributes.background = .indexed(UInt8(code - 100 + 8))
+            case 38, 48:
+                index = applyExtendedColor(code: code, parameters: parameters, index: index)
             default:
-                continue
+                break
             }
+            index += 1
         }
     }
 
@@ -326,6 +335,43 @@ public final class ScreenBuffer {
 
     private func clampViewportOffset() {
         viewportOffset = min(max(0, viewportOffset), maxViewportOffset())
+    }
+
+    private func applyExtendedColor(code: Int, parameters: [Int], index: Int) -> Int {
+        guard index + 1 < parameters.count else { return index }
+
+        let targetIsForeground = code == 38
+        let colorMode = parameters[index + 1]
+        switch colorMode {
+        case 5:
+            guard index + 2 < parameters.count else { return index + 1 }
+            let colorIndex = Self.clampColorComponent(parameters[index + 2])
+            let color: TerminalColor = .indexed(UInt8(colorIndex))
+            if targetIsForeground {
+                activeAttributes.foreground = color
+            } else {
+                activeAttributes.background = color
+            }
+            return index + 2
+        case 2:
+            guard index + 4 < parameters.count else { return index + 1 }
+            let red = UInt8(Self.clampColorComponent(parameters[index + 2]))
+            let green = UInt8(Self.clampColorComponent(parameters[index + 3]))
+            let blue = UInt8(Self.clampColorComponent(parameters[index + 4]))
+            let color: TerminalColor = .trueColor(red, green, blue)
+            if targetIsForeground {
+                activeAttributes.foreground = color
+            } else {
+                activeAttributes.background = color
+            }
+            return index + 4
+        default:
+            return index + 1
+        }
+    }
+
+    private static func clampColorComponent(_ value: Int) -> Int {
+        min(max(0, value), 255)
     }
 
     private func viewportWindowLines() -> [TerminalLine] {

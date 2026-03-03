@@ -3,6 +3,7 @@ import Foundation
 public enum TerminalColor: Equatable, Hashable, Sendable {
     case `default`
     case indexed(UInt8)
+    case trueColor(UInt8, UInt8, UInt8)
 }
 
 public struct TerminalAttributes: Equatable, Hashable, Sendable {
