@@ -63,4 +63,89 @@ struct ANSIParserTests {
         #expect(!rendered.contains("0;root@example:/home"))
         #expect(rendered.contains("root@example:/home#"))
     }
+
+    @Test
+    func parserDecodesUTF8AcrossChunkBoundaries() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 2, columns: 8)
+
+        parser.parse(Data([0xE2]), into: screen)
+        parser.parse(Data([0x94]), into: screen)
+        parser.parse(Data([0x80]), into: screen)
+
+        let line = screen.line(at: 0)
+        #expect(line[0].character == "─")
+    }
+
+    @Test
+    func parserSwallowsPrivateModeSequencesWithRandomChunking() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 6, columns: 64)
+        let payload = Data(
+            (
+                "\u{001B}[?2026h" +
+                "\u{001B}[?25l" +
+                "\u{001B}[1;1H❯    Yes, I trust this folder" +
+                "\u{001B}[2;1H     No, exit" +
+                "\u{001B}[?2026l"
+            ).utf8
+        )
+
+        var cursor = 0
+        var seed: UInt64 = 0xC0DEC0DE
+        while cursor < payload.count {
+            seed = seed &* 6364136223846793005 &+ 1
+            let chunkLength = Int(seed % 7) + 1
+            let end = min(payload.count, cursor + chunkLength)
+            parser.parse(payload.subdata(in: cursor ..< end), into: screen)
+            cursor = end
+        }
+
+        let line0 = rstrip(String(screen.line(at: 0).cells.map(\.character)))
+        let line1 = rstrip(String(screen.line(at: 1).cells.map(\.character)))
+        let combined = line0 + "\n" + line1
+
+        #expect(line0 == "❯    Yes, I trust this folder")
+        #expect(line1 == "     No, exit")
+        #expect(!combined.contains("026-"))
+        #expect(!combined.contains("?25l"))
+        #expect(screen.isCursorVisible == false)
+        #expect(screen.isSynchronizedUpdate == false)
+    }
+
+    @Test
+    func parserTracksApplicationCursorKeysMode() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 2, columns: 8)
+
+        parser.parse(Data("\u{001B}[?1h".utf8), into: screen)
+        #expect(parser.applicationCursorKeysEnabled == true)
+
+        parser.parse(Data("\u{001B}[?1l".utf8), into: screen)
+        #expect(parser.applicationCursorKeysEnabled == false)
+    }
+
+    @Test
+    func parserEndsSynchronizedUpdateWithFullDirtyRefresh() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 3, columns: 8)
+        _ = screen.consumeDirtyRows()
+
+        parser.parse(Data("\u{001B}[?2026h".utf8), into: screen)
+        parser.parse(Data("abc".utf8), into: screen)
+        #expect(screen.isSynchronizedUpdate == true)
+
+        parser.parse(Data("\u{001B}[?2026l".utf8), into: screen)
+        let dirtyRows = screen.consumeDirtyRows()
+        #expect(screen.isSynchronizedUpdate == false)
+        #expect(dirtyRows == Set(0 ..< screen.rows))
+    }
+
+    private func rstrip(_ text: String) -> String {
+        var output = text
+        while output.last == " " {
+            output.removeLast()
+        }
+        return output
+    }
 }

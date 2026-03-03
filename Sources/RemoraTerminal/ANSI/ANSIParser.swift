@@ -12,16 +12,20 @@ public final class ANSIParser {
     public var onCUD: (() -> Void)?  // Cursor down
     public var onCUF: (() -> Void)?  // Cursor forward
     public var onCUB: (() -> Void)?  // Cursor back
+    public private(set) var applicationCursorKeysEnabled: Bool = false
     
     private enum State {
         case ground
         case escape
         case csi([UInt8])
+        case ss3
         case osc
         case oscEscape
     }
 
     private var state: State = .ground
+    private var pendingUTF8Bytes: [UInt8] = []
+    private var expectedUTF8ByteCount: Int?
 
     public init() {}
 
@@ -38,6 +42,8 @@ public final class ANSIParser {
         case .escape:
             if byte == UInt8(ascii: "[") {
                 state = .csi([])
+            } else if byte == UInt8(ascii: "O") {
+                state = .ss3
             } else if byte == UInt8(ascii: "]") {
                 state = .osc
             } else if byte == UInt8(ascii: "7") {
@@ -55,10 +61,32 @@ public final class ANSIParser {
             if (0x40 ... 0x7E).contains(byte) {
                 executeCSI(finalByte: byte, paramsBytes: bytes, screen: screen)
                 state = .ground
-            } else {
+            } else if (0x20 ... 0x3F).contains(byte) {
                 bytes.append(byte)
                 state = .csi(bytes)
+            } else if byte == 0x1B {
+                // Broken/incomplete CSI followed by a new ESC sequence.
+                state = .escape
+            } else {
+                // Invalid CSI byte: abort sequence without leaking bytes as text.
+                state = .ground
+                handleGround(byte: byte, screen: screen)
             }
+        case .ss3:
+            // SS3 (ESC O <final>) often encodes cursor moves in application mode.
+            switch byte {
+            case UInt8(ascii: "A"):
+                screen.moveCursor(deltaRow: -1)
+            case UInt8(ascii: "B"):
+                screen.moveCursor(deltaRow: 1)
+            case UInt8(ascii: "C"):
+                screen.moveCursor(deltaColumn: 1)
+            case UInt8(ascii: "D"):
+                screen.moveCursor(deltaColumn: -1)
+            default:
+                break
+            }
+            state = .ground
         case .osc:
             if byte == 0x07 {
                 state = .ground
@@ -75,9 +103,20 @@ public final class ANSIParser {
     }
 
     private func handleGround(byte: UInt8, screen: ScreenBuffer) {
+        if !pendingUTF8Bytes.isEmpty {
+            if isUTF8ContinuationByte(byte) {
+                consumeUTF8(byte: byte, screen: screen)
+                return
+            }
+            resetPendingUTF8()
+        }
+
         switch byte {
         case 0x1B:
             state = .escape
+        case 0x9B:
+            // C1 CSI control, equivalent to ESC [
+            state = .csi([])
         case 0x0A:
             screen.lineFeed()
         case 0x0D:
@@ -90,6 +129,8 @@ public final class ANSIParser {
             if let scalar = UnicodeScalar(Int(byte)) {
                 screen.put(character: Character(scalar))
             }
+        case 0xC2 ... 0xF4:
+            consumeUTF8(byte: byte, screen: screen)
         default:
             break
         }
@@ -106,11 +147,8 @@ public final class ANSIParser {
             let row = (params.first ?? 1) - 1
             let col = (params.dropFirst().first ?? 1) - 1
             screen.moveCursor(row: row, column: col)
-case UInt8(ascii: "J"):
+        case UInt8(ascii: "J"):
             screen.clearScreen(mode: params.first ?? 0)
-            if params.first == 2 {
-                screen.clearScreen()
-            }
         case UInt8(ascii: "K"):
             screen.clearLine(mode: params.first ?? 0)
         case UInt8(ascii: "A"):
@@ -166,6 +204,12 @@ case UInt8(ascii: "J"):
             let modeStr = String(paramsString.dropFirst())
             
             switch modeStr {
+            case "1":
+                // DECCKM - application cursor keys mode.
+                applicationCursorKeysEnabled = true
+            case "25":
+                // Show cursor.
+                screen.setCursorVisible(true)
             case "1049":
                 // Enter alternate screen buffer
                 screen.enterAlternateBuffer()
@@ -178,6 +222,9 @@ case UInt8(ascii: "J"):
             case "2004":
                 // Bracketed paste
                 bracketedPasteEnabled = true
+            case "2026":
+                // Synchronized updates.
+                screen.beginSynchronizedUpdate()
             default:
                 break
             }
@@ -190,6 +237,12 @@ case UInt8(ascii: "J"):
             let modeStr = String(paramsString.dropFirst())
             
             switch modeStr {
+            case "1":
+                // DECCKM - normal cursor keys mode.
+                applicationCursorKeysEnabled = false
+            case "25":
+                // Hide cursor.
+                screen.setCursorVisible(false)
             case "1049":
                 // Leave alternate screen buffer
                 screen.leaveAlternateBuffer()
@@ -202,6 +255,9 @@ case UInt8(ascii: "J"):
             case "2004":
                 // Disable bracketed paste
                 bracketedPasteEnabled = false
+            case "2026":
+                // End synchronized updates and force full redraw.
+                screen.endSynchronizedUpdate()
             default:
                 break
             }
@@ -211,5 +267,55 @@ case UInt8(ascii: "J"):
     private func parseParams(_ raw: String) -> [Int] {
         if raw.isEmpty { return [] }
         return raw.split(separator: ";").map { Int($0) ?? 0 }
+    }
+
+    private func consumeUTF8(byte: UInt8, screen: ScreenBuffer) {
+        if pendingUTF8Bytes.isEmpty {
+            guard let expectedLength = expectedUTF8Length(forLeadingByte: byte) else {
+                return
+            }
+            pendingUTF8Bytes.append(byte)
+            expectedUTF8ByteCount = expectedLength
+            return
+        }
+
+        guard isUTF8ContinuationByte(byte) else {
+            resetPendingUTF8()
+            return
+        }
+
+        pendingUTF8Bytes.append(byte)
+        guard let expectedUTF8ByteCount, pendingUTF8Bytes.count >= expectedUTF8ByteCount else {
+            return
+        }
+
+        if let decoded = String(data: Data(pendingUTF8Bytes), encoding: .utf8) {
+            for character in decoded {
+                screen.put(character: character)
+            }
+        }
+        resetPendingUTF8()
+    }
+
+    private func resetPendingUTF8() {
+        pendingUTF8Bytes.removeAll(keepingCapacity: true)
+        expectedUTF8ByteCount = nil
+    }
+
+    private func expectedUTF8Length(forLeadingByte byte: UInt8) -> Int? {
+        switch byte {
+        case 0xC2 ... 0xDF:
+            return 2
+        case 0xE0 ... 0xEF:
+            return 3
+        case 0xF0 ... 0xF4:
+            return 4
+        default:
+            return nil
+        }
+    }
+
+    private func isUTF8ContinuationByte(_ byte: UInt8) -> Bool {
+        (0x80 ... 0xBF).contains(byte)
     }
 }

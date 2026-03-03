@@ -19,6 +19,8 @@ public final class ScreenBuffer {
     public private(set) var cursorRow: Int = 0
     public private(set) var cursorColumn: Int = 0
     public private(set) var activeAttributes: TerminalAttributes = .default
+    public private(set) var isCursorVisible: Bool = true
+    public private(set) var isSynchronizedUpdate: Bool = false
 
     public let scrollback: ScrollbackStore
     private var lines: [TerminalLine]
@@ -244,6 +246,22 @@ public final class ScreenBuffer {
 
     public func markAllDirty() {
         dirtyRows = Set(0 ..< rows)
+    }
+
+    public func setCursorVisible(_ visible: Bool) {
+        guard isCursorVisible != visible else { return }
+        isCursorVisible = visible
+        markDirty(row: cursorRow)
+    }
+
+    public func beginSynchronizedUpdate() {
+        isSynchronizedUpdate = true
+    }
+
+    public func endSynchronizedUpdate() {
+        guard isSynchronizedUpdate else { return }
+        isSynchronizedUpdate = false
+        markAllDirty()
     }
 
     public func maxViewportOffset() -> Int {

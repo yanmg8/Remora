@@ -264,6 +264,7 @@ public final class TerminalView: NSView {
         guard !chunk.isEmpty else { return }
 
         parser.parse(chunk, into: screenBuffer)
+        inputMapper.applicationCursorKeysEnabled = parser.applicationCursorKeysEnabled
         let maxOffset = screenBuffer.maxViewportOffset()
         if scrollbackOffset > maxOffset {
             scrollbackOffset = maxOffset
@@ -293,7 +294,7 @@ public final class TerminalView: NSView {
             }
         }
 
-        if isDisplayActive, !dirtyRows.isEmpty {
+        if isDisplayActive, !dirtyRows.isEmpty, !screenBuffer.isSynchronizedUpdate {
             needsDisplay = true
         }
     }
@@ -319,6 +320,7 @@ public final class TerminalView: NSView {
     }
 
     private func drawCursor(in context: CGContext) {
+        guard screenBuffer.isCursorVisible else { return }
         let cursorRect = CGRect(
             x: renderer.horizontalInset + CGFloat(screenBuffer.cursorColumn) * renderer.cellWidth,
             y: bounds.height - CGFloat(screenBuffer.cursorRow + 1) * renderer.lineHeight,
