@@ -52,6 +52,7 @@ final class TerminalRuntime: ObservableObject {
     private var stateTask: Task<Void, Never>?
     private var inputDrainerTask: Task<Void, Never>?
     private var pendingResizeApplyTask: Task<Void, Never>?
+    private var outputFlushTask: Task<Void, Never>?
     private struct QueuedInput {
         var data: Data
         var trackWorkingDirectory: Bool
@@ -60,6 +61,8 @@ final class TerminalRuntime: ObservableObject {
     private var pendingInputs: [QueuedInput] = []
     private var isPaneActive = true
     private var pendingOutput = Data()
+    private var outputBatchBuffer = Data()
+    private var outputBatchSessionID: UUID?
     private var transcriptBuffer = ""
     private let maxTranscriptCharacters = 4_096
     private var transcriptRefreshTask: Task<Void, Never>?
@@ -313,14 +316,21 @@ final class TerminalRuntime: ObservableObject {
     private var _debugPostESCCount = 0
     private let _maxDebugChunks = 30
     private let _maxPostESCChunks = 10
+    private let outputCoalesceMaxBytes = 64 * 1024
+    private let outputCoalesceFrame = Duration.milliseconds(16)
     
     private func bindOutput(for id: UUID, manager: SessionManager) {
         streamTask?.cancel()
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
+        outputBatchBuffer.removeAll(keepingCapacity: false)
+        outputBatchSessionID = id
         _debugChunkCount = 0
         _debugESCDetected = false
         _debugPostESCCount = 0
         streamTask = Task {
             let stream = await manager.sessionOutputStream(sessionID: id)
+
             for await data in stream {
                 if Task.isCancelled { break }
                 // Debug: Log first 30 chunks, then continue 10 more after ESC detected
@@ -348,15 +358,59 @@ final class TerminalRuntime: ObservableObject {
                     }
                 }
 
-                appendTranscript(data)
-                updateAuthenticationState(with: data)
-                if let terminalView {
-                    terminalView.feed(data: data)
-                } else {
-                    enqueuePendingOutput(data)
-                }
+                enqueueOutputChunk(data, for: id)
             }
+
+            flushPendingOutputBatch(for: id)
         }
+    }
+
+    private func flushOutputBatch(_ data: Data) {
+        guard !data.isEmpty else { return }
+        appendTranscript(data)
+        updateAuthenticationState(with: data)
+        if let terminalView {
+            terminalView.feed(data: data)
+        } else {
+            enqueuePendingOutput(data)
+        }
+    }
+
+    private func enqueueOutputChunk(_ data: Data, for sessionID: UUID) {
+        guard !data.isEmpty else { return }
+        if outputBatchSessionID != sessionID {
+            outputBatchBuffer.removeAll(keepingCapacity: false)
+            outputBatchSessionID = sessionID
+        }
+
+        outputBatchBuffer.append(data)
+        if outputBatchBuffer.count >= outputCoalesceMaxBytes {
+            flushPendingOutputBatch(for: sessionID)
+            return
+        }
+        scheduleOutputFlush(for: sessionID)
+    }
+
+    private func scheduleOutputFlush(for sessionID: UUID) {
+        guard outputFlushTask == nil else { return }
+        let delay = outputCoalesceFrame
+        outputFlushTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.flushPendingOutputBatch(for: sessionID)
+        }
+    }
+
+    private func flushPendingOutputBatch(for sessionID: UUID) {
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
+
+        guard outputBatchSessionID == sessionID else { return }
+        guard !outputBatchBuffer.isEmpty else { return }
+
+        let payload = outputBatchBuffer
+        outputBatchBuffer.removeAll(keepingCapacity: true)
+        flushOutputBatch(payload)
     }
 
     private func bindSessionState(for id: UUID, manager: SessionManager) {
@@ -526,8 +580,12 @@ final class TerminalRuntime: ObservableObject {
         streamTask = nil
         stateTask?.cancel()
         stateTask = nil
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
 
         pendingOutput.removeAll(keepingCapacity: false)
+        outputBatchBuffer.removeAll(keepingCapacity: false)
+        outputBatchSessionID = nil
         clearInputQueue()
         pendingResizeApplyTask?.cancel()
         pendingResizeApplyTask = nil
@@ -618,6 +676,10 @@ final class TerminalRuntime: ObservableObject {
         transcriptSnapshot = ""
         transcriptRefreshTask?.cancel()
         transcriptRefreshTask = nil
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
+        outputBatchBuffer.removeAll(keepingCapacity: false)
+        outputBatchSessionID = nil
         pendingOutput.removeAll(keepingCapacity: false)
         activeSSHAuthStage = nil
         sshAuthProbeTail.removeAll(keepingCapacity: false)
