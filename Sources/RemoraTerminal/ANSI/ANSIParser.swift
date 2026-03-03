@@ -195,13 +195,19 @@ public final class ANSIParser {
                 onDA?()
             }
         case UInt8(ascii: "s"):
-            // SCP - Save Cursor Position (alternative to ESC 7)
-            screen.saveCursor()
-            onCUU?()  // Notify (same as ESC 7)
+            // SCP - Save Cursor Position (alternative to ESC 7).
+            // Guard against private/proprietary forms like CSI ?u / CSI >u.
+            if paramsString.isEmpty || paramsString == "0" {
+                screen.saveCursor()
+                onCUU?()  // Notify (same as ESC 7)
+            }
         case UInt8(ascii: "u"):
-            // RCP - Restore Cursor Position (alternative to ESC 8)
-            screen.restoreCursor()
-            onCUD?()  // Notify (same as ESC 8)
+            // RCP - Restore Cursor Position (alternative to ESC 8).
+            // Guard against private/proprietary forms like CSI ?u / CSI >7u.
+            if paramsString.isEmpty || paramsString == "0" {
+                screen.restoreCursor()
+                onCUD?()  // Notify (same as ESC 8)
+            }
         default:
             // Unknown CSI sequence - swallow (do nothing, don't output garbage)
             break

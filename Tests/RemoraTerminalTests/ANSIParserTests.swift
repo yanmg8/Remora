@@ -165,6 +165,23 @@ struct ANSIParserTests {
         #expect(row4 == "5")
     }
 
+    @Test
+    func parserDoesNotTreatPrivateUAsRestoreCursor() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 4, columns: 20)
+
+        parser.parse(Data("\u{001B}[1;1HABCD".utf8), into: screen)
+        parser.parse(Data("\u{001B}[2;1HWXYZ".utf8), into: screen)
+        parser.parse(Data("\u{001B}[?u".utf8), into: screen)
+        parser.parse(Data("!".utf8), into: screen)
+
+        let row0 = rstrip(String(screen.line(at: 0).cells.map(\.character)))
+        let row1 = rstrip(String(screen.line(at: 1).cells.map(\.character)))
+
+        #expect(row0 == "ABCD")
+        #expect(row1 == "WXYZ!")
+    }
+
     private func rstrip(_ text: String) -> String {
         var output = text
         while output.last == " " {
