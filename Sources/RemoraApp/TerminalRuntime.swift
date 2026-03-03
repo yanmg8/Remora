@@ -62,6 +62,7 @@ final class TerminalRuntime: ObservableObject {
     private var pendingOutput = Data()
     private var transcriptBuffer = ""
     private let maxTranscriptCharacters = 4_096
+    private var transcriptRefreshTask: Task<Void, Never>?
     private var pendingPTYSize: PTYSize?
     private var lastAppliedPTYSize: PTYSize?
     private var isApplyingPendingResize = false
@@ -274,6 +275,11 @@ final class TerminalRuntime: ObservableObject {
 
     // PTY Debug Logging
     private static let ptyDebugQueue = DispatchQueue(label: "io.lighting-tech.remora.pty-diagnostics")
+    private static let ptyDebugEnabled: Bool = {
+        let value = ProcessInfo.processInfo.environment["REMORA_PTY_DEBUG"]?.lowercased()
+        return value == "1" || value == "true" || value == "yes"
+    }()
+    private static let ptyDebugTimestampFormatter = ISO8601DateFormatter()
     private static let ptyDebugLogURL: URL = {
         let fm = FileManager.default
         let baseDirectory = fm.urls(for: .libraryDirectory, in: .userDomainMask).first?
@@ -285,18 +291,20 @@ final class TerminalRuntime: ObservableObject {
     }()
     
     private static func logPTYDebug(_ message: String) {
-        ptyDebugQueue.sync {
-            let timestamp = ISO8601DateFormatter().string(from: Date())
-            let data = Data(("[\(timestamp)] \(message)\n").utf8)
-            if FileManager.default.fileExists(atPath: ptyDebugLogURL.path) {
-                if let handle = try? FileHandle(forWritingTo: ptyDebugLogURL) {
+        guard ptyDebugEnabled else { return }
+        let timestamp = ptyDebugTimestampFormatter.string(from: Date())
+        let data = Data(("[\(timestamp)] \(message)\n").utf8)
+        let logURL = ptyDebugLogURL
+        ptyDebugQueue.async {
+            if FileManager.default.fileExists(atPath: logURL.path) {
+                if let handle = try? FileHandle(forWritingTo: logURL) {
                     defer { try? handle.close() }
-                    try? handle.seekToEnd()
+                    _ = try? handle.seekToEnd()
                     try? handle.write(contentsOf: data)
                     return
                 }
             }
-            try? data.write(to: ptyDebugLogURL, options: [.atomic])
+            try? data.write(to: logURL, options: [.atomic])
         }
     }
     
@@ -314,8 +322,10 @@ final class TerminalRuntime: ObservableObject {
         streamTask = Task {
             let stream = await manager.sessionOutputStream(sessionID: id)
             for await data in stream {
+                if Task.isCancelled { break }
                 // Debug: Log first 30 chunks, then continue 10 more after ESC detected
-                let shouldLog = _debugChunkCount < _maxDebugChunks || (_debugESCDetected && _debugPostESCCount < _maxPostESCChunks)
+                let shouldLog = Self.ptyDebugEnabled
+                    && (_debugChunkCount < _maxDebugChunks || (_debugESCDetected && _debugPostESCCount < _maxPostESCChunks))
                 if shouldLog {
                     let maxBytes = min(data.count, 256)
                     let chunk = data.prefix(maxBytes)
@@ -337,15 +347,13 @@ final class TerminalRuntime: ObservableObject {
                         _debugPostESCCount += 1
                     }
                 }
-                
-                await MainActor.run {
-                    appendTranscript(data)
-                    updateAuthenticationState(with: data)
-                    if let terminalView {
-                        terminalView.feed(data: data)
-                    } else {
-                        enqueuePendingOutput(data)
-                    }
+
+                appendTranscript(data)
+                updateAuthenticationState(with: data)
+                if let terminalView {
+                    terminalView.feed(data: data)
+                } else {
+                    enqueuePendingOutput(data)
                 }
             }
         }
@@ -531,6 +539,8 @@ final class TerminalRuntime: ObservableObject {
         hostKeyPromptMessage = nil
         pendingWorkingDirectoryProbeTask?.cancel()
         pendingWorkingDirectoryProbeTask = nil
+        transcriptRefreshTask?.cancel()
+        transcriptRefreshTask = nil
         awaitingPwdResponse = false
         workingDirectoryLineBuffer.removeAll(keepingCapacity: false)
     }
@@ -606,6 +616,8 @@ final class TerminalRuntime: ObservableObject {
     private func clearTranscript() {
         transcriptBuffer.removeAll(keepingCapacity: false)
         transcriptSnapshot = ""
+        transcriptRefreshTask?.cancel()
+        transcriptRefreshTask = nil
         pendingOutput.removeAll(keepingCapacity: false)
         activeSSHAuthStage = nil
         sshAuthProbeTail.removeAll(keepingCapacity: false)
@@ -622,7 +634,24 @@ final class TerminalRuntime: ObservableObject {
         if transcriptBuffer.count > maxTranscriptCharacters {
             transcriptBuffer.removeFirst(transcriptBuffer.count - maxTranscriptCharacters)
         }
+        if transcriptSnapshot.isEmpty {
+            refreshTranscriptSnapshot()
+            return
+        }
+        scheduleTranscriptRefresh()
+    }
 
+    private func scheduleTranscriptRefresh() {
+        guard transcriptRefreshTask == nil else { return }
+        transcriptRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let self, !Task.isCancelled else { return }
+            self.refreshTranscriptSnapshot()
+            self.transcriptRefreshTask = nil
+        }
+    }
+
+    private func refreshTranscriptSnapshot() {
         transcriptSnapshot = transcriptBuffer
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")

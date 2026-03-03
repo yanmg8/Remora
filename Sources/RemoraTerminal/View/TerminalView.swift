@@ -68,6 +68,8 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var lastClickTime: TimeInterval = 0
     private var lastClickRow: Int = -1
     private let doubleClickInterval: TimeInterval = 0.3
+    private let flushScheduleLock = NSLock()
+    nonisolated(unsafe) private var flushScheduled = false
 
     public init(rows: Int = 30, columns: Int = 120) {
         self.screenBuffer = ScreenBuffer(rows: rows, columns: columns)
@@ -281,8 +283,13 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     private func setupScheduler() {
         frameScheduler = FrameScheduler(frameIntervalMS: 16) { [weak self] in
+            guard let self else { return }
+            guard self.markFlushScheduled() else { return }
             DispatchQueue.main.async {
-                self?.flushFrame()
+                defer {
+                    self.clearFlushScheduled()
+                }
+                self.flushFrame()
             }
         }
         frameScheduler?.start()
@@ -498,6 +505,22 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         scrollbackOffset = 0
         screenBuffer.setViewportOffset(0)
         needsDisplay = true
+    }
+
+    nonisolated private func markFlushScheduled() -> Bool {
+        flushScheduleLock.lock()
+        defer { flushScheduleLock.unlock() }
+        if flushScheduled {
+            return false
+        }
+        flushScheduled = true
+        return true
+    }
+
+    nonisolated private func clearFlushScheduled() {
+        flushScheduleLock.lock()
+        flushScheduled = false
+        flushScheduleLock.unlock()
     }
 
     private func shouldSendRawControlInput(_ event: NSEvent) -> Bool {

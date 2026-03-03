@@ -109,6 +109,22 @@ public final class ScreenBuffer {
         columns = targetColumns
         cursorRow = min(cursorRow, rows - 1)
         cursorColumn = min(cursorColumn, columns - 1)
+
+        // Keep normal buffer dimensions aligned while alternate buffer is active.
+        if isAlternateBuffer, var saved = savedMainState {
+            resizeLineStorage(
+                &saved.lines,
+                targetRows: targetRows,
+                targetColumns: targetColumns,
+                fill: saved.attributes
+            )
+            saved.cursorRow = min(max(0, saved.cursorRow), targetRows - 1)
+            saved.cursorColumn = min(max(0, saved.cursorColumn), targetColumns - 1)
+            saved.scrollRegionTop = min(max(0, saved.scrollRegionTop), targetRows - 1)
+            saved.scrollRegionBottom = min(max(saved.scrollRegionTop, saved.scrollRegionBottom), targetRows - 1)
+            savedMainState = saved
+        }
+
         wrapPending = false
         resetScrollingRegion()
         clampViewportOffset()
@@ -460,6 +476,7 @@ public final class ScreenBuffer {
 
     private func clearWideArtifacts(row: Int, column: Int) {
         guard row >= 0, row < rows, column >= 0, column < columns else { return }
+        guard column < lines[row].count else { return }
         var touched = false
 
         if column > 0, lines[row][column].displayWidth == 0 {
@@ -580,6 +597,7 @@ public final class ScreenBuffer {
         // Restore main buffer state
         if let saved = savedMainState {
             lines = saved.lines
+            resizeLineStorage(&lines, targetRows: rows, targetColumns: columns, fill: saved.attributes)
             cursorRow = saved.cursorRow
             cursorColumn = saved.cursorColumn
             activeAttributes = saved.attributes
@@ -608,5 +626,27 @@ public final class ScreenBuffer {
         wrapPending = false
         savedCursor = nil
         markAllDirty()
+    }
+
+    private func resizeLineStorage(
+        _ storage: inout [TerminalLine],
+        targetRows: Int,
+        targetColumns: Int,
+        fill: TerminalAttributes
+    ) {
+        if storage.count < targetRows {
+            storage.append(
+                contentsOf: Array(
+                    repeating: TerminalLine(columns: targetColumns, attributes: fill),
+                    count: targetRows - storage.count
+                )
+            )
+        } else if storage.count > targetRows {
+            storage.removeFirst(storage.count - targetRows)
+        }
+
+        for index in storage.indices {
+            storage[index].resize(columns: targetColumns, fill: fill)
+        }
     }
 }

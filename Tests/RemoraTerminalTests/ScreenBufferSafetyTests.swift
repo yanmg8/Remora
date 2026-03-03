@@ -50,4 +50,21 @@ struct ScreenBufferSafetyTests {
         #expect(image?.width == width)
         #expect(image?.height == height)
     }
+
+    @Test
+    func alternateBufferResizeKeepsMainBufferWidthSafe() {
+        let screen = ScreenBuffer(rows: 4, columns: 10)
+
+        screen.enterAlternateBuffer()
+        screen.resize(rows: 4, columns: 24)
+        screen.leaveAlternateBuffer()
+
+        // Regression: this write path previously crashed when restored main-buffer lines
+        // still had stale widths after resize in alt buffer.
+        screen.moveCursor(row: 0, column: 23)
+        screen.put(character: "X")
+
+        #expect(screen.line(at: 0).count == 24)
+        #expect(screen.line(at: 0)[23].character == "X")
+    }
 }
