@@ -42,6 +42,11 @@ public final class TerminalInputMapper {
         return mapKitty(event: event, eventType: .release)
     }
 
+    public func mapKittyKeyDown(event: NSEvent) -> Data? {
+        guard useKittyProtocol else { return nil }
+        return mapKitty(event: event, eventType: event.isARepeat ? .repeatPress : .press)
+    }
+
     public func map(command selector: Selector) -> Data? {
         if useKittyProtocol {
             switch selector {
@@ -49,6 +54,8 @@ public final class TerminalInputMapper {
                 return kittyCSIU(keyCode: 13, modifiers: 0, eventType: .press)
             case #selector(NSResponder.insertTab(_:)):
                 return kittyCSIU(keyCode: 9, modifiers: 0, eventType: .press)
+            case #selector(NSResponder.insertBacktab(_:)):
+                return kittyCSIU(keyCode: 9, modifiers: 2, eventType: .press)
             case #selector(NSResponder.deleteBackward(_:)):
                 return kittyCSIU(keyCode: 127, modifiers: 0, eventType: .press)
             case #selector(NSResponder.cancelOperation(_:)):
@@ -122,9 +129,15 @@ public final class TerminalInputMapper {
         case 126: // up
             return modifier == 0 ? data(upSequence) : data("\u{1B}[1;\(modifier)A")
         case 115: // home
-            return modifier == 0 ? data("\u{1B}[H") : data("\u{1B}[1;\(modifier)H")
+            if modifier == 0 {
+                return applicationCursorKeysEnabled ? data("\u{1B}OH") : data("\u{1B}[H")
+            }
+            return data("\u{1B}[1;\(modifier)H")
         case 119: // end
-            return modifier == 0 ? data("\u{1B}[F") : data("\u{1B}[1;\(modifier)F")
+            if modifier == 0 {
+                return applicationCursorKeysEnabled ? data("\u{1B}OF") : data("\u{1B}[F")
+            }
+            return data("\u{1B}[1;\(modifier)F")
         case 116: // page up
             return modifier == 0 ? data("\u{1B}[5~") : data("\u{1B}[5;\(modifier)~")
         case 121: // page down
@@ -170,8 +183,21 @@ public final class TerminalInputMapper {
             return nil
         }
 
+        if let letter = kittyCSILetter(for: event.keyCode) {
+            return buildKittyCSILetter(letter: letter, modifiers: kittyModifierValue(for: event), eventType: eventType)
+        }
+
+        if let letter = kittySS3Letter(for: event.keyCode) {
+            return buildKittySS3(letter: letter, modifiers: kittyModifierValue(for: event), eventType: eventType)
+        }
+
+        if let number = kittyCSITildeCode(for: event.keyCode) {
+            return buildKittyCSITilde(number: number, modifiers: kittyModifierValue(for: event), eventType: eventType)
+        }
+
         guard let keyCode = kittyKeyCode(for: event) else { return nil }
         let modifiers = kittyModifierValue(for: event)
+        let isFunctionalKey = isKittyFunctionalKey(event.keyCode) || kittyNumpadKeyCode(for: event.keyCode) != nil
 
         var shouldUseCSIU = false
         if reportAllKeys || reportEventTypes {
@@ -179,13 +205,22 @@ public final class TerminalInputMapper {
         } else if disambiguate {
             if keyCode == 27 || keyCode == 127 || keyCode == 13 || keyCode == 9 || keyCode == 32 {
                 shouldUseCSIU = true
+            } else if isFunctionalKey {
+                shouldUseCSIU = true
             } else if modifiers > 0 {
                 shouldUseCSIU = !isShiftPrintableOnly(event)
             }
         }
 
         guard shouldUseCSIU else { return nil }
-        return kittyCSIU(keyCode: keyCode, modifiers: modifiers, eventType: eventType)
+        return kittyCSIU(
+            event: event,
+            keyCode: keyCode,
+            modifiers: modifiers,
+            eventType: eventType,
+            isFunctionalKey: isFunctionalKey,
+            isModifierKey: isModifierKey
+        )
     }
 
     private func kittyCSIU(keyCode: Int, modifiers: Int, eventType: KittyEventType) -> Data {
@@ -202,7 +237,64 @@ public final class TerminalInputMapper {
         return data(sequence)
     }
 
+    private func kittyCSIU(
+        event: NSEvent,
+        keyCode: Int,
+        modifiers: Int,
+        eventType: KittyEventType,
+        isFunctionalKey: Bool,
+        isModifierKey: Bool
+    ) -> Data {
+        let reportEventTypes = (kittyKeyboardFlags & KittyKeyboardFlag.reportEventTypes.rawValue) != 0
+        let reportAlternateKeys = (kittyKeyboardFlags & KittyKeyboardFlag.reportAlternateKeys.rawValue) != 0
+        let reportAssociatedText = (kittyKeyboardFlags & KittyKeyboardFlag.reportAssociatedText.rawValue) != 0
+
+        var sequence = "\u{1B}[\(keyCode)"
+
+        if reportAlternateKeys,
+           event.modifierFlags.contains(.shift),
+           !isFunctionalKey,
+           !isModifierKey,
+           let shifted = scalarFromCharacters(event.characters)
+        {
+            sequence += ":\(shifted.value)"
+        }
+
+        let associatedTextCode: UInt32? = {
+            guard reportAssociatedText else { return nil }
+            guard eventType != .release else { return nil }
+            guard !isFunctionalKey, !isModifierKey else { return nil }
+            guard !event.modifierFlags.contains(.control) else { return nil }
+            return scalarFromCharacters(event.characters)?.value
+        }()
+
+        let needsEventType = reportEventTypes && eventType != .press && (eventType == .release || associatedTextCode == nil)
+
+        if modifiers > 0 || needsEventType || associatedTextCode != nil {
+            sequence += ";"
+            if modifiers > 0 {
+                sequence += "\(modifiers)"
+            } else if needsEventType {
+                sequence += "1"
+            }
+            if needsEventType {
+                sequence += ":\(eventType.rawValue)"
+            }
+        }
+
+        if let associatedTextCode {
+            sequence += ";\(associatedTextCode)"
+        }
+
+        sequence += "u"
+        return data(sequence)
+    }
+
     private func kittyKeyCode(for event: NSEvent) -> Int? {
+        if let code = kittyNumpadKeyCode(for: event.keyCode) {
+            return code
+        }
+
         switch event.keyCode {
         case 53: // Escape
             return 27
@@ -214,6 +306,24 @@ public final class TerminalInputMapper {
             return 127
         case 49: // Space
             return 32
+        case 57: // Caps Lock
+            return 57358
+        case 107: // F14
+            return 57377
+        case 113: // F15
+            return 57378
+        case 106: // F16
+            return 57379
+        case 64: // F17
+            return 57380
+        case 79: // F18
+            return 57381
+        case 80: // F19
+            return 57382
+        case 90: // F20
+            return 57383
+        case 105: // F13
+            return 57376
         case 56: // Left shift
             return 57441
         case 60: // Right shift
@@ -279,5 +389,125 @@ public final class TerminalInputMapper {
         guard flags == [.shift] else { return false }
         guard let chars = event.characters, chars.count == 1 else { return false }
         return true
+    }
+
+    private func kittyCSILetter(for keyCode: UInt16) -> Character? {
+        switch keyCode {
+        case 126: return "A" // Arrow up
+        case 125: return "B" // Arrow down
+        case 124: return "C" // Arrow right
+        case 123: return "D" // Arrow left
+        case 115: return "H" // Home
+        case 119: return "F" // End
+        default: return nil
+        }
+    }
+
+    private func kittySS3Letter(for keyCode: UInt16) -> Character? {
+        switch keyCode {
+        case 122: return "P" // F1
+        case 120: return "Q" // F2
+        case 99: return "R" // F3
+        case 118: return "S" // F4
+        default: return nil
+        }
+    }
+
+    private func kittyCSITildeCode(for keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 114: return 2 // Insert (Help on mac keyboards)
+        case 117: return 3 // Delete
+        case 116: return 5 // PageUp
+        case 121: return 6 // PageDown
+        case 96: return 15 // F5
+        case 97: return 17 // F6
+        case 98: return 18 // F7
+        case 100: return 19 // F8
+        case 101: return 20 // F9
+        case 109: return 21 // F10
+        case 103: return 23 // F11
+        case 111: return 24 // F12
+        default: return nil
+        }
+    }
+
+    private func buildKittyCSILetter(letter: Character, modifiers: Int, eventType: KittyEventType) -> Data {
+        let includeEventType = (kittyKeyboardFlags & KittyKeyboardFlag.reportEventTypes.rawValue) != 0 && eventType != .press
+        if modifiers == 0, !includeEventType {
+            return data("\u{1B}[\(letter)")
+        }
+
+        var sequence = "\u{1B}[1;\(modifiers > 0 ? String(modifiers) : "1")"
+        if includeEventType {
+            sequence += ":\(eventType.rawValue)"
+        }
+        sequence += "\(letter)"
+        return data(sequence)
+    }
+
+    private func buildKittySS3(letter: Character, modifiers: Int, eventType: KittyEventType) -> Data {
+        let includeEventType = (kittyKeyboardFlags & KittyKeyboardFlag.reportEventTypes.rawValue) != 0 && eventType != .press
+        if modifiers == 0, !includeEventType {
+            return data("\u{1B}O\(letter)")
+        }
+
+        var sequence = "\u{1B}[1;\(modifiers > 0 ? String(modifiers) : "1")"
+        if includeEventType {
+            sequence += ":\(eventType.rawValue)"
+        }
+        sequence += "\(letter)"
+        return data(sequence)
+    }
+
+    private func buildKittyCSITilde(number: Int, modifiers: Int, eventType: KittyEventType) -> Data {
+        let includeEventType = (kittyKeyboardFlags & KittyKeyboardFlag.reportEventTypes.rawValue) != 0 && eventType != .press
+        var sequence = "\u{1B}[\(number)"
+        if modifiers > 0 || includeEventType {
+            sequence += ";\(modifiers > 0 ? String(modifiers) : "1")"
+            if includeEventType {
+                sequence += ":\(eventType.rawValue)"
+            }
+        }
+        sequence += "~"
+        return data(sequence)
+    }
+
+    private func kittyNumpadKeyCode(for keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 82: return 57399  // KP_0
+        case 83: return 57400  // KP_1
+        case 84: return 57401  // KP_2
+        case 85: return 57402  // KP_3
+        case 86: return 57403  // KP_4
+        case 87: return 57404  // KP_5
+        case 88: return 57405  // KP_6
+        case 89: return 57406  // KP_7
+        case 91: return 57407  // KP_8
+        case 92: return 57408  // KP_9
+        case 65: return 57409  // KP_Decimal
+        case 75: return 57410  // KP_Divide
+        case 67: return 57411  // KP_Multiply
+        case 78: return 57412  // KP_Subtract
+        case 69: return 57413  // KP_Add
+        case 76: return 57414  // KP_Enter
+        case 81: return 57415  // KP_Equal
+        default: return nil
+        }
+    }
+
+    private func isKittyFunctionalKey(_ keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case 53, 36, 48, 49, 51, 57: // Escape/Enter/Tab/Space/Backspace/CapsLock
+            return true
+        case 105, 107, 113, 106, 64, 79, 80, 90: // F13-F20
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func scalarFromCharacters(_ value: String?) -> Unicode.Scalar? {
+        guard let value, value.count == 1 else { return nil }
+        return value.unicodeScalars.first
     }
 }

@@ -60,4 +60,78 @@ struct TerminalInputTests {
         #expect(backspace == Data("\u{1B}[127u".utf8))
         #expect(escape == Data("\u{1B}[27u".utf8))
     }
+
+    @Test
+    func inputMapperKittyEncodesNavigationAndFunctionKeysLikeXterm() {
+        let mapper = TerminalInputMapper()
+        mapper.kittyKeyboardFlags = 1 // DISAMBIGUATE_ESCAPE_CODES
+
+        let arrowUp = mapper.mapKittyKeyDown(event: keyEvent(keyCode: 126))
+        let home = mapper.mapKittyKeyDown(event: keyEvent(keyCode: 115))
+        let f1 = mapper.mapKittyKeyDown(event: keyEvent(keyCode: 122))
+        let f5WithCtrl = mapper.mapKittyKeyDown(event: keyEvent(keyCode: 96, modifierFlags: .control))
+        let insert = mapper.mapKittyKeyDown(event: keyEvent(keyCode: 114))
+
+        #expect(arrowUp == Data("\u{1B}[A".utf8))
+        #expect(home == Data("\u{1B}[H".utf8))
+        #expect(f1 == Data("\u{1B}OP".utf8))
+        #expect(f5WithCtrl == Data("\u{1B}[15;5~".utf8))
+        #expect(insert == Data("\u{1B}[2~".utf8))
+    }
+
+    @Test
+    func inputMapperKittyEncodesEventTypesForRepeatAndRelease() {
+        let mapper = TerminalInputMapper()
+        mapper.kittyKeyboardFlags = 3 // DISAMBIGUATE_ESCAPE_CODES | REPORT_EVENT_TYPES
+
+        let repeatA = mapper.mapKittyKeyDown(event: keyEvent(characters: "a", charactersIgnoringModifiers: "a", isARepeat: true))
+        let releaseA = mapper.mapKeyUp(event: keyEvent(type: .keyUp, characters: "a", charactersIgnoringModifiers: "a"))
+        let deleteRelease = mapper.mapKeyUp(event: keyEvent(type: .keyUp, keyCode: 117))
+
+        #expect(repeatA == Data("\u{1B}[97;1:2u".utf8))
+        #expect(releaseA == Data("\u{1B}[97;1:3u".utf8))
+        #expect(deleteRelease == Data("\u{1B}[3;1:3~".utf8))
+    }
+
+    @Test
+    func inputMapperKittySupportsAlternateAndAssociatedTextFlags() {
+        let mapper = TerminalInputMapper()
+        mapper.kittyKeyboardFlags = 28 // REPORT_ALL_KEYS_AS_ESCAPE_CODES | REPORT_ALTERNATE_KEYS | REPORT_ASSOCIATED_TEXT
+
+        let shiftedA = mapper.mapKittyKeyDown(
+            event: keyEvent(
+                modifierFlags: .shift,
+                characters: "A",
+                charactersIgnoringModifiers: "a"
+            )
+        )
+
+        #expect(shiftedA == Data("\u{1B}[97:65;2;65u".utf8))
+    }
+
+    private func keyEvent(
+        type: NSEvent.EventType = .keyDown,
+        keyCode: UInt16 = 0,
+        modifierFlags: NSEvent.ModifierFlags = [],
+        characters: String = "",
+        charactersIgnoringModifiers: String = "",
+        isARepeat: Bool = false
+    ) -> NSEvent {
+        let event = NSEvent.keyEvent(
+            with: type,
+            location: .zero,
+            modifierFlags: modifierFlags,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            isARepeat: isARepeat,
+            keyCode: keyCode
+        )
+        guard let event else {
+            fatalError("Failed to create test key event")
+        }
+        return event
+    }
 }

@@ -175,6 +175,12 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
+        if let input = inputMapper.mapKittyKeyDown(event: event) {
+            scrollToBottom()
+            onInput?(input)
+            return
+        }
+
         if shouldSendRawControlInput(event) {
             guard let input = inputMapper.map(event: event) else {
                 super.keyDown(with: event)
