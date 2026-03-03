@@ -258,6 +258,29 @@ struct ANSIParserTests {
         #expect(row1.isEmpty)
     }
 
+    @Test
+    func backspaceDoesNotEraseCharacter() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 2, columns: 8)
+
+        parser.parse(Data("AB\u{0008}C".utf8), into: screen)
+
+        let row0 = rstrip(String(screen.line(at: 0).cells.map(\.character)))
+        #expect(row0 == "AC")
+    }
+
+    @Test
+    func resetScrollRegionHomesCursor() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 4, columns: 8)
+
+        parser.parse(Data("\u{001B}[3;5H".utf8), into: screen)
+        parser.parse(Data("\u{001B}[r".utf8), into: screen)
+
+        #expect(screen.cursorRow == 0)
+        #expect(screen.cursorColumn == 0)
+    }
+
     private func rstrip(_ text: String) -> String {
         var output = text
         while output.last == " " {

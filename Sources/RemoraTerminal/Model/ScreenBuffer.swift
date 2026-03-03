@@ -218,8 +218,6 @@ public final class ScreenBuffer {
     public func backspace() {
         wrapPending = false
         cursorColumn = max(0, cursorColumn - 1)
-        lines[cursorRow][cursorColumn] = TerminalCell(character: " ", attributes: activeAttributes)
-        markDirty(row: cursorRow)
     }
 
     public func horizontalTab(tabWidth: Int = 8) {
