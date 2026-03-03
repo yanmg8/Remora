@@ -49,6 +49,11 @@ struct ContentView: View {
     @State private var isRenameSessionSheetPresented = false
     @State private var renameSessionID: UUID?
     @State private var renameSessionDraft = ""
+    @State private var quickCommandEditorHostID: UUID?
+    @State private var quickCommandEditingID: UUID?
+    @State private var quickCommandNameDraft = ""
+    @State private var quickCommandBodyDraft = ""
+    @State private var quickCommandValidationMessage: String?
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
     @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
@@ -61,6 +66,21 @@ struct ContentView: View {
 
     private var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
+    }
+
+    private var quickCommandEditorHost: RemoraCore.Host? {
+        hostCatalog.host(id: quickCommandEditorHostID)
+    }
+
+    private var quickCommandEditorBinding: Binding<Bool> {
+        Binding(
+            get: { quickCommandEditorHostID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    dismissQuickCommandEditor()
+                }
+            }
+        )
     }
 
     private var availableTemplates: [HostSessionTemplate] {
@@ -312,6 +332,9 @@ struct ContentView: View {
                                 onCopySSHCommand: { host in
                                     copyToPasteboard(HostConnectionClipboardBuilder.sshCommand(for: host))
                                 },
+                                onManageQuickCommands: { hostID in
+                                    beginManageQuickCommands(for: hostID)
+                                },
                                 onDeleteThread: { hostID in
                                     deleteHost(hostID)
                                 }
@@ -404,6 +427,9 @@ struct ContentView: View {
                     commitRenameSession()
                 }
             )
+        }
+        .sheet(isPresented: quickCommandEditorBinding) {
+            quickCommandManagerSheet
         }
         .sheet(isPresented: $isImportProgressSheetPresented) {
             importProgressSheet
@@ -741,14 +767,64 @@ struct ContentView: View {
     }
 
     private func paneView(_ pane: TerminalPaneModel, tabID: UUID) -> some View {
-        TerminalPaneView(
+        let hostID = pane.runtime.reconnectableSSHHost?.id
+        return TerminalPaneView(
             pane: pane,
+            quickCommands: hostCatalog.quickCommands(for: hostID),
             isFocused: workspace.activePaneByTab[tabID] == pane.id,
             onSelect: {
                 workspace.selectPane(pane.id, in: tabID)
+            },
+            onRunQuickCommand: { quickCommand in
+                runQuickCommand(quickCommand, in: pane.runtime)
+            },
+            onManageQuickCommands: {
+                guard let hostID else { return }
+                beginManageQuickCommands(for: hostID)
             }
         )
         .id(pane.id)
+    }
+
+    @ViewBuilder
+    private var quickCommandManagerSheet: some View {
+        if let host = quickCommandEditorHost {
+            HostQuickCommandEditorSheet(
+                host: host,
+                commands: hostCatalog.quickCommands(for: host.id),
+                editingCommandID: quickCommandEditingID,
+                nameDraft: $quickCommandNameDraft,
+                commandDraft: $quickCommandBodyDraft,
+                validationMessage: quickCommandValidationMessage,
+                onClose: {
+                    dismissQuickCommandEditor()
+                },
+                onSave: {
+                    commitQuickCommandDraft()
+                },
+                onStartEdit: { quickCommand in
+                    beginEditQuickCommand(quickCommand)
+                },
+                onDelete: { quickCommandID in
+                    deleteQuickCommand(quickCommandID, hostID: host.id)
+                },
+                onCancelEdit: {
+                    resetQuickCommandDraft()
+                }
+            )
+        } else {
+            VStack(spacing: 12) {
+                Text(tr("No SSH host selected."))
+                    .font(.system(size: 13))
+                    .foregroundStyle(VisualStyle.textSecondary)
+                Button(tr("Close")) {
+                    dismissQuickCommandEditor()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(20)
+            .frame(width: 460, height: 220)
+        }
     }
 
     private func runtimeForTab(_ tab: TerminalTabModel) -> TerminalRuntime? {
@@ -1092,6 +1168,68 @@ struct ContentView: View {
         self.renameSessionID = nil
     }
 
+    private func beginManageQuickCommands(for hostID: UUID) {
+        quickCommandEditorHostID = hostID
+        resetQuickCommandDraft()
+    }
+
+    private func dismissQuickCommandEditor() {
+        quickCommandEditorHostID = nil
+        resetQuickCommandDraft()
+    }
+
+    private func resetQuickCommandDraft() {
+        quickCommandEditingID = nil
+        quickCommandNameDraft = ""
+        quickCommandBodyDraft = ""
+        quickCommandValidationMessage = nil
+    }
+
+    private func beginEditQuickCommand(_ quickCommand: HostQuickCommand) {
+        quickCommandEditingID = quickCommand.id
+        quickCommandNameDraft = quickCommand.name
+        quickCommandBodyDraft = quickCommand.command
+        quickCommandValidationMessage = nil
+    }
+
+    private func commitQuickCommandDraft() {
+        guard let hostID = quickCommandEditorHostID else { return }
+        let name = quickCommandNameDraft
+        let command = quickCommandBodyDraft
+
+        if let editingID = quickCommandEditingID {
+            let updated = hostCatalog.updateQuickCommand(
+                hostID: hostID,
+                quickCommand: HostQuickCommand(id: editingID, name: name, command: command)
+            )
+            guard updated != nil else {
+                quickCommandValidationMessage = tr("Command cannot be empty.")
+                return
+            }
+        } else {
+            let added = hostCatalog.addQuickCommand(hostID: hostID, name: name, command: command)
+            guard added != nil else {
+                quickCommandValidationMessage = tr("Command cannot be empty.")
+                return
+            }
+        }
+
+        resetQuickCommandDraft()
+    }
+
+    private func deleteQuickCommand(_ quickCommandID: UUID, hostID: UUID) {
+        hostCatalog.deleteQuickCommand(hostID: hostID, quickCommandID: quickCommandID)
+        if quickCommandEditingID == quickCommandID {
+            resetQuickCommandDraft()
+        }
+    }
+
+    private func runQuickCommand(_ quickCommand: HostQuickCommand, in runtime: TerminalRuntime) {
+        let body = quickCommand.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        runtime.sendText("\(body)\n")
+    }
+
     private func copyToPasteboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -1389,6 +1527,7 @@ private struct SidebarGroupSectionView: View {
     let onCopyConnectionInfo: (RemoraCore.Host) -> Void
     let onCopyAddress: (RemoraCore.Host) -> Void
     let onCopySSHCommand: (RemoraCore.Host) -> Void
+    let onManageQuickCommands: (UUID) -> Void
     let onDeleteThread: (UUID) -> Void
 
     var body: some View {
@@ -1471,6 +1610,9 @@ private struct SidebarGroupSectionView: View {
                             onCopySSHCommand: {
                                 onCopySSHCommand(host)
                             },
+                            onManageQuickCommands: {
+                                onManageQuickCommands(host.id)
+                            },
                             onDelete: {
                                 onDeleteThread(host.id)
                             }
@@ -1491,6 +1633,7 @@ private struct SidebarHostRow: View {
     let onCopyConnectionInfo: () -> Void
     let onCopyAddress: () -> Void
     let onCopySSHCommand: () -> Void
+    let onManageQuickCommands: () -> Void
     let onDelete: () -> Void
     @State private var isHovering = false
 
@@ -1521,6 +1664,9 @@ private struct SidebarHostRow: View {
                 Button(tr("Copy SSH command")) {
                     onCopySSHCommand()
                 }
+            }
+            Button(tr("Manage quick commands")) {
+                onManageQuickCommands()
             }
             Divider()
             Button(tr("Delete connection"), role: .destructive) {
@@ -1979,6 +2125,126 @@ private struct SidebarRenameSheet: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+}
+
+private struct HostQuickCommandEditorSheet: View {
+    let host: RemoraCore.Host
+    let commands: [HostQuickCommand]
+    let editingCommandID: UUID?
+    @Binding var nameDraft: String
+    @Binding var commandDraft: String
+    let validationMessage: String?
+    let onClose: () -> Void
+    let onSave: () -> Void
+    let onStartEdit: (HostQuickCommand) -> Void
+    let onDelete: (UUID) -> Void
+    let onCancelEdit: () -> Void
+
+    private var isEditing: Bool {
+        editingCommandID != nil
+    }
+
+    private var canSaveDraft: Bool {
+        !commandDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(tr("Quick commands")) · \(host.name)")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(VisualStyle.textPrimary)
+
+            Group {
+                if commands.isEmpty {
+                    Text(tr("No quick commands yet."))
+                        .font(.system(size: 12))
+                        .foregroundStyle(VisualStyle.textTertiary)
+                        .frame(maxWidth: .infinity, minHeight: 96, alignment: .center)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.black.opacity(0.03))
+                        )
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(commands) { command in
+                                HStack(spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(command.name)
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundStyle(VisualStyle.textPrimary)
+                                            .lineLimit(1)
+                                        Text(command.command)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(VisualStyle.textSecondary)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer(minLength: 8)
+
+                                    Button(tr("Edit")) {
+                                        onStartEdit(command)
+                                    }
+                                    .buttonStyle(.borderless)
+
+                                    Button(tr("Delete"), role: .destructive) {
+                                        onDelete(command.id)
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.white.opacity(0.5))
+                                )
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .frame(minHeight: 96, maxHeight: 220)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isEditing ? tr("Edit command") : tr("New command"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(VisualStyle.textSecondary)
+
+                TextField(tr("Name"), text: $nameDraft)
+                    .textFieldStyle(.roundedBorder)
+
+                TextField(tr("Command"), text: $commandDraft)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textFieldStyle(.roundedBorder)
+
+                if let validationMessage {
+                    Text(validationMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.red)
+                }
+            }
+
+            HStack {
+                if isEditing {
+                    Button(tr("Cancel edit")) {
+                        onCancelEdit()
+                    }
+                }
+                Spacer()
+                Button(tr("Close")) {
+                    onClose()
+                }
+                Button(isEditing ? tr("Save") : tr("Add")) {
+                    onSave()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSaveDraft)
+            }
+        }
+        .padding(16)
+        .frame(width: 560)
     }
 }
 

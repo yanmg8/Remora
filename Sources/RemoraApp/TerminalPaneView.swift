@@ -1,10 +1,14 @@
 import SwiftUI
+import RemoraCore
 
 struct TerminalPaneView: View {
     @ObservedObject var pane: TerminalPaneModel
     @ObservedObject private var runtime: TerminalRuntime
+    var quickCommands: [HostQuickCommand]
     var isFocused: Bool
     var onSelect: () -> Void
+    var onRunQuickCommand: (HostQuickCommand) -> Void
+    var onManageQuickCommands: () -> Void
 
     private var hostKeyPromptBinding: Binding<Bool> {
         Binding(
@@ -17,11 +21,21 @@ struct TerminalPaneView: View {
         )
     }
 
-    init(pane: TerminalPaneModel, isFocused: Bool, onSelect: @escaping () -> Void) {
+    init(
+        pane: TerminalPaneModel,
+        quickCommands: [HostQuickCommand] = [],
+        isFocused: Bool,
+        onSelect: @escaping () -> Void,
+        onRunQuickCommand: @escaping (HostQuickCommand) -> Void = { _ in },
+        onManageQuickCommands: @escaping () -> Void = {}
+    ) {
         self.pane = pane
         self._runtime = ObservedObject(wrappedValue: pane.runtime)
+        self.quickCommands = quickCommands
         self.isFocused = isFocused
         self.onSelect = onSelect
+        self.onRunQuickCommand = onRunQuickCommand
+        self.onManageQuickCommands = onManageQuickCommands
     }
 
     var body: some View {
@@ -48,6 +62,30 @@ struct TerminalPaneView: View {
                 Spacer()
 
                 if runtime.connectionMode == .ssh {
+                    Menu {
+                        if quickCommands.isEmpty {
+                            Text(tr("No quick commands"))
+                        } else {
+                            ForEach(quickCommands) { quickCommand in
+                                Button(quickCommand.name) {
+                                    onRunQuickCommand(quickCommand)
+                                }
+                            }
+                        }
+                        Divider()
+                        Button(tr("Manage quick commands")) {
+                            onManageQuickCommands()
+                        }
+                    } label: {
+                        Image(systemName: "bolt.circle")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .help(tr("Run SSH quick command"))
+                    .accessibilityIdentifier("terminal-quick-commands")
+
                     Button {
                         onSelect()
                         runtime.reconnectSSHSession()
