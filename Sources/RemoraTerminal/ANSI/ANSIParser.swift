@@ -54,6 +54,19 @@ public final class ANSIParser {
                 // DECRC - Restore Cursor
                 screen.restoreCursor()
                 state = .ground
+            } else if byte == UInt8(ascii: "D") {
+                // IND - Index (move down, scroll up at bottom margin)
+                screen.lineFeed()
+                state = .ground
+            } else if byte == UInt8(ascii: "E") {
+                // NEL - Next line (line feed + carriage return)
+                screen.lineFeed()
+                screen.carriageReturn()
+                state = .ground
+            } else if byte == UInt8(ascii: "M") {
+                // RI - Reverse index (move up, scroll down at top margin)
+                screen.reverseIndex()
+                state = .ground
             } else {
                 state = .ground
             }

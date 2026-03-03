@@ -206,6 +206,30 @@ struct ANSIParserTests {
         #expect(line[0].attributes.background == .indexed(12))
     }
 
+    @Test
+    func parserHandlesReverseIndexInScrollRegion() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 5, columns: 4)
+        parser.parse(Data("1\r\n2\r\n3\r\n4\r\n5".utf8), into: screen)
+
+        parser.parse(Data("\u{001B}[2;4r".utf8), into: screen)
+        parser.parse(Data("\u{001B}[2;1H".utf8), into: screen)
+        parser.parse(Data("\u{001B}M".utf8), into: screen)
+        parser.parse(Data("\u{001B}[r".utf8), into: screen)
+
+        let row0 = rstrip(String(screen.line(at: 0).cells.map(\.character)))
+        let row1 = rstrip(String(screen.line(at: 1).cells.map(\.character)))
+        let row2 = rstrip(String(screen.line(at: 2).cells.map(\.character)))
+        let row3 = rstrip(String(screen.line(at: 3).cells.map(\.character)))
+        let row4 = rstrip(String(screen.line(at: 4).cells.map(\.character)))
+
+        #expect(row0 == "1")
+        #expect(row1.isEmpty)
+        #expect(row2 == "2")
+        #expect(row3 == "3")
+        #expect(row4 == "5")
+    }
+
     private func rstrip(_ text: String) -> String {
         var output = text
         while output.last == " " {

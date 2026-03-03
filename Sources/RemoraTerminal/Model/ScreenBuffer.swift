@@ -193,6 +193,15 @@ public final class ScreenBuffer {
         markDirty(row: cursorRow)
     }
 
+    public func reverseIndex() {
+        if cursorRow == scrollRegionTop {
+            scrollDown(lines: 1)
+            return
+        }
+        cursorRow = max(0, cursorRow - 1)
+        markDirty(row: cursorRow)
+    }
+
     public func carriageReturn() {
         cursorColumn = 0
     }
@@ -311,6 +320,22 @@ public final class ScreenBuffer {
                 scrollback.append(removedLine)
                 clampViewportOffset()
             }
+        }
+        markAllDirty()
+    }
+
+    public func scrollDown(lines count: Int = 1) {
+        let requested = max(1, count)
+        let regionHeight = scrollRegionBottom - scrollRegionTop + 1
+        guard regionHeight > 0 else { return }
+        let iterations = min(requested, regionHeight)
+
+        for _ in 0 ..< iterations {
+            lines.remove(at: scrollRegionBottom)
+            lines.insert(
+                TerminalLine(columns: columns, attributes: .default),
+                at: scrollRegionTop
+            )
         }
         markAllDirty()
     }
