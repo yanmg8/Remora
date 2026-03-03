@@ -195,12 +195,31 @@ public final class ScreenBuffer {
         cursorColumn = nextStop
     }
 
-    public func clearScreen() {
-        lines = Array(repeating: TerminalLine(columns: columns, attributes: .default), count: rows)
-        cursorRow = 0
-        cursorColumn = 0
+    public func clearScreen(mode: Int = 0) {
+        switch mode {
+        case 0:
+            // Clear from cursor to end of screen
+            for col in cursorColumn..<columns {
+                lines[cursorRow][col] = TerminalCell(character: " ", attributes: .default)
+            }
+            for row in (cursorRow + 1)..<rows {
+                lines[row] = TerminalLine(columns: columns, attributes: .default)
+            }
+        case 1:
+            // Clear from start to cursor
+            for row in 0..<cursorRow {
+                lines[row] = TerminalLine(columns: columns, attributes: .default)
+            }
+            for col in 0...cursorColumn {
+                lines[cursorRow][col] = TerminalCell(character: " ", attributes: .default)
+            }
+        case 2:
+            // Clear entire screen
+            lines = Array(repeating: TerminalLine(columns: columns, attributes: .default), count: rows)
+        default:
+            return
+        }
         activeAttributes = .default
-        viewportOffset = 0
         markAllDirty()
     }
 

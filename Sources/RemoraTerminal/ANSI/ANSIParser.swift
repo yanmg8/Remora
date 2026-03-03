@@ -98,7 +98,8 @@ public final class ANSIParser {
             let row = (params.first ?? 1) - 1
             let col = (params.dropFirst().first ?? 1) - 1
             screen.moveCursor(row: row, column: col)
-        case UInt8(ascii: "J"):
+case UInt8(ascii: "J"):
+            screen.clearScreen(mode: params.first ?? 0)
             if params.first == 2 {
                 screen.clearScreen()
             }

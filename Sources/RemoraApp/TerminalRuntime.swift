@@ -295,30 +295,40 @@ final class TerminalRuntime: ObservableObject {
     }
     
     private var _debugChunkCount = 0
+    private var _debugESCDetected = false
+    private var _debugPostESCCount = 0
     private let _maxDebugChunks = 30
+    private let _maxPostESCChunks = 10
     
     private func bindOutput(for id: UUID, manager: SessionManager) {
         streamTask?.cancel()
-        _debugChunkCount = 0  // Reset for new connection
+        _debugChunkCount = 0
+        _debugESCDetected = false
+        _debugPostESCCount = 0
         streamTask = Task {
             let stream = await manager.sessionOutputStream(sessionID: id)
             for await data in stream {
-                // Debug: Log first 30 chunks or until we see ESC
-                if _debugChunkCount < _maxDebugChunks {
+                // Debug: Log first 30 chunks, then continue 10 more after ESC detected
+                let shouldLog = _debugChunkCount < _maxDebugChunks || (_debugESCDetected && _debugPostESCCount < _maxPostESCChunks)
+                if shouldLog {
                     let maxBytes = min(data.count, 256)
                     let chunk = data.prefix(maxBytes)
                     let hex = chunk.map { String(format: "%02X", $0) }.joined(separator: " ")
                     let ascii = String(data: Data(chunk), encoding: .utf8) ?? "(non-utf8)"
                     let hasESC = chunk.contains(0x1B)
-                    Self.logPTYDebug("-------- PTY CHUNK #\(_debugChunkCount) (first \(maxBytes) bytes, hasESC=\(hasESC)) --------")
+                    
+                    if hasESC && !_debugESCDetected {
+                        _debugESCDetected = true
+                        Self.logPTYDebug("========== ESC DETECTED - Will capture more ==========")
+                    }
+                    
+                    let label = _debugESCDetected ? "POST-ESC" : "PRE-ESC"
+                    Self.logPTYDebug("-------- PTY #\(_debugChunkCount) [\(label)] (first \(maxBytes) bytes) --------")
                     Self.logPTYDebug("HEX: \(hex)")
                     Self.logPTYDebug("ASCII: \(ascii)")
                     _debugChunkCount += 1
-                    
-                    // Stop after we capture ESC sequences
-                    if hasESC {
-                        Self.logPTYDebug("========== ESC DETECTED - Stopping debug logging ==========")
-                        _debugChunkCount = _maxDebugChunks  // Stop logging
+                    if _debugESCDetected {
+                        _debugPostESCCount += 1
                     }
                 }
                 
