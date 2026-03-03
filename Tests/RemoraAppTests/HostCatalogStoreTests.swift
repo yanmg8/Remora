@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import RemoraApp
 import RemoraCore
@@ -152,6 +153,78 @@ struct HostCatalogStoreTests {
         #expect(updated?.group == "New Group")
         #expect(updated?.auth.method == .agent)
         #expect(store.groups.contains("New Group"))
+    }
+
+    @Test
+    func supportsQuickCommandCrud() {
+        let store = HostCatalogStore()
+        let host = store.addHost(
+            Host(
+                name: "ops",
+                address: "10.0.0.20",
+                username: "root",
+                group: "Ops",
+                auth: HostAuth(method: .agent)
+            )
+        )
+
+        let first = store.addQuickCommand(hostID: host.id, name: "Deploy", command: " ./deploy.sh ")
+        #expect(first?.name == "Deploy")
+        #expect(first?.command == "./deploy.sh")
+
+        let second = store.addQuickCommand(hostID: host.id, name: "Deploy", command: "echo done")
+        #expect(second?.name == "Deploy 2")
+
+        let updated = store.updateQuickCommand(
+            hostID: host.id,
+            quickCommand: HostQuickCommand(
+                id: first?.id ?? UUID(),
+                name: "Deploy 2",
+                command: " ./deploy-safe.sh "
+            )
+        )
+        #expect(updated?.name == "Deploy 2 2")
+        #expect(updated?.command == "./deploy-safe.sh")
+
+        let rejected = store.updateQuickCommand(
+            hostID: host.id,
+            quickCommand: HostQuickCommand(
+                id: first?.id ?? UUID(),
+                name: "Invalid",
+                command: "   "
+            )
+        )
+        #expect(rejected == nil)
+
+        if let second {
+            store.deleteQuickCommand(hostID: host.id, quickCommandID: second.id)
+        }
+        #expect(store.quickCommands(for: host.id).count == 1)
+    }
+
+    @Test
+    func normalizesQuickCommandsDuringHostSave() {
+        let store = HostCatalogStore()
+        let host = store.addHost(
+            Host(
+                name: "qa",
+                address: "10.0.0.30",
+                username: "qa",
+                group: "QA",
+                auth: HostAuth(method: .agent),
+                quickCommands: [
+                    HostQuickCommand(name: " ", command: " ls -la "),
+                    HostQuickCommand(name: "Deploy", command: "echo one"),
+                    HostQuickCommand(name: "Deploy", command: "echo two"),
+                    HostQuickCommand(name: "Drop", command: "   "),
+                ]
+            )
+        )
+
+        let names = host.quickCommands.map(\.name)
+        let commands = host.quickCommands.map(\.command)
+        #expect(names == ["Command", "Deploy", "Deploy 2"])
+        #expect(commands == ["ls -la", "echo one", "echo two"])
     }
 
     @Test

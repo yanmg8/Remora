@@ -88,6 +88,64 @@ final class HostCatalogStore: ObservableObject {
         return templates.filter { $0.hostID == hostID }
     }
 
+    func quickCommands(for hostID: UUID?) -> [HostQuickCommand] {
+        guard let hostID, let host = host(id: hostID) else { return [] }
+        return host.quickCommands
+    }
+
+    @discardableResult
+    func addQuickCommand(
+        hostID: UUID,
+        name: String,
+        command: String
+    ) -> HostQuickCommand? {
+        guard let hostIndex = hosts.firstIndex(where: { $0.id == hostID }) else { return nil }
+        let trimmedCommand = normalizeQuickCommandBody(command)
+        guard !trimmedCommand.isEmpty else { return nil }
+
+        let normalizedName = uniqueQuickCommandName(
+            base: normalizeQuickCommandName(name),
+            in: hosts[hostIndex].quickCommands,
+            excludingID: nil
+        )
+
+        let quickCommand = HostQuickCommand(name: normalizedName, command: trimmedCommand)
+        hosts[hostIndex].quickCommands.append(quickCommand)
+        return quickCommand
+    }
+
+    @discardableResult
+    func updateQuickCommand(
+        hostID: UUID,
+        quickCommand: HostQuickCommand
+    ) -> HostQuickCommand? {
+        guard let hostIndex = hosts.firstIndex(where: { $0.id == hostID }) else { return nil }
+        guard let commandIndex = hosts[hostIndex].quickCommands.firstIndex(where: { $0.id == quickCommand.id }) else {
+            return nil
+        }
+
+        let trimmedCommand = normalizeQuickCommandBody(quickCommand.command)
+        guard !trimmedCommand.isEmpty else { return nil }
+
+        let normalizedName = uniqueQuickCommandName(
+            base: normalizeQuickCommandName(quickCommand.name),
+            in: hosts[hostIndex].quickCommands,
+            excludingID: quickCommand.id
+        )
+
+        hosts[hostIndex].quickCommands[commandIndex] = HostQuickCommand(
+            id: quickCommand.id,
+            name: normalizedName,
+            command: trimmedCommand
+        )
+        return hosts[hostIndex].quickCommands[commandIndex]
+    }
+
+    func deleteQuickCommand(hostID: UUID, quickCommandID: UUID) {
+        guard let hostIndex = hosts.firstIndex(where: { $0.id == hostID }) else { return }
+        hosts[hostIndex].quickCommands.removeAll { $0.id == quickCommandID }
+    }
+
     func markConnected(hostID: UUID) {
         recentHostIDs.removeAll { $0 == hostID }
         recentHostIDs.insert(hostID, at: 0)
@@ -479,6 +537,54 @@ final class HostCatalogStore: ObservableObject {
             normalized.auth = HostAuth(method: .agent)
         }
 
+        let existingQuickCommands = normalized.quickCommands
+        normalized.quickCommands = []
+        for quickCommand in existingQuickCommands {
+            let commandBody = normalizeQuickCommandBody(quickCommand.command)
+            guard !commandBody.isEmpty else { continue }
+            let name = uniqueQuickCommandName(
+                base: normalizeQuickCommandName(quickCommand.name),
+                in: normalized.quickCommands,
+                excludingID: nil
+            )
+            normalized.quickCommands.append(
+                HostQuickCommand(id: quickCommand.id, name: name, command: commandBody)
+            )
+        }
+
         return normalized
+    }
+
+    private func normalizeQuickCommandName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Command" : trimmed
+    }
+
+    private func normalizeQuickCommandBody(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func uniqueQuickCommandName(
+        base: String,
+        in commands: [HostQuickCommand],
+        excludingID: UUID?
+    ) -> String {
+        let existing = Set(
+            commands
+                .filter { command in
+                    guard let excludingID else { return true }
+                    return command.id != excludingID
+                }
+                .map { $0.name.lowercased() }
+        )
+        if !existing.contains(base.lowercased()) {
+            return base
+        }
+
+        var index = 2
+        while existing.contains("\(base) \(index)".lowercased()) {
+            index += 1
+        }
+        return "\(base) \(index)"
     }
 }
