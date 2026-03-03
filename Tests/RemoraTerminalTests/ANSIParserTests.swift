@@ -27,6 +27,20 @@ struct ANSIParserTests {
     }
 
     @Test
+    func parserMovesCursorToAbsoluteColumn() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 3, columns: 10)
+
+        parser.parse(Data("abc\u{001B}[6GZ".utf8), into: screen)
+
+        let line = screen.line(at: 0)
+        #expect(line[0].character == "a")
+        #expect(line[1].character == "b")
+        #expect(line[2].character == "c")
+        #expect(line[5].character == "Z")
+    }
+
+    @Test
     func parserHandlesHorizontalTabStops() {
         let parser = ANSIParser()
         let screen = ScreenBuffer(rows: 3, columns: 16)

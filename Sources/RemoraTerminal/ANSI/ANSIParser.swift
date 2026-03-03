@@ -172,6 +172,9 @@ public final class ANSIParser {
             screen.moveCursor(deltaColumn: params.first ?? 1)
         case UInt8(ascii: "D"):
             screen.moveCursor(deltaColumn: -(params.first ?? 1))
+        case UInt8(ascii: "G"):
+            let column = max(1, params.first ?? 1) - 1
+            screen.moveCursor(column: column)
         case UInt8(ascii: "r"):
             if params.isEmpty {
                 screen.setScrollingRegion(top: 0, bottom: screen.rows - 1)
