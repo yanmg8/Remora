@@ -1701,17 +1701,17 @@ private struct SidebarHostRow: View {
 
     private var rowContent: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .semibold))
+            Image(systemName: "server.rack")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(VisualStyle.textSecondary)
-                .frame(width: 12, height: 12)
+                .frame(width: 14, height: 14)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(host.name)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(VisualStyle.textPrimary)
                     .lineLimit(1)
-                Text(host.group)
+                Text(host.address)
                     .font(.system(size: 11))
                     .foregroundStyle(VisualStyle.textTertiary)
                     .lineLimit(1)
