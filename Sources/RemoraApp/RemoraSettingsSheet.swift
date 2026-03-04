@@ -118,7 +118,7 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(VisualStyle.leftSidebarBackground.opacity(0.62))
+        .background(VisualStyle.settingsPaneBackground.opacity(0.78))
     }
 
     private func paneButton(_ pane: SettingsPane) -> some View {
@@ -138,7 +138,7 @@ struct RemoraSettingsSheet: View {
             .frame(width: 112, height: 62)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.9) : Color.clear)
+                    .fill(isSelected ? VisualStyle.settingsSelectedTabBackground : Color.clear)
             )
             .contentShape(Rectangle())
         }
@@ -226,7 +226,7 @@ struct RemoraSettingsSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(downloadDirectoryHighlight ? 0.95 : 0.84))
+                    .fill(VisualStyle.settingsSurfaceBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -314,7 +314,7 @@ struct RemoraSettingsSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(Color.white.opacity(0.68))
+                                .fill(VisualStyle.settingsSurfaceBackground)
                         )
                 }
 
@@ -361,7 +361,7 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.82))
+                .fill(VisualStyle.settingsSurfaceBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -406,7 +406,7 @@ struct RemoraSettingsSheet: View {
                         .frame(minWidth: 116)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.white.opacity(0.9))
+                                .fill(VisualStyle.inputFieldBackground)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -440,7 +440,7 @@ struct RemoraSettingsSheet: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.84))
+                .fill(VisualStyle.settingsSurfaceBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
