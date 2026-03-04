@@ -4,6 +4,7 @@ import SwiftUI
 
 enum AppShortcutCommand: String, CaseIterable, Identifiable {
     case openSettings
+    case toggleSSHSidebar
     case newSSHConnection
     case importConnections
     case exportConnections
@@ -14,6 +15,8 @@ enum AppShortcutCommand: String, CaseIterable, Identifiable {
         switch self {
         case .openSettings:
             return "menu.remora.settings"
+        case .toggleSSHSidebar:
+            return "menu.remora.toggle_sidebar"
         case .newSSHConnection:
             return "menu.remora.new_ssh"
         case .importConnections:
@@ -27,6 +30,8 @@ enum AppShortcutCommand: String, CaseIterable, Identifiable {
         switch self {
         case .openSettings:
             return "Settings"
+        case .toggleSSHSidebar:
+            return "Toggle SSH Sidebar"
         case .newSSHConnection:
             return "New SSH Connection"
         case .importConnections:
@@ -40,6 +45,8 @@ enum AppShortcutCommand: String, CaseIterable, Identifiable {
         switch self {
         case .openSettings:
             return AppKeyboardShortcut(keyToken: ",", modifierFlags: [.command])
+        case .toggleSSHSidebar:
+            return AppKeyboardShortcut(keyToken: "b", modifierFlags: [.command])
         case .newSSHConnection:
             return AppKeyboardShortcut(keyToken: "n", modifierFlags: [.command, .shift])
         case .importConnections:
@@ -53,6 +60,8 @@ enum AppShortcutCommand: String, CaseIterable, Identifiable {
         switch self {
         case .openSettings:
             return .remoraOpenSettingsCommand
+        case .toggleSSHSidebar:
+            return .remoraToggleSidebarCommand
         case .newSSHConnection:
             return .remoraNewSSHConnectionCommand
         case .importConnections:

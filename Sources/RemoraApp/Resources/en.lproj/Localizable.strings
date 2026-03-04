@@ -266,6 +266,7 @@
 
 "menu.remora.title" = "Remora";
 "menu.remora.settings" = "Settings";
+"menu.remora.toggle_sidebar" = "Toggle SSH Sidebar";
 "menu.remora.new_ssh" = "New SSH Connection";
 "menu.remora.import" = "Import Connections";
 "menu.remora.export" = "Export Connections";

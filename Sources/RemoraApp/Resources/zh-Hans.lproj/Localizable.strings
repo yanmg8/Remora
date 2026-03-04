@@ -263,6 +263,7 @@
 
 "menu.remora.title" = "Remora";
 "menu.remora.settings" = "设置";
+"menu.remora.toggle_sidebar" = "显示/隐藏 SSH 边栏";
 "menu.remora.new_ssh" = "新建 SSH 连接";
 "menu.remora.import" = "导入连接";
 "menu.remora.export" = "导出连接";

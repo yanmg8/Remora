@@ -152,6 +152,10 @@ struct RemoraAppMain: App {
                 commandButton(for: .openSettings)
             }
 
+            CommandGroup(after: .sidebar) {
+                commandButton(for: .toggleSSHSidebar)
+            }
+
             CommandGroup(after: .newItem) {
                 commandButton(for: .newSSHConnection)
             }

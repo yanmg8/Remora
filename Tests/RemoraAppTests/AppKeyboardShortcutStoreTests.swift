@@ -10,6 +10,7 @@ struct AppKeyboardShortcutStoreTests {
         let store = makeStore()
 
         #expect(store.shortcut(for: .openSettings)?.displayText == "⌘,")
+        #expect(store.shortcut(for: .toggleSSHSidebar)?.displayText == "⌘B")
         #expect(store.shortcut(for: .newSSHConnection)?.displayText == "⌘⇧N")
         #expect(store.shortcut(for: .importConnections)?.displayText == "⌘I")
         #expect(store.shortcut(for: .exportConnections)?.displayText == "⌘E")

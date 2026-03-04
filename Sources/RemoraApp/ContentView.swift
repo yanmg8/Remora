@@ -127,7 +127,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
+        let rootContent = ZStack {
             backgroundGradient
 
             NavigationSplitView(columnVisibility: $splitVisibility) {
@@ -138,73 +138,84 @@ struct ContentView: View {
             .navigationSplitViewStyle(.balanced)
         }
         .frame(minWidth: 1200, minHeight: 760)
-        .onAppear {
-            if selectedHostID == nil {
+
+        let lifecycleContent = rootContent
+            .onAppear {
+                if selectedHostID == nil {
+                    selectedHostID = hostCatalog.hosts.first?.id
+                }
+                if let firstPane = workspace.activePane {
+                    firstPane.runtime.connectLocalShell()
+                }
+                directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
+                syncServerMetricsConfiguration()
+                syncFileManagerSFTPBinding()
+                syncServerMetricsTracking()
+            }
+            .onChange(of: selectedHostID) {
+                selectedTemplateID = availableTemplates.first?.id
+            }
+            .onChange(of: workspace.activeTabID) {
+                directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
+                syncFileManagerSFTPBinding()
+                syncServerMetricsTracking()
+            }
+            .onChange(of: workspace.activePaneByTab) {
+                directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
+                syncFileManagerSFTPBinding()
+                syncServerMetricsTracking()
+            }
+
+        let commandContent = lifecycleContent
+            .onReceive(NotificationCenter.default.publisher(for: .remoraOpenSettingsCommand)) { _ in
+                openWindow(id: "settings")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraToggleSidebarCommand)) { _ in
+                toggleSSHSidebarVisibility()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraNewSSHConnectionCommand)) { _ in
+                beginCreateHostInPreferredGroup()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraImportConnectionsCommand)) { _ in
+                guard !isExportingHosts, !isImportingHosts, !hostCatalog.isLoading else { return }
+                beginImportHosts()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraExportConnectionsCommand)) { _ in
+                guard !isExportingHosts, !isImportingHosts, !hostCatalog.isLoading else { return }
+                beginExportAllHosts()
+            }
+
+        let syncedContent = commandContent
+            .onReceive(activeRuntimeSFTPStatePublisher) { _ in
+                syncFileManagerSFTPBinding()
+                syncServerMetricsTracking()
+            }
+            .onReceive(serverMetricsTrackingTimer) { _ in
+                syncServerMetricsTracking()
+            }
+            .onChange(of: hostCatalog.hosts) {
+                if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
+                    return
+                }
                 selectedHostID = hostCatalog.hosts.first?.id
+                selectedTemplateID = availableTemplates.first?.id
             }
-            if let firstPane = workspace.activePane {
-                firstPane.runtime.connectLocalShell()
+            .onChange(of: hostCatalog.groups) {
+                collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
             }
-            directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
-            syncServerMetricsConfiguration()
-            syncFileManagerSFTPBinding()
-            syncServerMetricsTracking()
-        }
-        .onChange(of: selectedHostID) {
-            selectedTemplateID = availableTemplates.first?.id
-        }
-        .onChange(of: workspace.activeTabID) {
-            directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding()
-            syncServerMetricsTracking()
-        }
-        .onChange(of: workspace.activePaneByTab) {
-            directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-            syncFileManagerSFTPBinding()
-            syncServerMetricsTracking()
-        }
-        .onReceive(activeRuntimeSFTPStatePublisher) { _ in
-            syncFileManagerSFTPBinding()
-            syncServerMetricsTracking()
-        }
-        .onReceive(serverMetricsTrackingTimer) { _ in
-            syncServerMetricsTracking()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .remoraOpenSettingsCommand)) { _ in
-            openWindow(id: "settings")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .remoraNewSSHConnectionCommand)) { _ in
-            beginCreateHostInPreferredGroup()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .remoraImportConnectionsCommand)) { _ in
-            guard !isExportingHosts, !isImportingHosts, !hostCatalog.isLoading else { return }
-            beginImportHosts()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .remoraExportConnectionsCommand)) { _ in
-            guard !isExportingHosts, !isImportingHosts, !hostCatalog.isLoading else { return }
-            beginExportAllHosts()
-        }
-        .onChange(of: hostCatalog.hosts) {
-            if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
-                return
+            .onChange(of: serverMetricsActiveRefreshSeconds) {
+                syncServerMetricsConfiguration()
             }
-            selectedHostID = hostCatalog.hosts.first?.id
-            selectedTemplateID = availableTemplates.first?.id
-        }
-        .onChange(of: hostCatalog.groups) {
-            collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
-        }
-        .onChange(of: serverMetricsActiveRefreshSeconds) {
-            syncServerMetricsConfiguration()
-        }
-        .onChange(of: serverMetricsInactiveRefreshSeconds) {
-            syncServerMetricsConfiguration()
-        }
-        .onChange(of: serverMetricsMaxConcurrentFetches) {
-            syncServerMetricsConfiguration()
-        }
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
-        .animation(.spring(response: 0.32, dampingFraction: 0.84), value: isFilePanelVisible)
+            .onChange(of: serverMetricsInactiveRefreshSeconds) {
+                syncServerMetricsConfiguration()
+            }
+            .onChange(of: serverMetricsMaxConcurrentFetches) {
+                syncServerMetricsConfiguration()
+            }
+
+        return syncedContent
+            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
+            .animation(.spring(response: 0.32, dampingFraction: 0.84), value: isFilePanelVisible)
     }
 
     private var backgroundGradient: some View {
@@ -852,6 +863,10 @@ struct ContentView: View {
         } else {
             collapsedGroupNames.insert(groupName)
         }
+    }
+
+    private func toggleSSHSidebarVisibility() {
+        splitVisibility = splitVisibility == .detailOnly ? .all : .detailOnly
     }
 
     private func beginCreateHostInPreferredGroup() {
