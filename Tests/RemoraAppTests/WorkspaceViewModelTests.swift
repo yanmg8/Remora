@@ -56,8 +56,20 @@ struct WorkspaceViewModelTests {
 
         let titles = workspace.tabs.map(\.title)
         #expect(titles.contains("prod-api"))
-        #expect(titles.contains("prod-api(1)"))
         #expect(titles.contains("prod-api(2)"))
+        #expect(titles.contains("prod-api(3)"))
+    }
+
+    @Test
+    func defaultLocalTabsUseLocalTitleWithSequence() {
+        let workspace = WorkspaceViewModel()
+
+        workspace.createTab(connectLocalShell: false)
+        workspace.createTab(connectLocalShell: false)
+        workspace.createTab(connectLocalShell: false)
+
+        let titles = workspace.tabs.map(\.title)
+        #expect(titles == ["Local", "Local(2)", "Local(3)"])
     }
 
     @Test

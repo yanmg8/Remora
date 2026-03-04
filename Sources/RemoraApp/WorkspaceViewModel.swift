@@ -89,7 +89,7 @@ final class WorkspaceViewModel: ObservableObject {
                     return trimmed
                 }
             }
-            return "Session \(tabs.count + 1)"
+            return "Local"
         }()
         let tab = TerminalTabModel(title: uniqueTabTitle(base: baseTitle), panes: [pane])
         tabs.append(tab)
@@ -212,7 +212,7 @@ final class WorkspaceViewModel: ObservableObject {
             return base
         }
 
-        var index = 1
+        var index = 2
         while existing.contains("\(base)(\(index))".lowercased()) {
             index += 1
         }
