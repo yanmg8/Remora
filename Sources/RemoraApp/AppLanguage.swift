@@ -32,4 +32,13 @@ enum AppLanguageMode: String, CaseIterable, Identifiable {
     static func resolved(from rawValue: String) -> AppLanguageMode {
         AppLanguageMode(rawValue: rawValue) ?? .system
     }
+
+    static func preferredLocale(from rawValue: String?) -> Locale {
+        let mode = resolved(from: rawValue ?? AppLanguageMode.system.rawValue)
+        return mode.locale ?? .autoupdatingCurrent
+    }
+
+    static func preferredLocale(defaults: UserDefaults = .standard) -> Locale {
+        preferredLocale(from: defaults.string(forKey: AppSettings.languageModeKey))
+    }
 }

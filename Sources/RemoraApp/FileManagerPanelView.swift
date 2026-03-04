@@ -551,7 +551,7 @@ struct FileManagerPanelView: View {
                 .lineLimit(1)
                 .frame(width: 120, alignment: .leading)
 
-            Text(Self.remoteDateFormatter.string(from: entry.modifiedAt))
+            Text(remoteDateText(for: entry.modifiedAt))
                 .font(.system(size: 13))
                 .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
@@ -597,6 +597,12 @@ struct FileManagerPanelView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+
+    private func remoteDateText(for date: Date) -> String {
+        let formatter = Self.remoteDateFormatter
+        formatter.locale = AppLanguageMode.preferredLocale()
+        return formatter.string(from: date)
+    }
 
     private func permissionString(for entry: RemoteFileEntry) -> String {
         guard let permission = entry.permissions else {

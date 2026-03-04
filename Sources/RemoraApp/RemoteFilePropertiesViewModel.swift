@@ -28,7 +28,9 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
     }
 
     var modifiedAtDisplayText: String {
-        Self.modifiedAtFormatter.string(from: modifiedAt)
+        let formatter = Self.modifiedAtFormatter
+        formatter.locale = AppLanguageMode.preferredLocale()
+        return formatter.string(from: modifiedAt)
     }
 
     var sizeDisplayText: String {
@@ -103,8 +105,8 @@ final class RemoteFilePropertiesViewModel: ObservableObject {
 
     private static let modifiedAtFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
         return formatter
     }()
 }
