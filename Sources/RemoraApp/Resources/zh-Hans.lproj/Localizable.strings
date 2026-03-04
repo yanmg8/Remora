@@ -111,6 +111,7 @@
 "New File" = "新建文件";
 "New Folder" = "新建文件夹";
 "Upload To Current Directory" = "上传到当前目录";
+"Drop to upload to %@" = "拖拽以上传到 %@";
 "Rename" = "重命名";
 "Copy" = "复制";
 "Cut" = "剪切";

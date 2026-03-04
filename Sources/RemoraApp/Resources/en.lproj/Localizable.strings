@@ -113,6 +113,7 @@
 "New File" = "New File";
 "New Folder" = "New Folder";
 "Upload To Current Directory" = "Upload To Current Directory";
+"Drop to upload to %@" = "Drop to upload to %@";
 "Rename" = "Rename";
 "Copy" = "Copy";
 "Cut" = "Cut";

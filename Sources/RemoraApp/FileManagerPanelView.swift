@@ -127,6 +127,16 @@ struct FileManagerPanelView: View {
         !viewModel.transferQueue.isEmpty
     }
 
+    private var activeRemoteDropTargetDirectoryPath: String? {
+        guard isRemoteListDropTargeted else { return nil }
+        return activeRemoteDropDirectoryPath ?? viewModel.remoteDirectoryPath
+    }
+
+    private var remoteDropHintText: String? {
+        guard let target = activeRemoteDropTargetDirectoryPath else { return nil }
+        return String(format: tr("Drop to upload to %@"), target)
+    }
+
     private var sortedRemoteEntries: [RemoteFileEntry] {
         viewModel.remoteEntries.sorted { lhs, rhs in
             if lhs.isDirectory != rhs.isDirectory {
@@ -361,6 +371,26 @@ struct FileManagerPanelView: View {
                                 : Color.clear,
                             lineWidth: 2
                         )
+                }
+                .overlay(alignment: .topTrailing) {
+                    if let remoteDropHintText {
+                        Text(remoteDropHintText)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(VisualStyle.overlayBackground)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                            )
+                            .padding(8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .accessibilityIdentifier("file-manager-remote-drop-hint")
+                    }
                 }
                 .dropDestination(for: URL.self) { items, _ in
                     handleRemoteDrop(items: items, targetEntry: nil)
