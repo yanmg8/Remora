@@ -67,7 +67,7 @@ struct RemoraSettingsSheet: View {
             Divider()
             content
         }
-        .frame(minWidth: 660, minHeight: 410)
+        .frame(minWidth: 620, minHeight: 390)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityIdentifier("settings-window")
         .onAppear {
@@ -98,9 +98,8 @@ struct RemoraSettingsSheet: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 12)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -116,8 +115,8 @@ struct RemoraSettingsSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .background(VisualStyle.settingsPaneBackground.opacity(0.78))
     }
 
@@ -128,16 +127,17 @@ struct RemoraSettingsSheet: View {
                 selectedPane = pane
             }
         } label: {
-            VStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: pane.icon)
-                    .font(.system(size: 18, weight: .regular))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(tr(pane.title))
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(isSelected ? Color.accentColor : VisualStyle.textSecondary)
-            .frame(width: 112, height: 62)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(isSelected ? VisualStyle.settingsSelectedTabBackground : Color.clear)
             )
             .contentShape(Rectangle())
@@ -148,95 +148,79 @@ struct RemoraSettingsSheet: View {
     }
 
     private var generalPane: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(tr("Application"))
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(VisualStyle.textPrimary)
-
-            Form {
-                Picker(
-                    tr("Language"),
-                    selection: Binding(
-                        get: { AppLanguageMode.resolved(from: languageModeRawValue) },
-                        set: { mode in
-                            languageModeRawValue = mode.rawValue
-                        }
-                    )
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                settingsSectionCard(
+                    title: tr("Application"),
+                    message: tr("Language changes are applied immediately.")
                 ) {
-                    Text(tr("Follow System")).tag(AppLanguageMode.system)
-                    Text(tr("English")).tag(AppLanguageMode.english)
-                    Text(tr("Simplified Chinese")).tag(AppLanguageMode.simplifiedChinese)
-                }
-                .frame(maxWidth: 260, alignment: .leading)
-
-                Picker(
-                    tr("Appearance"),
-                    selection: Binding(
-                        get: { AppAppearanceMode.resolved(from: appearanceModeRawValue) },
-                        set: { mode in
-                            appearanceModeRawValue = mode.rawValue
+                    compactSettingRow(title: tr("Language")) {
+                        Picker(
+                            tr("Language"),
+                            selection: Binding(
+                                get: { AppLanguageMode.resolved(from: languageModeRawValue) },
+                                set: { mode in
+                                    languageModeRawValue = mode.rawValue
+                                }
+                            )
+                        ) {
+                            Text(tr("Follow System")).tag(AppLanguageMode.system)
+                            Text(tr("English")).tag(AppLanguageMode.english)
+                            Text(tr("Simplified Chinese")).tag(AppLanguageMode.simplifiedChinese)
                         }
-                    )
-                ) {
-                    Text(tr("System")).tag(AppAppearanceMode.system)
-                    Text(tr("Light")).tag(AppAppearanceMode.light)
-                    Text(tr("Dark")).tag(AppAppearanceMode.dark)
-                }
-                .frame(maxWidth: 260, alignment: .leading)
-            }
-            .formStyle(.grouped)
-            .font(.system(size: 13))
-
-            Text(tr("Language changes are applied immediately."))
-                .font(.system(size: 12))
-                .foregroundStyle(VisualStyle.textSecondary)
-
-            Text(tr("File Manager"))
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(VisualStyle.textPrimary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(tr("Download directory"))
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(VisualStyle.textPrimary)
-
-                HStack(spacing: 8) {
-                    TextField(tr("Download directory"), text: $downloadDirectoryDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption.monospaced())
-                        .focused($focusedField, equals: .downloadDirectoryPath)
-                        .onSubmit {
-                            applyDownloadDirectoryDraft()
-                        }
-                        .accessibilityIdentifier("settings-download-path-field")
-
-                    Button(tr("Choose…")) {
-                        chooseDownloadDirectory()
+                        .labelsHidden()
+                        .frame(width: 220, alignment: .trailing)
                     }
-                    .controlSize(.small)
-                    .accessibilityIdentifier("settings-download-path-choose")
+
+                    compactSettingRow(title: tr("Appearance")) {
+                        Picker(
+                            tr("Appearance"),
+                            selection: Binding(
+                                get: { AppAppearanceMode.resolved(from: appearanceModeRawValue) },
+                                set: { mode in
+                                    appearanceModeRawValue = mode.rawValue
+                                }
+                            )
+                        ) {
+                            Text(tr("System")).tag(AppAppearanceMode.system)
+                            Text(tr("Light")).tag(AppAppearanceMode.light)
+                            Text(tr("Dark")).tag(AppAppearanceMode.dark)
+                        }
+                        .labelsHidden()
+                        .frame(width: 220, alignment: .trailing)
+                    }
                 }
 
-                Text(tr("Used by File Manager downloads and transfer queue."))
-                    .font(.caption)
-                    .foregroundStyle(VisualStyle.textSecondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(VisualStyle.settingsSurfaceBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(downloadDirectoryHighlight ? Color.accentColor : VisualStyle.borderSoft, lineWidth: downloadDirectoryHighlight ? 1.6 : 1)
-            )
-            .animation(.easeInOut(duration: 0.2), value: downloadDirectoryHighlight)
-            .accessibilityIdentifier("settings-download-path-row")
+                settingsSectionCard(
+                    title: tr("File Manager"),
+                    message: tr("Used by File Manager downloads and transfer queue."),
+                    highlight: downloadDirectoryHighlight
+                ) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            TextField(tr("Download directory"), text: $downloadDirectoryDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12, design: .monospaced))
+                                .focused($focusedField, equals: .downloadDirectoryPath)
+                                .onSubmit {
+                                    applyDownloadDirectoryDraft()
+                                }
+                                .accessibilityIdentifier("settings-download-path-field")
 
-            Spacer(minLength: 0)
+                            Button(tr("Choose…")) {
+                                chooseDownloadDirectory()
+                            }
+                            .controlSize(.small)
+                            .accessibilityIdentifier("settings-download-path-choose")
+                        }
+                    }
+                    .accessibilityIdentifier("settings-download-path-row")
+                }
+            }
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
         .onChange(of: downloadDirectoryJumpToken) {
             focusedField = .downloadDirectoryPath
             pulseDownloadDirectoryHighlight()
@@ -245,88 +229,127 @@ struct RemoraSettingsSheet: View {
     }
 
     private var advancedPane: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(tr("Server metrics sampling"))
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(VisualStyle.textPrimary)
-
-            Form {
-                HStack(spacing: 12) {
-                    Text(tr("Active tab refresh (seconds)"))
-                    Stepper(value: $serverMetricsActiveRefreshSeconds, in: 2...30) {
-                        Text("\(serverMetricsActiveRefreshSeconds)")
-                            .font(.system(.body, design: .monospaced))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                settingsSectionCard(
+                    title: tr("Server metrics sampling"),
+                    message: tr("Higher refresh and concurrency improve responsiveness but increase local and remote load.")
+                ) {
+                    compactSettingRow(title: tr("Active tab refresh (seconds)")) {
+                        Stepper(value: $serverMetricsActiveRefreshSeconds, in: 2...30) {
+                            Text("\(serverMetricsActiveRefreshSeconds)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 140, alignment: .trailing)
+                        .accessibilityIdentifier("settings-metrics-active-refresh")
                     }
-                    .frame(width: 120)
-                    .accessibilityIdentifier("settings-metrics-active-refresh")
-                }
 
-                HStack(spacing: 12) {
-                    Text(tr("Inactive tab refresh (seconds)"))
-                    Stepper(value: $serverMetricsInactiveRefreshSeconds, in: 4...90) {
-                        Text("\(serverMetricsInactiveRefreshSeconds)")
-                            .font(.system(.body, design: .monospaced))
+                    compactSettingRow(title: tr("Inactive tab refresh (seconds)")) {
+                        Stepper(value: $serverMetricsInactiveRefreshSeconds, in: 4...90) {
+                            Text("\(serverMetricsInactiveRefreshSeconds)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 140, alignment: .trailing)
+                        .accessibilityIdentifier("settings-metrics-inactive-refresh")
                     }
-                    .frame(width: 120)
-                    .accessibilityIdentifier("settings-metrics-inactive-refresh")
-                }
 
-                HStack(spacing: 12) {
-                    Text(tr("Max concurrent metric fetches"))
-                    Stepper(value: $serverMetricsMaxConcurrentFetches, in: 1...6) {
-                        Text("\(serverMetricsMaxConcurrentFetches)")
-                            .font(.system(.body, design: .monospaced))
+                    compactSettingRow(title: tr("Max concurrent metric fetches")) {
+                        Stepper(value: $serverMetricsMaxConcurrentFetches, in: 1...6) {
+                            Text("\(serverMetricsMaxConcurrentFetches)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .frame(width: 140, alignment: .trailing)
+                        .accessibilityIdentifier("settings-metrics-max-concurrency")
                     }
-                    .frame(width: 120)
-                    .accessibilityIdentifier("settings-metrics-max-concurrency")
                 }
             }
-            .formStyle(.grouped)
-            .font(.system(size: 13))
-
-            Text(tr("Higher refresh and concurrency improve responsiveness but increase local and remote load."))
-                .font(.system(size: 12))
-                .foregroundStyle(VisualStyle.textSecondary)
-            Spacer(minLength: 0)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .scrollIndicators(.hidden)
         .accessibilityIdentifier("settings-section-advanced")
     }
 
     private var shortcutsPane: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(tr("Keyboard Shortcuts"))
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(VisualStyle.textPrimary)
+            VStack(alignment: .leading, spacing: 10) {
+                settingsSectionCard(
+                    title: tr("Keyboard Shortcuts"),
+                    message: tr("Use common shortcuts and customize them for your workflow.")
+                ) {
+                    shortcutConflictsCard
 
-                Text(tr("Use common shortcuts and customize them for your workflow."))
-                    .font(.system(size: 12))
-                    .foregroundStyle(VisualStyle.textSecondary)
+                    if let shortcutRecorderMessage {
+                        Label(shortcutRecorderMessage, systemImage: shortcutRecorderIsError ? "exclamationmark.triangle.fill" : "keyboard")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(shortcutRecorderIsError ? Color.orange : VisualStyle.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
+                            )
+                    }
 
-                shortcutConflictsCard
-
-                if let shortcutRecorderMessage {
-                    Label(shortcutRecorderMessage, systemImage: shortcutRecorderIsError ? "exclamationmark.triangle.fill" : "keyboard")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(shortcutRecorderIsError ? Color.orange : VisualStyle.textSecondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .fill(VisualStyle.settingsSurfaceBackground)
-                        )
-                }
-
-                VStack(spacing: 8) {
-                    ForEach(AppShortcutCommand.allCases) { command in
-                        shortcutRow(for: command)
+                    VStack(spacing: 6) {
+                        ForEach(AppShortcutCommand.allCases) { command in
+                            shortcutRow(for: command)
+                        }
                     }
                 }
             }
-            .padding(.bottom, 8)
+            .padding(.vertical, 2)
         }
+        .scrollIndicators(.hidden)
         .accessibilityIdentifier("settings-section-shortcuts")
+    }
+
+    private func settingsSectionCard<Content: View>(
+        title: String,
+        message: String? = nil,
+        highlight: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(VisualStyle.textPrimary)
+
+            if let message {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(VisualStyle.textSecondary)
+            }
+
+            content()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(VisualStyle.settingsSurfaceBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(highlight ? Color.accentColor : VisualStyle.borderSoft, lineWidth: highlight ? 1.5 : 1)
+        )
+        .animation(.easeInOut(duration: 0.2), value: highlight)
+    }
+
+    private func compactSettingRow<Control: View>(
+        title: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundStyle(VisualStyle.textPrimary)
+            Spacer(minLength: 10)
+            control()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var shortcutConflictsCard: some View {
@@ -356,15 +379,15 @@ struct RemoraSettingsSheet: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(VisualStyle.settingsSurfaceBackground)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(keyboardShortcutStore.conflicts.isEmpty ? VisualStyle.borderSoft : Color.orange.opacity(0.8), lineWidth: 1)
         )
     }
@@ -375,7 +398,7 @@ struct RemoraSettingsSheet: View {
         let hasConflict = keyboardShortcutStore.conflict(for: command) != nil
         let isCustomized = keyboardShortcutStore.hasCustomBinding(for: command)
 
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(commandTitle(for: command))
@@ -399,11 +422,11 @@ struct RemoraSettingsSheet: View {
                     beginShortcutCapture(for: command)
                 } label: {
                     Text(isRecording ? tr("Press shortcut...") : displayShortcut)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(isRecording ? Color.accentColor : VisualStyle.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .frame(minWidth: 116)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .frame(minWidth: 108)
                         .background(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(VisualStyle.inputFieldBackground)
@@ -436,14 +459,14 @@ struct RemoraSettingsSheet: View {
                 .disabled(!isCustomized)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(VisualStyle.settingsSurfaceBackground)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(hasConflict ? Color.orange.opacity(0.85) : VisualStyle.borderSoft, lineWidth: 1)
         )
     }
