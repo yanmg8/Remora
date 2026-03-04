@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="#features">Features</a> •
+  <a href="#screenshots">Screenshots</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#project-structure">Project Structure</a> •
   <a href="#testing">Testing</a> •
@@ -82,6 +83,20 @@ Remora focuses on a practical split:
 - Settings UI for language, appearance, file manager path, metrics sampling, and shortcuts.
 - Built-in project/about links and issue entry points.
 - Server metrics/status panel for connected SSH hosts.
+
+## Screenshots
+
+### SSH Workspace
+
+![Remora SSH workspace](./docs/screenshots/PixPin_2026-03-04_22-45-28.png)
+
+### Terminal (TUI-friendly)
+
+![Remora terminal TUI](./docs/screenshots/PixPin_2026-03-04_22-45-57.png)
+
+### File Manager + Transfer Workflow
+
+![Remora file manager](./docs/screenshots/PixPin_2026-03-04_22-45-44.png)
 
 ## Quick Start
 
@@ -159,6 +174,10 @@ Please read [`SECURITY.md`](./SECURITY.md) for responsible disclosure.
 ## Open Source Checklist
 
 See [`docs/OPEN_SOURCE_CHECKLIST.md`](./docs/OPEN_SOURCE_CHECKLIST.md) for the pre-public checklist.
+
+## Changelog
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for release notes.
 
 ## License
 
