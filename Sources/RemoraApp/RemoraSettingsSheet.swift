@@ -50,6 +50,7 @@ struct RemoraSettingsSheet: View {
     @State private var shortcutRecorderIsError = false
     @FocusState private var focusedField: SettingsFocusField?
     @EnvironmentObject private var keyboardShortcutStore: AppKeyboardShortcutStore
+    @Environment(\.openURL) private var openURL
 
     @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
     @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
@@ -215,6 +216,33 @@ struct RemoraSettingsSheet: View {
                         }
                     }
                     .accessibilityIdentifier("settings-download-path-row")
+                }
+
+                settingsSectionCard(
+                    title: tr("About Remora"),
+                    message: tr("Open-source home and feedback channel.")
+                ) {
+                    compactSettingRow(title: tr("Version")) {
+                        Text(appVersionText)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(VisualStyle.textSecondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        Button(tr("View on GitHub")) {
+                            openURL(AppLinks.repositoryURL)
+                        }
+                        .controlSize(.small)
+
+                        Button(tr("Report an issue")) {
+                            openURL(AppLinks.issuesURL)
+                        }
+                        .controlSize(.small)
+                    }
+
+                    Text(tr("Issues require repository access while the repository is private."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(VisualStyle.textTertiary)
                 }
             }
             .padding(.vertical, 2)
@@ -600,6 +628,23 @@ struct RemoraSettingsSheet: View {
         }
         if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
             serverMetricsMaxConcurrentFetches = normalizedConcurrent
+        }
+    }
+
+    private var appVersionText: String {
+        let info = Bundle.main.infoDictionary
+        let shortVersion = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+
+        switch (shortVersion, build) {
+        case let (short?, build?) where !short.isEmpty && !build.isEmpty:
+            return "\(short) (\(build))"
+        case let (short?, _) where !short.isEmpty:
+            return short
+        case let (_, build?) where !build.isEmpty:
+            return build
+        default:
+            return "dev"
         }
     }
 

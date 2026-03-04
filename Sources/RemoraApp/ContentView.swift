@@ -13,6 +13,7 @@ private struct ActiveRuntimeSFTPState: Equatable {
 
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
     @StateObject private var workspace = WorkspaceViewModel()
     @StateObject private var hostCatalog = HostCatalogStore()
     @StateObject private var fileTransfer = FileTransferViewModel()
@@ -379,13 +380,26 @@ struct ContentView: View {
 
             Spacer(minLength: 8)
 
-            SidebarActionRowButton(
-                title: tr("Settings"),
-                systemImage: "gearshape"
-            ) {
-                openWindow(id: "settings")
+            HStack(spacing: 6) {
+                SidebarActionRowButton(
+                    title: tr("Settings"),
+                    systemImage: "gearshape"
+                ) {
+                    openWindow(id: "settings")
+                }
+                .accessibilityIdentifier("sidebar-settings")
+
+                SidebarMenuIconButton(systemImage: "questionmark.circle") {
+                    Button(tr("View on GitHub")) {
+                        openURL(AppLinks.repositoryURL)
+                    }
+                    Button(tr("Report an issue")) {
+                        openURL(AppLinks.issuesURL)
+                    }
+                }
+                .help(tr("Help & Community"))
+                .accessibilityIdentifier("sidebar-help-community")
             }
-            .accessibilityIdentifier("sidebar-settings")
             .padding(.horizontal, 8)
             .padding(.bottom, 10)
         }
@@ -1646,6 +1660,33 @@ private struct SidebarIconButton: View {
                 )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+private struct SidebarMenuIconButton<MenuContent: View>: View {
+    let systemImage: String
+    @ViewBuilder let menuContent: () -> MenuContent
+    @State private var isHovering = false
+
+    var body: some View {
+        Menu {
+            menuContent()
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(VisualStyle.textSecondary)
+                .frame(width: 26, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isHovering ? VisualStyle.leftHoverBackground : Color.clear)
+                )
+        }
+        .menuStyle(.borderlessButton)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 isHovering = hovering

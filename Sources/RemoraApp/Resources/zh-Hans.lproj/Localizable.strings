@@ -46,6 +46,13 @@
 "New command" = "新建命令";
 "Command cannot be empty." = "命令不能为空。";
 "Cancel edit" = "取消编辑";
+"About Remora" = "关于 Remora";
+"Open-source home and feedback channel." = "开源主页与问题反馈入口。";
+"Version" = "版本";
+"View on GitHub" = "查看 GitHub 仓库";
+"Report an issue" = "反馈问题（Issue）";
+"Issues require repository access while the repository is private." = "仓库当前为私有，访问 Issue 需要仓库权限。";
+"Help & Community" = "帮助与社区";
 "Open one local terminal session on launch" = "启动时打开一个本地终端会话";
 "Confirm before closing an active session tab" = "关闭活动会话标签前确认";
 "Reopen the last selected workspace on launch" = "启动时恢复上次选中的工作区";

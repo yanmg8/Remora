@@ -74,6 +74,11 @@ enum AppSettings {
     }
 }
 
+enum AppLinks {
+    static let repositoryURL = URL(string: "https://github.com/wuuJiawei/Remora")!
+    static let issuesURL = URL(string: "https://github.com/wuuJiawei/Remora/issues")!
+}
+
 extension Notification.Name {
     static let remoraDownloadDirectoryDidChange = Notification.Name("remora.downloadDirectoryDidChange")
     static let remoraOpenDownloadDirectorySetting = Notification.Name("remora.openDownloadDirectorySetting")
