@@ -112,6 +112,16 @@
 "New Folder" = "新建文件夹";
 "Upload To Current Directory" = "上传到当前目录";
 "Drop to upload to %@" = "拖拽以上传到 %@";
+"Copied %d item(s)." = "已复制 %d 个项目。";
+"Cut %d item(s)." = "已剪切 %d 个项目。";
+"Deleted %d item(s)." = "已删除 %d 个项目。";
+"Queued %d item(s) for download." = "已将 %d 个项目加入下载队列。";
+"Queued %d item(s) for upload to %@." = "已将 %d 个项目加入上传队列（目标：%@）。";
+"Pasted into %@." = "已粘贴到 %@。";
+"Retrying failed transfers." = "正在重试失败的传输任务。";
+"Moved %d item(s) to %@." = "已将 %d 个项目移动到 %@。";
+"Renamed to %@." = "已重命名为 %@。";
+"Created \"%@\"." = "已创建“%@”。";
 "Rename" = "重命名";
 "Copy" = "复制";
 "Cut" = "剪切";

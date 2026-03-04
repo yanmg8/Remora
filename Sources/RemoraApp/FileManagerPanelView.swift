@@ -3,6 +3,11 @@ import SwiftUI
 import RemoraCore
 
 struct FileManagerPanelView: View {
+    private struct OperationToast: Identifiable, Equatable {
+        var id = UUID()
+        var message: String
+    }
+
     private enum RemoteCreateKind {
         case file
         case directory
@@ -67,6 +72,8 @@ struct FileManagerPanelView: View {
     @State private var isRemoteSortAscending = true
     @State private var activeRemoteDropDirectoryPath: String?
     @State private var isRemoteListDropTargeted = false
+    @State private var operationToast: OperationToast?
+    @State private var toastHideTask: Task<Void, Never>?
 
     private var selectedRemoteEntries: [RemoteFileEntry] {
         viewModel.remoteEntries.filter { selectedRemotePaths.contains($0.path) }
@@ -183,7 +190,11 @@ struct FileManagerPanelView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Button {
-                            viewModel.performContextAction(.download(paths: selectedRemoteFiles.map(\.path)))
+                            let downloadPaths = selectedRemoteFiles.map(\.path)
+                            performRemoteContextAction(
+                                .download(paths: downloadPaths),
+                                feedback: makeDownloadQueuedFeedback(count: downloadPaths.count)
+                            )
                         } label: {
                             Label(tr("Download"), systemImage: "arrow.down.circle.fill")
                         }
@@ -193,7 +204,11 @@ struct FileManagerPanelView: View {
                         .accessibilityIdentifier("file-manager-download")
 
                         Button(role: .destructive) {
-                            viewModel.performContextAction(.delete(paths: Array(selectedRemotePaths)))
+                            let targets = Array(selectedRemotePaths)
+                            performRemoteContextAction(
+                                .delete(paths: targets),
+                                feedback: makeDeleteFeedback(count: targets.count)
+                            )
                             selectedRemotePaths.removeAll()
                             selectionAnchorRemotePath = nil
                         } label: {
@@ -218,6 +233,7 @@ struct FileManagerPanelView: View {
 
                         Button(tr("Retry Failed")) {
                             viewModel.retryFailedTransfers()
+                            showOperationToast(tr("Retrying failed transfers."))
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -225,7 +241,10 @@ struct FileManagerPanelView: View {
                         .accessibilityIdentifier("file-manager-retry-failed")
 
                         Button(tr("Paste")) {
-                            viewModel.performContextAction(.paste(destinationDirectory: currentDestinationDirectoryForPaste))
+                            performRemoteContextAction(
+                                .paste(destinationDirectory: currentDestinationDirectoryForPaste),
+                                feedback: makePasteFeedback(destination: currentDestinationDirectoryForPaste)
+                            )
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -245,6 +264,14 @@ struct FileManagerPanelView: View {
         .overlay(alignment: .bottomTrailing) {
             transferQueueFloatingOverlay
                 .padding(8)
+        }
+        .overlay(alignment: .bottom) {
+            if let operationToast {
+                operationToastView(operationToast)
+                    .padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityIdentifier("file-manager-operation-toast")
+            }
         }
         .onChange(of: hasTransferTasks) {
             if !hasTransferTasks {
@@ -301,6 +328,11 @@ struct FileManagerPanelView: View {
                     initialAttributes: cachedRemoteAttributes(for: propertiesTargetPath)
                 )
             }
+        }
+        .onDisappear {
+            toastHideTask?.cancel()
+            toastHideTask = nil
+            operationToast = nil
         }
     }
 
@@ -840,7 +872,10 @@ struct FileManagerPanelView: View {
 
         if viewModel.canPaste(into: viewModel.remoteDirectoryPath) {
             Button(tr("Paste")) {
-                viewModel.performContextAction(.paste(destinationDirectory: viewModel.remoteDirectoryPath))
+                performRemoteContextAction(
+                    .paste(destinationDirectory: viewModel.remoteDirectoryPath),
+                    feedback: makePasteFeedback(destination: viewModel.remoteDirectoryPath)
+                )
             }
         }
 
@@ -858,7 +893,10 @@ struct FileManagerPanelView: View {
         Divider()
 
         Button(tr("Delete"), role: .destructive) {
-            viewModel.performContextAction(.delete(paths: [entry.path]))
+            performRemoteContextAction(
+                .delete(paths: [entry.path]),
+                feedback: makeDeleteFeedback(count: 1)
+            )
             selectedRemotePaths.remove(entry.path)
             if selectionAnchorRemotePath == entry.path {
                 selectionAnchorRemotePath = nil
@@ -870,17 +908,26 @@ struct FileManagerPanelView: View {
         }
 
         Button(tr("Copy")) {
-            viewModel.performContextAction(.copy(paths: [entry.path]))
+            performRemoteContextAction(
+                .copy(paths: [entry.path]),
+                feedback: makeCopyFeedback(count: 1)
+            )
         }
 
         Button(tr("Cut")) {
-            viewModel.performContextAction(.cut(paths: [entry.path]))
+            performRemoteContextAction(
+                .cut(paths: [entry.path]),
+                feedback: makeCutFeedback(count: 1)
+            )
         }
 
         if viewModel.canPaste(into: entry.isDirectory ? entry.path : viewModel.remoteDirectoryPath) {
             Button(tr("Paste")) {
                 let destination = entry.isDirectory ? entry.path : viewModel.remoteDirectoryPath
-                viewModel.performContextAction(.paste(destinationDirectory: destination))
+                performRemoteContextAction(
+                    .paste(destinationDirectory: destination),
+                    feedback: makePasteFeedback(destination: destination)
+                )
             }
         }
 
@@ -900,17 +947,26 @@ struct FileManagerPanelView: View {
 
         if shouldSplitDownloadActions {
             Button(tr("Download Current")) {
-                viewModel.performContextAction(.download(paths: [entry.path]))
+                performRemoteContextAction(
+                    .download(paths: [entry.path]),
+                    feedback: makeDownloadQueuedFeedback(count: 1)
+                )
             }
             .disabled(entry.isDirectory)
 
             Button("\(tr("Download Selected")) (\(selectedDownloadPaths.count))") {
-                viewModel.performContextAction(.download(paths: selectedDownloadPaths))
+                performRemoteContextAction(
+                    .download(paths: selectedDownloadPaths),
+                    feedback: makeDownloadQueuedFeedback(count: selectedDownloadPaths.count)
+                )
             }
             .disabled(selectedDownloadPaths.isEmpty)
         } else {
             Button(tr("Download")) {
-                viewModel.performContextAction(.download(paths: [entry.path]))
+                performRemoteContextAction(
+                    .download(paths: [entry.path]),
+                    feedback: makeDownloadQueuedFeedback(count: 1)
+                )
             }
             .disabled(entry.isDirectory)
         }
@@ -1093,7 +1149,11 @@ struct FileManagerPanelView: View {
         isRenameSheetPresented = false
         renameTargetPath = nil
         guard let sourcePath else { return }
-        viewModel.performContextAction(.rename(path: sourcePath, newName: renameDraft))
+        let newName = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        performRemoteContextAction(
+            .rename(path: sourcePath, newName: newName),
+            feedback: String(format: tr("Renamed to %@."), newName)
+        )
     }
 
     private func beginCreateRemote(kind: RemoteCreateKind, in directoryPath: String) {
@@ -1112,6 +1172,7 @@ struct FileManagerPanelView: View {
         case .directory:
             viewModel.createRemoteDirectory(named: trimmedName, in: createRemoteTargetDirectory)
         }
+        showOperationToast(String(format: tr("Created \"%@\"."), trimmedName))
         selectedRemotePaths.removeAll()
         selectionAnchorRemotePath = nil
         isCreateRemoteSheetPresented = false
@@ -1161,7 +1222,12 @@ struct FileManagerPanelView: View {
         if panel.runModal() == .OK {
             let urls = panel.urls
             guard !urls.isEmpty else { return }
-            viewModel.enqueueUpload(localFileURLs: urls, toRemoteDirectory: targetDirectory)
+            let acceptedURLs = RemoteDropRouting.acceptedLocalDropURLs(urls)
+            guard !acceptedURLs.isEmpty else { return }
+            viewModel.enqueueUpload(localFileURLs: acceptedURLs, toRemoteDirectory: targetDirectory)
+            showOperationToast(
+                String(format: tr("Queued %d item(s) for upload to %@."), acceptedURLs.count, targetDirectory)
+            )
         }
     }
 
@@ -1174,6 +1240,9 @@ struct FileManagerPanelView: View {
             currentRemoteDirectory: viewModel.remoteDirectoryPath
         )
         viewModel.enqueueUpload(localFileURLs: acceptedItems, toRemoteDirectory: destination)
+        showOperationToast(
+            String(format: tr("Queued %d item(s) for upload to %@."), acceptedItems.count, destination)
+        )
         activeRemoteDropDirectoryPath = nil
         isRemoteListDropTargeted = false
         return true
@@ -1287,6 +1356,9 @@ struct FileManagerPanelView: View {
                         paths: moveSourcePaths,
                         toDirectory: moveTargetPath
                     )
+                    showOperationToast(
+                        String(format: tr("Moved %d item(s) to %@."), moveSourcePaths.count, moveTargetPath)
+                    )
                     moveSourcePaths.removeAll()
                     selectedRemotePaths.removeAll()
                     selectionAnchorRemotePath = nil
@@ -1329,5 +1401,70 @@ struct FileManagerPanelView: View {
     private func remoteRowIdentifier(_ path: String) -> String {
         let sanitized = path.replacingOccurrences(of: "/", with: "_")
         return "file-manager-remote-row\(sanitized)"
+    }
+
+    private func performRemoteContextAction(_ action: RemoteContextAction, feedback: String? = nil) {
+        viewModel.performContextAction(action)
+        if let feedback {
+            showOperationToast(feedback)
+        }
+    }
+
+    private func showOperationToast(_ message: String) {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        toastHideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.18)) {
+            operationToast = OperationToast(message: trimmed)
+        }
+        toastHideTask = Task { @MainActor [trimmed] in
+            _ = trimmed
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                operationToast = nil
+            }
+            toastHideTask = nil
+        }
+    }
+
+    @ViewBuilder
+    private func operationToastView(_ toast: OperationToast) -> some View {
+        Text(toast.message)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(VisualStyle.textPrimary)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(VisualStyle.overlayBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(VisualStyle.borderSoft, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
+    }
+
+    private func makeCopyFeedback(count: Int) -> String {
+        String(format: tr("Copied %d item(s)."), max(count, 1))
+    }
+
+    private func makeCutFeedback(count: Int) -> String {
+        String(format: tr("Cut %d item(s)."), max(count, 1))
+    }
+
+    private func makeDeleteFeedback(count: Int) -> String {
+        String(format: tr("Deleted %d item(s)."), max(count, 1))
+    }
+
+    private func makeDownloadQueuedFeedback(count: Int) -> String {
+        String(format: tr("Queued %d item(s) for download."), max(count, 1))
+    }
+
+    private func makePasteFeedback(destination: String) -> String {
+        String(format: tr("Pasted into %@."), destination)
     }
 }

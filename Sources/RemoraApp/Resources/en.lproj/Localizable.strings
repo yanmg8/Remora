@@ -114,6 +114,16 @@
 "New Folder" = "New Folder";
 "Upload To Current Directory" = "Upload To Current Directory";
 "Drop to upload to %@" = "Drop to upload to %@";
+"Copied %d item(s)." = "Copied %d item(s).";
+"Cut %d item(s)." = "Cut %d item(s).";
+"Deleted %d item(s)." = "Deleted %d item(s).";
+"Queued %d item(s) for download." = "Queued %d item(s) for download.";
+"Queued %d item(s) for upload to %@." = "Queued %d item(s) for upload to %@.";
+"Pasted into %@." = "Pasted into %@.";
+"Retrying failed transfers." = "Retrying failed transfers.";
+"Moved %d item(s) to %@." = "Moved %d item(s) to %@.";
+"Renamed to %@." = "Renamed to %@.";
+"Created \"%@\"." = "Created \"%@\".";
 "Rename" = "Rename";
 "Copy" = "Copy";
 "Cut" = "Cut";
