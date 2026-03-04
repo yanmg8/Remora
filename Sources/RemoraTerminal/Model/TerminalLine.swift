@@ -2,9 +2,11 @@ import Foundation
 
 public struct TerminalLine: Equatable, Sendable {
     public private(set) var cells: [TerminalCell]
+    public var isWrapped: Bool
 
     public init(columns: Int, attributes: TerminalAttributes = .default) {
         self.cells = Array(repeating: TerminalCell(character: " ", attributes: attributes), count: max(1, columns))
+        self.isWrapped = false
     }
 
     public mutating func resize(columns: Int, fill attributes: TerminalAttributes = .default) {

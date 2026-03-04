@@ -83,4 +83,28 @@ struct ScreenBufferSafetyTests {
         #expect(screen.bufferRow(forViewportRow: 0) == startRow)
         #expect(firstVisible[0].character == mappedFirstVisible[0].character)
     }
+
+    @Test
+    func wrappedLogicalLineRangeFollowsAutoWrapState() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 3, columns: 4)
+
+        parser.parse(Data("ABCDE".utf8), into: screen)
+
+        let range = screen.wrappedLogicalLineRange(containingBufferRow: 1)
+        #expect(range == 0...1)
+        #expect(screen.isBufferLineWrapped(1) == true)
+    }
+
+    @Test
+    func explicitLineFeedDoesNotMarkWrappedContinuation() {
+        let parser = ANSIParser()
+        let screen = ScreenBuffer(rows: 3, columns: 4)
+
+        parser.parse(Data("ABCD\r\nE".utf8), into: screen)
+
+        #expect(screen.isBufferLineWrapped(1) == false)
+        let range = screen.wrappedLogicalLineRange(containingBufferRow: 1)
+        #expect(range == 1...1)
+    }
 }

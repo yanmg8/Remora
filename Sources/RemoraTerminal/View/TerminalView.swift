@@ -8,12 +8,20 @@ public struct TerminalSelection: Equatable {
     public var startColumn: Int
     public var endRow: Int
     public var endColumn: Int
+    public var isColumnSelection: Bool
 
-    public init(startRow: Int, startColumn: Int, endRow: Int, endColumn: Int) {
+    public init(
+        startRow: Int,
+        startColumn: Int,
+        endRow: Int,
+        endColumn: Int,
+        isColumnSelection: Bool = false
+    ) {
         self.startRow = startRow
         self.startColumn = startColumn
         self.endRow = endRow
         self.endColumn = endColumn
+        self.isColumnSelection = isColumnSelection
     }
 }
 
@@ -67,6 +75,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var markedText: NSAttributedString = .init(string: "")
     private var focusReportingEnabled = false
     private var bracketedPasteEnabled = false
+    private var isSelectingWithMouse = false
 
     private let flushScheduleLock = NSLock()
     nonisolated(unsafe) private var flushScheduled = false
@@ -231,9 +240,18 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         screenBuffer.setViewportOffset(scrollbackOffset)
         let point = convert(event.locationInWindow, from: nil)
         let location = bufferCellLocation(from: point)
+        let isColumnSelection = event.modifierFlags.contains(.option)
 
-        if event.clickCount >= 2 {
+        if event.clickCount >= 3 {
+            selectLogicalLine(atBufferRow: location.row)
+            isSelectingWithMouse = false
+            needsDisplay = true
+            return
+        }
+
+        if event.clickCount == 2 {
             selectWord(atBufferRow: location.row, column: location.column)
+            isSelectingWithMouse = false
             needsDisplay = true
             return
         }
@@ -242,8 +260,10 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             startRow: location.row,
             startColumn: location.column,
             endRow: location.row,
-            endColumn: location.column
+            endColumn: location.column,
+            isColumnSelection: isColumnSelection
         )
+        isSelectingWithMouse = true
         needsDisplay = true
     }
 
@@ -263,7 +283,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        guard var current = selection else { return }
+        guard isSelectingWithMouse, var current = selection else { return }
         screenBuffer.setViewportOffset(scrollbackOffset)
         let point = convert(event.locationInWindow, from: nil)
         let location = bufferCellLocation(from: point)
@@ -271,6 +291,11 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         current.endColumn = location.column
         selection = current
         needsDisplay = true
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        isSelectingWithMouse = false
     }
 
     public override func setFrameSize(_ newSize: NSSize) {
@@ -408,8 +433,15 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.25).cgColor)
         for bufferRow in visibleStart ... visibleEnd {
             let row = bufferRow - viewportStart
-            let rowStartCol = (bufferRow == minRow) ? ordered.startColumn : 0
-            let rowEndCol = (bufferRow == maxRow) ? ordered.endColumn : screenBuffer.columns - 1
+            let rowStartCol: Int
+            let rowEndCol: Int
+            if ordered.isColumnSelection {
+                rowStartCol = ordered.startColumn
+                rowEndCol = ordered.endColumn
+            } else {
+                rowStartCol = (bufferRow == minRow) ? ordered.startColumn : 0
+                rowEndCol = (bufferRow == maxRow) ? ordered.endColumn : screenBuffer.columns - 1
+            }
             let clampedMinCol = max(0, min(rowStartCol, screenBuffer.columns - 1))
             let clampedMaxCol = max(0, min(rowEndCol, screenBuffer.columns - 1))
             guard clampedMinCol <= clampedMaxCol else { continue }
@@ -458,7 +490,8 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
                 startRow: selection.endRow,
                 startColumn: selection.endColumn,
                 endRow: selection.startRow,
-                endColumn: selection.startColumn
+                endColumn: selection.startColumn,
+                isColumnSelection: selection.isColumnSelection
             )
         }
         if selection.startColumn <= selection.endColumn {
@@ -468,7 +501,8 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             startRow: selection.endRow,
             startColumn: selection.endColumn,
             endRow: selection.startRow,
-            endColumn: selection.startColumn
+            endColumn: selection.startColumn,
+            isColumnSelection: selection.isColumnSelection
         )
     }
 
@@ -498,7 +532,19 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             startRow: row,
             startColumn: start,
             endRow: row,
-            endColumn: end
+            endColumn: end,
+            isColumnSelection: false
+        )
+    }
+
+    private func selectLogicalLine(atBufferRow row: Int) {
+        let logicalRange = screenBuffer.wrappedLogicalLineRange(containingBufferRow: row)
+        selection = TerminalSelection(
+            startRow: logicalRange.lowerBound,
+            startColumn: 0,
+            endRow: logicalRange.upperBound,
+            endColumn: max(0, screenBuffer.columns - 1),
+            isColumnSelection: false
         )
     }
 
@@ -605,9 +651,23 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let maxRow = min(max(ordered.endRow, 0), totalLineCount - 1)
         guard minRow <= maxRow else { return nil }
 
-        var rows: [String] = []
-        rows.reserveCapacity(maxRow - minRow + 1)
+        if ordered.isColumnSelection {
+            var rows: [String] = []
+            rows.reserveCapacity(maxRow - minRow + 1)
+            for row in minRow ... maxRow {
+                let line = screenBuffer.line(atBufferRow: row)
+                guard line.count > 0 else { continue }
+                let clampedStartCol = min(max(ordered.startColumn, 0), line.count - 1)
+                let clampedEndCol = min(max(ordered.endColumn, 0), line.count - 1)
+                guard clampedStartCol <= clampedEndCol else { continue }
+                let characters = (clampedStartCol ... clampedEndCol)
+                    .compactMap { line[$0].displayWidth == 0 ? nil : line[$0].character }
+                rows.append(String(characters))
+            }
+            return rows.joined(separator: "\n")
+        }
 
+        var output = ""
         for row in minRow ... maxRow {
             let line = screenBuffer.line(atBufferRow: row)
             guard line.count > 0 else { continue }
@@ -620,14 +680,17 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
             let characters = (clampedStartCol ... clampedEndCol)
                 .compactMap { line[$0].displayWidth == 0 ? nil : line[$0].character }
-            var text = String(characters)
-            while text.last == " " {
-                text.removeLast()
+            var rowText = String(characters)
+            while rowText.last == " ", !screenBuffer.isBufferLineWrapped(row + 1) {
+                rowText.removeLast()
             }
-            rows.append(text)
+            output.append(rowText)
+            if row < maxRow, !screenBuffer.isBufferLineWrapped(row + 1) {
+                output.append("\n")
+            }
         }
 
-        return rows.joined(separator: "\n")
+        return output
     }
 
     private func scrollToBottom() {

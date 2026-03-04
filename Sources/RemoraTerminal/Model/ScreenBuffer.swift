@@ -92,6 +92,26 @@ public final class ScreenBuffer {
         return lines[lineIndex]
     }
 
+    public func isBufferLineWrapped(_ bufferRow: Int) -> Bool {
+        line(atBufferRow: bufferRow).isWrapped
+    }
+
+    public func wrappedLogicalLineRange(containingBufferRow bufferRow: Int) -> ClosedRange<Int> {
+        let totalCount = totalBufferLineCount()
+        guard totalCount > 0 else { return 0 ... 0 }
+        var seed = min(max(0, bufferRow), totalCount - 1)
+
+        while seed > 0, line(atBufferRow: seed).isWrapped {
+            seed -= 1
+        }
+
+        var end = seed
+        while end + 1 < totalCount, line(atBufferRow: end + 1).isWrapped {
+            end += 1
+        }
+        return seed ... end
+    }
+
     public func totalBufferLineCount() -> Int {
         scrollback.lineCount() + lines.count
     }
@@ -233,7 +253,7 @@ public final class ScreenBuffer {
 
     public func put(character: Character) {
         if wrapPending {
-            lineFeed()
+            lineFeed(isWrappedContinuation: true)
             carriageReturn()
             wrapPending = false
         }
@@ -328,13 +348,14 @@ public final class ScreenBuffer {
         return target
     }
 
-    public func lineFeed() {
+    public func lineFeed(isWrappedContinuation: Bool = false) {
         wrapPending = false
         if cursorRow == scrollRegionBottom {
-            scrollUp(lines: 1)
+            scrollUp(lines: 1, newLineWrapped: isWrappedContinuation)
             return
         }
         cursorRow = min(rows - 1, cursorRow + 1)
+        lines[cursorRow].isWrapped = isWrappedContinuation
         markDirty(row: cursorRow)
     }
 
@@ -453,7 +474,7 @@ public final class ScreenBuffer {
         wrapPending = false
     }
 
-    public func scrollUp(lines count: Int = 1) {
+    public func scrollUp(lines count: Int = 1, newLineWrapped: Bool = false) {
         let requested = max(1, count)
         let regionHeight = scrollRegionBottom - scrollRegionTop + 1
         guard regionHeight > 0 else { return }
@@ -462,10 +483,9 @@ public final class ScreenBuffer {
 
         for _ in 0 ..< iterations {
             let removedLine = lines.remove(at: scrollRegionTop)
-            lines.insert(
-                TerminalLine(columns: columns, attributes: .default),
-                at: scrollRegionBottom
-            )
+            var inserted = TerminalLine(columns: columns, attributes: .default)
+            inserted.isWrapped = newLineWrapped
+            lines.insert(inserted, at: scrollRegionBottom)
             if isFullScreenRegion {
                 scrollback.append(removedLine)
                 clampViewportOffset()
