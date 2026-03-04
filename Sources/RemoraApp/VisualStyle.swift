@@ -14,9 +14,10 @@ enum VisualStyle {
     static let rightPanelBackground = Color(nsColor: .textBackgroundColor)
     static let terminalBackground = Color.black
     static let inputFieldBackground = Color(nsColor: .textBackgroundColor)
-    static let settingsPaneBackground = Color(nsColor: .underPageBackgroundColor)
+    static let settingsPaneBackground = Color(nsColor: .windowBackgroundColor)
     static let settingsSurfaceBackground = Color(nsColor: .controlBackgroundColor)
-    static let settingsSelectedTabBackground = Color(nsColor: .selectedContentBackgroundColor).opacity(0.24)
+    static let settingsSubtleBackground = Color(nsColor: .quaternarySystemFill)
+    static let settingsSelectedTabBackground = Color(nsColor: .selectedContentBackgroundColor).opacity(0.18)
     static let chipBackground = Color(nsColor: .separatorColor).opacity(0.22)
     static let mutedSurfaceBackground = Color(nsColor: .quaternaryLabelColor).opacity(0.14)
     static let elevatedSurfaceBackground = Color(nsColor: .controlBackgroundColor).opacity(0.78)

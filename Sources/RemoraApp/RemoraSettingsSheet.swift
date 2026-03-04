@@ -117,7 +117,7 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(VisualStyle.settingsPaneBackground.opacity(0.78))
+        .background(VisualStyle.settingsPaneBackground)
     }
 
     private func paneButton(_ pane: SettingsPane) -> some View {
@@ -288,7 +288,7 @@ struct RemoraSettingsSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
+                                    .fill(VisualStyle.settingsSubtleBackground)
                             )
                     }
 
@@ -384,7 +384,7 @@ struct RemoraSettingsSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
+                .fill(VisualStyle.settingsSubtleBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -463,7 +463,7 @@ struct RemoraSettingsSheet: View {
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(VisualStyle.settingsPaneBackground.opacity(0.95))
+                .fill(VisualStyle.settingsSubtleBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
