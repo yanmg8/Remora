@@ -65,6 +65,8 @@ struct FileManagerPanelView: View {
     @State private var isTransferQueueExpanded = false
     @State private var remoteSortColumn: RemoteSortColumn = .name
     @State private var isRemoteSortAscending = true
+    @State private var activeRemoteDropDirectoryPath: String?
+    @State private var isRemoteListDropTargeted = false
 
     private var selectedRemoteEntries: [RemoteFileEntry] {
         viewModel.remoteEntries.filter { selectedRemotePaths.contains($0.path) }
@@ -246,6 +248,8 @@ struct FileManagerPanelView: View {
             remotePathDraft = viewModel.remoteDirectoryPath
             selectedRemotePaths.removeAll()
             selectionAnchorRemotePath = nil
+            activeRemoteDropDirectoryPath = nil
+            isRemoteListDropTargeted = false
         }
         .sheet(isPresented: $isMoveSheetPresented) {
             moveSheet
@@ -307,7 +311,11 @@ struct FileManagerPanelView: View {
                                 .fill(
                                     isSelected
                                         ? Color.accentColor
-                                        : rowBackgroundColor(rowIndex: rowIndex, isHovered: hoveredRemotePath == entry.path)
+                                        : (
+                                            activeRemoteDropDirectoryPath == entry.path
+                                                ? Color.accentColor.opacity(0.24)
+                                                : rowBackgroundColor(rowIndex: rowIndex, isHovered: hoveredRemotePath == entry.path)
+                                        )
                                 )
                         )
                         .contentShape(Rectangle())
@@ -323,9 +331,9 @@ struct FileManagerPanelView: View {
                             hoveredRemotePath = hovering ? entry.path : nil
                         }
                         .dropDestination(for: URL.self) { items, _ in
-                            guard entry.isDirectory, !items.isEmpty else { return false }
-                            viewModel.enqueueUpload(localFileURLs: items, toRemoteDirectory: entry.path)
-                            return true
+                            handleRemoteDrop(items: items, targetEntry: entry)
+                        } isTargeted: { isTargeted in
+                            updateRemoteDropTarget(for: entry, isTargeted: isTargeted)
                         }
                         .contextMenu {
                             rowContextMenu(for: entry)
@@ -345,10 +353,22 @@ struct FileManagerPanelView: View {
                 .background(VisualStyle.rightPanelBackground)
                 .listStyle(.plain)
                 .accessibilityIdentifier("file-manager-remote-list")
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(
+                            isRemoteListDropTargeted && activeRemoteDropDirectoryPath == nil
+                                ? Color.accentColor.opacity(0.85)
+                                : Color.clear,
+                            lineWidth: 2
+                        )
+                }
                 .dropDestination(for: URL.self) { items, _ in
-                    guard !items.isEmpty else { return false }
-                    viewModel.enqueueUpload(localFileURLs: items, toRemoteDirectory: viewModel.remoteDirectoryPath)
-                    return true
+                    handleRemoteDrop(items: items, targetEntry: nil)
+                } isTargeted: { isTargeted in
+                    isRemoteListDropTargeted = isTargeted
+                    if !isTargeted {
+                        activeRemoteDropDirectoryPath = nil
+                    }
                 }
                 .contextMenu {
                     panelContextMenu
@@ -1115,6 +1135,31 @@ struct FileManagerPanelView: View {
         }
     }
 
+    private func handleRemoteDrop(items: [URL], targetEntry: RemoteFileEntry?) -> Bool {
+        let acceptedItems = RemoteDropRouting.acceptedLocalDropURLs(items)
+        guard !acceptedItems.isEmpty else { return false }
+
+        let destination = RemoteDropRouting.resolveUploadTargetDirectory(
+            dropTargetEntry: targetEntry,
+            currentRemoteDirectory: viewModel.remoteDirectoryPath
+        )
+        viewModel.enqueueUpload(localFileURLs: acceptedItems, toRemoteDirectory: destination)
+        activeRemoteDropDirectoryPath = nil
+        isRemoteListDropTargeted = false
+        return true
+    }
+
+    private func updateRemoteDropTarget(for entry: RemoteFileEntry, isTargeted: Bool) {
+        guard entry.isDirectory else { return }
+        if isTargeted {
+            activeRemoteDropDirectoryPath = entry.path
+            return
+        }
+        if activeRemoteDropDirectoryPath == entry.path {
+            activeRemoteDropDirectoryPath = nil
+        }
+    }
+
     private var createRemoteSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(createRemoteKind.title)
@@ -1236,13 +1281,19 @@ struct FileManagerPanelView: View {
     }
 
     private func remotePrimaryTextColor(for path: String) -> Color {
-        selectedRemotePaths.contains(path) ? Color(nsColor: .alternateSelectedControlTextColor) : VisualStyle.textPrimary
+        isPathActiveForSelectionVisual(path)
+            ? Color(nsColor: .alternateSelectedControlTextColor)
+            : VisualStyle.textPrimary
     }
 
     private func remoteSecondaryTextColor(for path: String) -> Color {
-        selectedRemotePaths.contains(path)
+        isPathActiveForSelectionVisual(path)
             ? Color(nsColor: .alternateSelectedControlTextColor).opacity(0.8)
             : VisualStyle.textSecondary
+    }
+
+    private func isPathActiveForSelectionVisual(_ path: String) -> Bool {
+        selectedRemotePaths.contains(path) || activeRemoteDropDirectoryPath == path
     }
 
     private func remoteRowIdentifier(_ path: String) -> String {
