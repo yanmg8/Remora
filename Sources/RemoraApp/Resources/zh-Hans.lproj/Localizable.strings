@@ -112,6 +112,7 @@
 "New Folder" = "新建文件夹";
 "Upload To Current Directory" = "上传到当前目录";
 "Drop to upload to %@" = "拖拽以上传到 %@";
+"Drop target" = "拖拽目标";
 "Copied %d item(s)." = "已复制 %d 个项目。";
 "Cut %d item(s)." = "已剪切 %d 个项目。";
 "Deleted %d item(s)." = "已删除 %d 个项目。";

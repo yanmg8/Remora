@@ -114,6 +114,7 @@
 "New Folder" = "New Folder";
 "Upload To Current Directory" = "Upload To Current Directory";
 "Drop to upload to %@" = "Drop to upload to %@";
+"Drop target" = "Drop target";
 "Copied %d item(s)." = "Copied %d item(s).";
 "Cut %d item(s)." = "Cut %d item(s).";
 "Deleted %d item(s)." = "Deleted %d item(s).";

@@ -345,7 +345,8 @@ struct FileManagerPanelView: View {
                 List {
                     ForEach(Array(sortedRemoteEntries.enumerated()), id: \.element.path) { rowIndex, entry in
                         let isSelected = selectedRemotePaths.contains(entry.path)
-                        remoteListRow(entry)
+                        let isDropTarget = activeRemoteDropDirectoryPath == entry.path
+                        remoteListRow(entry, isDropTarget: isDropTarget)
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
                         .background(
@@ -360,6 +361,8 @@ struct FileManagerPanelView: View {
                                         )
                                 )
                         )
+                        .scaleEffect(isDropTarget ? 1.012 : 1.0, anchor: .center)
+                        .animation(.spring(response: 0.18, dampingFraction: 0.82), value: isDropTarget)
                         .contentShape(Rectangle())
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -530,7 +533,7 @@ struct FileManagerPanelView: View {
         .buttonStyle(.plain)
     }
 
-    private func remoteListRow(_ entry: RemoteFileEntry) -> some View {
+    private func remoteListRow(_ entry: RemoteFileEntry, isDropTarget: Bool = false) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: entry.isDirectory ? "folder" : "doc")
@@ -565,6 +568,25 @@ struct FileManagerPanelView: View {
                 .foregroundStyle(remoteSecondaryTextColor(for: entry.path))
                 .lineLimit(1)
                 .frame(width: 90, alignment: .leading)
+        }
+        .overlay(alignment: .trailing) {
+            if isDropTarget {
+                Image(systemName: "square.and.arrow.down.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(6)
+                    .background(
+                        Circle()
+                            .fill(Color.accentColor.opacity(0.12))
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                    )
+                    .padding(.trailing, 4)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    .help(tr("Drop target"))
+            }
         }
     }
 
@@ -1251,6 +1273,7 @@ struct FileManagerPanelView: View {
     private func updateRemoteDropTarget(for entry: RemoteFileEntry, isTargeted: Bool) {
         guard entry.isDirectory else { return }
         if isTargeted {
+            isRemoteListDropTargeted = true
             activeRemoteDropDirectoryPath = entry.path
             return
         }
