@@ -1,6 +1,7 @@
 import SwiftUI
 import RemoraTerminal
 
+@MainActor
 struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var runtime: TerminalRuntime
     var onFocus: () -> Void = {}
@@ -25,6 +26,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         runtime.attach(view: nsView)
     }
 
+    @MainActor
     private func applyTerminalSettings(to view: TerminalView) {
         view.wordSeparators = CharacterSet(charactersIn: AppSettings.resolvedTerminalWordSeparators())
         view.scrollSensitivity = AppSettings.resolvedTerminalScrollSensitivity()

@@ -11,6 +11,7 @@ private struct ActiveRuntimeSFTPState: Equatable {
     var hostSignature: String?
 }
 
+@MainActor
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openURL) private var openURL
