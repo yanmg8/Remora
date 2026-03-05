@@ -52,7 +52,7 @@ jobs:
 
       - name: Build Remora (Release)
         if: steps.ref_guard.outputs.tag_on_main == 'true'
-        run: swift build -c release --arch "${{ matrix.arch }}" --product RemoraApp
+        run: swift build -c release --arch "${{ matrix.arch }}" --product RemoraApp -Xswiftc -strict-concurrency=minimal
 
       - name: Create app bundle and archive
         if: steps.ref_guard.outputs.tag_on_main == 'true'
