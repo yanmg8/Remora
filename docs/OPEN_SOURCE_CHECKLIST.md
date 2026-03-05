@@ -11,7 +11,7 @@ Use this checklist before making the repository public.
 
 ## 2. Licensing & Legal
 
-- [x] Add top-level `LICENSE` (Apache-2.0).
+- [x] Add top-level `LICENSE` (MIT).
 - [ ] Verify all bundled assets/fonts/icons are redistributable.
 - [ ] Add `NOTICE` file if third-party notices are required.
 - [ ] Confirm no proprietary/internal docs remain in public tree.
@@ -49,4 +49,3 @@ Use this checklist before making the repository public.
 - [ ] Add `CODE_OF_CONDUCT.md`.
 - [ ] Add `SUPPORT.md` (where to ask usage questions).
 - [ ] Configure Discussions (optional).
-

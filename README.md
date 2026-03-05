@@ -138,4 +138,4 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for release notes.
 
 ## License
 
-Licensed under the Apache License 2.0. See [`LICENSE`](./LICENSE).
+Licensed under the MIT License. See [`LICENSE`](./LICENSE).

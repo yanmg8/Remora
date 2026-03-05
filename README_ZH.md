@@ -138,4 +138,4 @@ REMORA_RUN_UI_TESTS=1 REMORA_APP_BINARY=/abs/path/to/RemoraApp swift test --filt
 
 ## 许可证
 
-本项目采用 Apache License 2.0，详见 [`LICENSE`](./LICENSE)。
+本项目采用 MIT License，详见 [`LICENSE`](./LICENSE)。

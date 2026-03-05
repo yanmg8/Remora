@@ -6,6 +6,10 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+### Changed
+
+- License switched from Apache-2.0 to MIT.
+
 ## [v0.9.1-open-source-readiness] - 2026-03-04
 
 ### Added
