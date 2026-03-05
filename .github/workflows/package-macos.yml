@@ -1,11 +1,9 @@
 name: Package macOS App
 
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - "v*"
-      - "ci-test-*"
+    branches:
+      - "main"
 
 permissions:
   contents: write
