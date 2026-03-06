@@ -41,6 +41,7 @@ struct HostConnectionImporterTests {
             hosts: hosts,
             scope: .all,
             format: .json,
+            includeSavedPasswords: true,
             credentialStore: credentialStore,
             now: Date(timeIntervalSince1970: 0),
             outputDirectoryOverride: tempRoot

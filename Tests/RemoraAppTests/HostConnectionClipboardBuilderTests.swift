@@ -5,7 +5,7 @@ import RemoraCore
 
 struct HostConnectionClipboardBuilderTests {
     @Test
-    func buildsPasswordConnectionInfoWithPlaintextPassword() async {
+    func buildsPasswordConnectionInfoWithoutPasswordValue() async {
         let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("remora-clipboard-tests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -35,7 +35,8 @@ struct HostConnectionClipboardBuilderTests {
         #expect(text.contains("Port: 2222"))
         #expect(text.contains("Username: ops"))
         #expect(text.contains("Auth: Password"))
-        #expect(text.contains("Password: super-secret"))
+        #expect(!text.contains("Password:"))
+        #expect(!text.contains("super-secret"))
     }
 
     @Test
@@ -71,16 +72,16 @@ struct HostConnectionClipboardBuilderTests {
     }
 
     @Test
-    func buildsSSHCommand() {
+    func buildsSSHCommandWithShellSafeQuoting() {
         let host = Host(
             name: "demo",
-            address: "1.2.3.4",
+            address: "example.com; touch /tmp/pwned",
             port: 2200,
-            username: "root",
+            username: "o'reilly",
             auth: HostAuth(method: .agent)
         )
 
         let command = HostConnectionClipboardBuilder.sshCommand(for: host)
-        #expect(command == "ssh root@1.2.3.4 -p 2200")
+        #expect(command == "ssh -p 2200 'o'\\''reilly@example.com; touch /tmp/pwned'")
     }
 }

@@ -5,7 +5,7 @@ import RemoraCore
 
 struct HostConnectionExporterTests {
     @Test
-    func exportsJSONWithPlaintextPassword() async throws {
+    func exportsJSONWithoutPasswordByDefault() async throws {
         let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("remora-export-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
@@ -39,8 +39,44 @@ struct HostConnectionExporterTests {
         let records = try JSONDecoder().decode([HostConnectionExporter.Record].self, from: data)
         #expect(records.count == 1)
         #expect(records.first?.name == "prod-api")
-        #expect(records.first?.password == "plain-secret")
+        #expect(records.first?.password == "")
         #expect(records.first?.authMethod == AuthenticationMethod.password.rawValue)
+    }
+
+    @Test
+    func exportsJSONWithPasswordOnlyWhenExplicitlyIncluded() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-export-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let credentialStore = CredentialStore()
+        await credentialStore.setSecret("plain-secret", for: "pw-ref-1")
+
+        let hosts = [
+            Host(
+                name: "prod-api",
+                address: "10.1.1.1",
+                port: 22,
+                username: "deploy",
+                group: "Production",
+                auth: HostAuth(method: .password, passwordReference: "pw-ref-1")
+            ),
+        ]
+
+        let outputURL = try await HostConnectionExporter.export(
+            hosts: hosts,
+            scope: .all,
+            format: .json,
+            includeSavedPasswords: true,
+            credentialStore: credentialStore,
+            now: Date(timeIntervalSince1970: 0),
+            outputDirectoryOverride: tempRoot
+        )
+
+        let data = try Data(contentsOf: outputURL)
+        let records = try JSONDecoder().decode([HostConnectionExporter.Record].self, from: data)
+        #expect(records.first?.password == "plain-secret")
     }
 
     @Test

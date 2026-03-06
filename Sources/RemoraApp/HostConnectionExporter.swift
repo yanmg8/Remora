@@ -93,6 +93,7 @@ struct HostConnectionExporter {
         hosts: [RemoraCore.Host],
         scope: HostExportScope,
         format: HostExportFormat,
+        includeSavedPasswords: Bool = false,
         credentialStore: CredentialStore = CredentialStore(),
         fileManager: FileManager = .default,
         now: Date = Date(),
@@ -107,7 +108,11 @@ struct HostConnectionExporter {
             }
         }()
 
-        let records = await makeRecords(from: scopedHosts, credentialStore: credentialStore)
+        let records = await makeRecords(
+            from: scopedHosts,
+            includeSavedPasswords: includeSavedPasswords,
+            credentialStore: credentialStore
+        )
             .sorted { lhs, rhs in
                 if lhs.group != rhs.group {
                     return lhs.group.localizedCaseInsensitiveCompare(rhs.group) == .orderedAscending
@@ -129,6 +134,7 @@ struct HostConnectionExporter {
 
     private static func makeRecords(
         from hosts: [RemoraCore.Host],
+        includeSavedPasswords: Bool,
         credentialStore: CredentialStore
     ) async -> [Record] {
         var records: [Record] = []
@@ -136,7 +142,8 @@ struct HostConnectionExporter {
 
         for host in hosts {
             var plaintextPassword = ""
-            if let passwordReference = host.auth.passwordReference,
+            if includeSavedPasswords,
+               let passwordReference = host.auth.passwordReference,
                !passwordReference.isEmpty
             {
                 plaintextPassword = await credentialStore.secret(for: passwordReference) ?? ""

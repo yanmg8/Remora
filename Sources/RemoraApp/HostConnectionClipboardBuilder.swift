@@ -3,7 +3,8 @@ import RemoraCore
 
 struct HostConnectionClipboardBuilder {
     static func sshCommand(for host: RemoraCore.Host) -> String {
-        "ssh \(host.username)@\(host.address) -p \(host.port)"
+        let destination = quoteShellArgument("\(host.username)@\(host.address)")
+        return "ssh -p \(host.port) \(destination)"
     }
 
     static func connectionInfoText(
@@ -19,8 +20,6 @@ struct HostConnectionClipboardBuilder {
         switch host.auth.method {
         case .password:
             lines.append("\(tr("Auth")): \(tr("Password"))")
-            let password = await resolvedPassword(for: host, credentialStore: credentialStore)
-            lines.append("\(tr("Password")): \(password)")
         case .privateKey:
             lines.append("\(tr("Auth")): \(tr("Private Key"))")
             let keyPath = normalized(host.auth.keyReference) ?? tr("(not set)")
@@ -33,22 +32,6 @@ struct HostConnectionClipboardBuilder {
         return lines.joined(separator: "\n")
     }
 
-    private static func resolvedPassword(
-        for host: RemoraCore.Host,
-        credentialStore: CredentialStore
-    ) async -> String {
-        guard let reference = normalized(host.auth.passwordReference) else {
-            return tr("(not saved)")
-        }
-
-        guard let password = await credentialStore.secret(for: reference),
-              !password.isEmpty
-        else {
-            return tr("(not saved)")
-        }
-        return password
-    }
-
     private static func normalized(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty
@@ -56,5 +39,10 @@ struct HostConnectionClipboardBuilder {
             return nil
         }
         return trimmed
+    }
+
+    private static func quoteShellArgument(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "'", with: "'\\''")
+        return "'\(escaped)'"
     }
 }

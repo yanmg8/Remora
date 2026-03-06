@@ -11,6 +11,12 @@ private struct ActiveRuntimeSFTPState: Equatable {
     var hostSignature: String?
 }
 
+private struct HostExportDraft: Equatable {
+    var scope: HostExportScope = .all
+    var format: HostExportFormat = .json
+    var includeSavedPasswords = false
+}
+
 @MainActor
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
@@ -37,8 +43,9 @@ struct ContentView: View {
     @State private var hostEditorDraft = SidebarHostEditorDraft()
     @State private var hostEditorTestState: HostConnectionTestState = .idle
     @State private var isPasswordSaveConsentAlertPresented = false
-    @State private var pendingExportScope: HostExportScope?
-    @State private var isExportFormatDialogPresented = false
+    @State private var isExportSheetPresented = false
+    @State private var exportDraft = HostExportDraft()
+    @State private var isPasswordExportWarningPresented = false
     @State private var isExportingHosts = false
     @State private var isImportingHosts = false
     @State private var isExportResultAlertPresented = false
@@ -414,21 +421,6 @@ struct ContentView: View {
                 .frame(width: 1)
         }
         .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
-        .confirmationDialog(
-            tr("Export SSH Connections"),
-            isPresented: $isExportFormatDialogPresented,
-            titleVisibility: .visible
-        ) {
-            Button(tr("Export as JSON")) {
-                startExport(format: .json)
-            }
-            Button(tr("Export as CSV")) {
-                startExport(format: .csv)
-            }
-            Button(tr("Cancel"), role: .cancel) {}
-        } message: {
-            Text(pendingExportScope?.label ?? tr("Choose format"))
-        }
         .alert(exportAlertTitle, isPresented: $isExportResultAlertPresented) {
             Button(tr("OK"), role: .cancel) {}
         } message: {
@@ -443,6 +435,14 @@ struct ContentView: View {
         } message: {
             Text(tr("Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them."))
         }
+        .alert(tr("Include saved passwords in export?"), isPresented: $isPasswordExportWarningPresented) {
+            Button(tr("Cancel"), role: .cancel) {}
+            Button(tr("Export with Passwords"), role: .destructive) {
+                startExport(with: exportDraft)
+            }
+        } message: {
+            Text(tr("Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored."))
+        }
         .sheet(isPresented: $isGroupEditorSheetPresented) {
             SidebarGroupEditorSheet(
                 mode: groupEditorMode,
@@ -452,6 +452,23 @@ struct ContentView: View {
                 },
                 onConfirm: {
                     commitGroupEditor()
+                }
+            )
+        }
+        .sheet(isPresented: $isExportSheetPresented) {
+            HostExportSheet(
+                draft: $exportDraft,
+                isExporting: isExportingHosts,
+                onCancel: {
+                    isExportSheetPresented = false
+                },
+                onConfirm: {
+                    isExportSheetPresented = false
+                    if exportDraft.includeSavedPasswords {
+                        isPasswordExportWarningPresented = true
+                    } else {
+                        startExport(with: exportDraft)
+                    }
                 }
             )
         }
@@ -1179,28 +1196,27 @@ struct ContentView: View {
 
     private func beginExportAllHosts() {
         guard !isExportingHosts else { return }
-        pendingExportScope = .all
-        isExportFormatDialogPresented = true
+        exportDraft = HostExportDraft(scope: .all)
+        isExportSheetPresented = true
     }
 
     private func beginExportGroup(_ groupName: String) {
         guard !isExportingHosts else { return }
-        pendingExportScope = .group(groupName)
-        isExportFormatDialogPresented = true
+        exportDraft = HostExportDraft(scope: .group(groupName))
+        isExportSheetPresented = true
     }
 
-    private func startExport(format: HostExportFormat) {
-        guard let scope = pendingExportScope else { return }
+    private func startExport(with draft: HostExportDraft) {
         let hosts = hostCatalog.hosts
-        pendingExportScope = nil
         isExportingHosts = true
 
         Task {
             do {
                 let outputURL = try await HostConnectionExporter.export(
                     hosts: hosts,
-                    scope: scope,
-                    format: format
+                    scope: draft.scope,
+                    format: draft.format,
+                    includeSavedPasswords: draft.includeSavedPasswords
                 )
                 await MainActor.run {
                     exportAlertTitle = tr("Export Complete")
@@ -1863,6 +1879,52 @@ private struct SidebarGroupSectionView: View {
                 }
             }
         }
+    }
+}
+
+private struct HostExportSheet: View {
+    @Binding var draft: HostExportDraft
+    let isExporting: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(tr("Export SSH Connections"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(VisualStyle.textPrimary)
+
+            Text(draft.scope.label)
+                .font(.system(size: 12))
+                .foregroundStyle(VisualStyle.textSecondary)
+
+            Picker(tr("Format"), selection: $draft.format) {
+                ForEach(HostExportFormat.allCases) { format in
+                    Text(format == .json ? tr("Export as JSON") : tr("Export as CSV"))
+                        .tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Toggle(tr("Include saved passwords (plaintext)"), isOn: $draft.includeSavedPasswords)
+                .toggleStyle(.checkbox)
+
+            if draft.includeSavedPasswords {
+                Text(tr("Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+            }
+
+            HStack {
+                Spacer()
+                Button(tr("Cancel"), action: onCancel)
+                Button(tr("Export"), action: onConfirm)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isExporting)
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
     }
 }
 
