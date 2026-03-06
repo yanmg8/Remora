@@ -83,6 +83,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var isSelectingWithMouse = false
     private var isMouseReportingDrag = false
     private var mouseReportingButtonCode: Int?
+    private var pendingShellCursorClickLocation: (row: Int, column: Int)?
     private var scrollLineAccumulator: Double = 0
 
     private let flushScheduleLock = NSLock()
@@ -187,6 +188,14 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
+        if isShellLineNavigationShortcut(event),
+           let input = inputMapper.map(event: event)
+        {
+            scrollToBottomOnUserInputIfNeeded()
+            onInput?(input)
+            return
+        }
+
         if let legacyControl = inputMapper.mapLegacyControl(event: event) {
             scrollToBottomOnUserInputIfNeeded()
             onInput?(legacyControl)
@@ -266,6 +275,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         if event.clickCount >= 3 {
             selectLogicalLine(atBufferRow: location.row)
             isSelectingWithMouse = false
+            pendingShellCursorClickLocation = nil
             needsDisplay = true
             return
         }
@@ -273,7 +283,14 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         if event.clickCount == 2 {
             selectWord(atBufferRow: location.row, column: location.column)
             isSelectingWithMouse = false
+            pendingShellCursorClickLocation = nil
             needsDisplay = true
+            return
+        }
+
+        if shouldHandleShellCursorClick(event: event, location: location) {
+            pendingShellCursorClickLocation = location
+            isSelectingWithMouse = false
             return
         }
 
@@ -324,6 +341,23 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
+        if let pendingLocation = pendingShellCursorClickLocation {
+            screenBuffer.setViewportOffset(scrollbackOffset)
+            let point = convert(event.locationInWindow, from: nil)
+            let location = bufferCellLocation(from: point)
+            selection = TerminalSelection(
+                startRow: pendingLocation.row,
+                startColumn: pendingLocation.column,
+                endRow: location.row,
+                endColumn: location.column,
+                isColumnSelection: event.modifierFlags.contains(.option)
+            )
+            pendingShellCursorClickLocation = nil
+            isSelectingWithMouse = true
+            needsDisplay = true
+            return
+        }
+
         guard isSelectingWithMouse, var current = selection else { return }
         screenBuffer.setViewportOffset(scrollbackOffset)
         let point = convert(event.locationInWindow, from: nil)
@@ -341,6 +375,21 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             mouseReportingButtonCode = nil
             return
         }
+
+        if let pendingLocation = pendingShellCursorClickLocation {
+            pendingShellCursorClickLocation = nil
+            if let input = shellCursorRepositionInput(
+                targetBufferRow: pendingLocation.row,
+                targetColumn: pendingLocation.column
+            ) {
+                scrollToBottomOnUserInputIfNeeded()
+                onInput?(input)
+                selection = nil
+                needsDisplay = true
+                return
+            }
+        }
+
         super.mouseUp(with: event)
         isSelectingWithMouse = false
     }
@@ -781,6 +830,47 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         scrollToBottom()
     }
 
+    private func isShellLineNavigationShortcut(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command) else { return false }
+        return event.keyCode == 123 || event.keyCode == 124
+    }
+
+    private func shouldHandleShellCursorClick(
+        event: NSEvent,
+        location: (row: Int, column: Int)
+    ) -> Bool {
+        guard event.clickCount == 1 else { return false }
+        guard !event.modifierFlags.contains(.option) else { return false }
+        guard !shouldRouteMouseEventToPTY(event) else { return false }
+        return shellCursorRepositionInput(targetBufferRow: location.row, targetColumn: location.column) != nil
+    }
+
+    private func shellCursorRepositionInput(targetBufferRow: Int, targetColumn: Int) -> Data? {
+        guard scrollbackOffset == 0 else { return nil }
+        guard !parser.mouseReportingEnabled else { return nil }
+        guard !screenBuffer.isAlternateBuffer else { return nil }
+
+        screenBuffer.setViewportOffset(scrollbackOffset)
+        let currentBufferRow = screenBuffer.viewportStartBufferRow() + screenBuffer.cursorRow
+        let logicalRange = screenBuffer.wrappedLogicalLineRange(containingBufferRow: currentBufferRow)
+        guard logicalRange.contains(targetBufferRow) else { return nil }
+
+        let normalizedTargetColumn = normalizedColumn(atBufferRow: targetBufferRow, column: targetColumn)
+        let currentLogicalColumn = (currentBufferRow - logicalRange.lowerBound) * screenBuffer.columns + screenBuffer.cursorColumn
+        let targetLogicalColumn = (targetBufferRow - logicalRange.lowerBound) * screenBuffer.columns + normalizedTargetColumn
+        let delta = targetLogicalColumn - currentLogicalColumn
+        guard delta != 0 else { return nil }
+
+        let direction: NSDirectionalRectEdge = delta > 0 ? .trailing : .leading
+        guard let unit = inputMapper.cursorMoveSequence(direction: direction) else { return nil }
+
+        var payload = Data(capacity: unit.count * abs(delta))
+        for _ in 0 ..< abs(delta) {
+            payload.append(unit)
+        }
+        return payload
+    }
+
     private func shouldRouteMouseEventToPTY(_ event: NSEvent) -> Bool {
         parser.mouseReportingEnabled && !event.modifierFlags.contains(.option)
     }
@@ -975,5 +1065,21 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let rectInWindow = convert(caretRect, to: nil)
         guard let window else { return .zero }
         return window.convertToScreen(rectInWindow)
+    }
+
+    func flushPendingOutputForTesting() {
+        flushPendingInputBeforeResize()
+    }
+
+    func cursorBufferPositionForTesting() -> (row: Int, column: Int) {
+        screenBuffer.setViewportOffset(scrollbackOffset)
+        return (
+            screenBuffer.viewportStartBufferRow() + screenBuffer.cursorRow,
+            screenBuffer.cursorColumn
+        )
+    }
+
+    func shellCursorRepositionInputForTesting(targetBufferRow: Int, targetColumn: Int) -> Data? {
+        shellCursorRepositionInput(targetBufferRow: targetBufferRow, targetColumn: targetColumn)
     }
 }

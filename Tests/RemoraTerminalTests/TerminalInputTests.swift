@@ -129,6 +129,17 @@ struct TerminalInputTests {
     }
 
     @Test
+    func inputMapperMapsCommandArrowKeysToShellLineBoundaries() {
+        let mapper = TerminalInputMapper()
+
+        let commandLeft = mapper.map(event: keyEvent(keyCode: 123, modifierFlags: .command))
+        let commandRight = mapper.map(event: keyEvent(keyCode: 124, modifierFlags: .command))
+
+        #expect(commandLeft == Data([0x01]))
+        #expect(commandRight == Data([0x05]))
+    }
+
+    @Test
     func terminalViewBuildsSGRMousePayload() {
         let view = TerminalView(rows: 10, columns: 10)
         let payload = view.mouseReportPayload(
@@ -170,6 +181,47 @@ struct TerminalInputTests {
         #expect(view.safeExternalURL(from: "file:///tmp/demo") == nil)
     }
 
+    @Test
+    func terminalViewBuildsRelativeLeftMovementForShellClick() {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        let cursor = view.cursorBufferPositionForTesting()
+
+        let payload = view.shellCursorRepositionInputForTesting(
+            targetBufferRow: cursor.row,
+            targetColumn: 2
+        )
+
+        #expect(payload == Data(String(repeating: "\u{1B}[D", count: max(0, cursor.column - 2)).utf8))
+    }
+
+    @Test
+    func terminalViewBuildsRelativeRightMovementForShellClick() {
+        let view = makeShellPromptViewForTesting(command: "hello", trailingEscape: "\u{1B}[3D")
+        let cursor = view.cursorBufferPositionForTesting()
+
+        let payload = view.shellCursorRepositionInputForTesting(
+            targetBufferRow: cursor.row,
+            targetColumn: cursor.column + 2
+        )
+
+        #expect(payload == Data(String(repeating: "\u{1B}[C", count: 2).utf8))
+    }
+
+    @Test
+    func terminalViewDoesNotBuildShellClickMovementWhenMouseReportingEnabled() {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        view.feed(data: Data("\u{1B}[?1000h".utf8))
+        view.flushPendingOutputForTesting()
+        let cursor = view.cursorBufferPositionForTesting()
+
+        let payload = view.shellCursorRepositionInputForTesting(
+            targetBufferRow: cursor.row,
+            targetColumn: 2
+        )
+
+        #expect(payload == nil)
+    }
+
     private func keyEvent(
         type: NSEvent.EventType = .keyDown,
         keyCode: UInt16 = 0,
@@ -194,5 +246,16 @@ struct TerminalInputTests {
             fatalError("Failed to create test key event")
         }
         return event
+    }
+
+    private func makeShellPromptViewForTesting(
+        command: String,
+        trailingEscape: String = ""
+    ) -> TerminalView {
+        let view = TerminalView(rows: 4, columns: 20)
+        view.flushPendingOutputForTesting()
+        view.feed(data: Data("\u{1B}[2J\u{1B}[H$ \(command)\(trailingEscape)".utf8))
+        view.flushPendingOutputForTesting()
+        return view
     }
 }

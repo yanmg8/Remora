@@ -124,9 +124,34 @@ public final class TerminalInputMapper {
         Data(value.utf8)
     }
 
+    func cursorMoveSequence(direction: NSDirectionalRectEdge) -> Data? {
+        switch direction {
+        case .leading:
+            return data(leftSequence)
+        case .trailing:
+            return data(rightSequence)
+        default:
+            return nil
+        }
+    }
+
     // MARK: - Navigation
 
     private func mapNavigation(event: NSEvent) -> Data? {
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           !event.modifierFlags.contains(.option)
+        {
+            switch event.keyCode {
+            case 123: // left
+                return Data([0x01]) // Ctrl-A
+            case 124: // right
+                return Data([0x05]) // Ctrl-E
+            default:
+                break
+            }
+        }
+
         let modifier = xtermModifierValue(for: event)
         switch event.keyCode {
         case 123: // left
