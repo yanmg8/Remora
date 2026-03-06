@@ -195,6 +195,7 @@
 "Connection name" = "连接名称";
 "Connection test failed" = "连接测试失败";
 "Connection test passed" = "连接测试通过";
+"Continue Once" = "仅这一次";
 "Copy Destination Path" = "复制目标路径";
 "Copy Local Path" = "复制本地路径";
 "Copy Name" = "复制名称";
@@ -202,6 +203,7 @@
 "Copy SSH command" = "复制 SSH 命令";
 "Copy address" = "复制地址";
 "Copy connection info" = "复制连接信息";
+"Copy saved SSH password?" = "要复制已保存的 SSH 密码吗？";
 "Create connection" = "创建连接";
 "Credential" = "凭据";
 "DISK" = "磁盘";
@@ -210,6 +212,8 @@
 "Directory" = "目录";
 "Disconnect Session" = "断开会话";
 "Disconnected" = "未连接";
+"Don't Remind Again" = "以后不再提醒";
+"Don't Remind Again Today" = "今天不再提醒";
 "Download Selected" = "下载所选项";
 "Edit" = "编辑";
 "Edit File" = "编辑文件";
@@ -287,6 +291,7 @@
 "Saved to" = "已保存到";
 "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored." = "已保存的密码会以明文写入导出文件。只有在你明确理解风险，并且能控制文件存放位置时，才应继续。";
 "Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora 只会将已保存的密码存放在 macOS Keychain 中，并仅用于 SSH/SFTP 认证。除非你明确选择导出，否则这些密码不会被上传，也不会用于其他用途。";
+"This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it." = "这会把已保存的 SSH 密码以明文形式放入 macOS 剪贴板。其他应用、剪贴板管理器或同步服务都可能读取到它。";
 "Session pane count is not supported." = "不支持该会话面板数量。";
 "Session title" = "会话标题";
 "Show password" = "显示密码";

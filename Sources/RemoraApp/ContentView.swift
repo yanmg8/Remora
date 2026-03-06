@@ -46,6 +46,8 @@ struct ContentView: View {
     @State private var isExportSheetPresented = false
     @State private var exportDraft = HostExportDraft()
     @State private var isPasswordExportWarningPresented = false
+    @State private var isConnectionInfoPasswordWarningPresented = false
+    @State private var pendingConnectionInfoPasswordCopyHost: RemoraCore.Host?
     @State private var isExportingHosts = false
     @State private var isImportingHosts = false
     @State private var isExportResultAlertPresented = false
@@ -73,6 +75,10 @@ struct ContentView: View {
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
     @AppStorage(AppSettings.passwordSaveConsentAcknowledgedKey)
     private var hasAcknowledgedPasswordSaveConsent = false
+    @AppStorage(AppSettings.connectionInfoPasswordCopyMuteUntilKey)
+    private var connectionInfoPasswordCopyMutedUntilEpoch = 0.0
+    @AppStorage(AppSettings.connectionInfoPasswordCopyMuteForeverKey)
+    private var connectionInfoPasswordCopyMuteForever = false
     @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
     private var serverMetricsActiveRefreshSeconds = AppSettings.defaultServerMetricsActiveRefreshSeconds
     @AppStorage(AppSettings.serverMetricsInactiveRefreshSecondsKey)
@@ -83,6 +89,11 @@ struct ContentView: View {
 
     private var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
+    }
+
+    private var connectionInfoPasswordCopyMutedUntil: Date? {
+        guard connectionInfoPasswordCopyMutedUntilEpoch > 0 else { return nil }
+        return Date(timeIntervalSince1970: connectionInfoPasswordCopyMutedUntilEpoch)
     }
 
     private var quickCommandEditorHost: RemoraCore.Host? {
@@ -442,6 +453,22 @@ struct ContentView: View {
             }
         } message: {
             Text(tr("Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored."))
+        }
+        .alert(tr("Copy saved SSH password?"), isPresented: $isConnectionInfoPasswordWarningPresented) {
+            Button(tr("Cancel"), role: .cancel) {
+                pendingConnectionInfoPasswordCopyHost = nil
+            }
+            Button(tr("Continue Once")) {
+                applyConnectionInfoPasswordCopyChoice(.continueOnce)
+            }
+            Button(tr("Don't Remind Again Today")) {
+                applyConnectionInfoPasswordCopyChoice(.dontRemindAgainToday)
+            }
+            Button(tr("Don't Remind Again")) {
+                applyConnectionInfoPasswordCopyChoice(.dontRemindAgainEver)
+            }
+        } message: {
+            Text(tr("This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it."))
         }
         .sheet(isPresented: $isGroupEditorSheetPresented) {
             SidebarGroupEditorSheet(
@@ -1469,11 +1496,85 @@ struct ContentView: View {
 
     private func copyConnectionInfo(_ host: RemoraCore.Host) {
         Task {
-            let text = await HostConnectionClipboardBuilder.connectionInfoText(for: host)
+            let decision = await connectionInfoPasswordCopyDecision(for: host)
+            await MainActor.run {
+                switch decision {
+                case .copy(let includePassword):
+                    copyConnectionInfoToPasteboard(host, includePassword: includePassword)
+                case .requireConfirmation:
+                    pendingConnectionInfoPasswordCopyHost = host
+                    isConnectionInfoPasswordWarningPresented = true
+                }
+            }
+        }
+    }
+
+    private func connectionInfoPasswordCopyDecision(
+        for host: RemoraCore.Host,
+        now: Date = Date()
+    ) async -> ConnectionInfoPasswordCopyConsentDecision {
+        let includePasswordCandidate = await hasSavedPassword(for: host)
+        return ConnectionInfoPasswordCopyConsentGate.decision(
+            hostUsesPasswordAuth: includePasswordCandidate,
+            mutedUntil: connectionInfoPasswordCopyMutedUntil,
+            muteForever: connectionInfoPasswordCopyMuteForever,
+            now: now
+        )
+    }
+
+    private func hasSavedPassword(for host: RemoraCore.Host) async -> Bool {
+        guard host.auth.method == .password,
+              let passwordReference = host.auth.passwordReference?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !passwordReference.isEmpty
+        else {
+            return false
+        }
+
+        let credentialStore = CredentialStore()
+        guard let password = await credentialStore.secret(for: passwordReference) else {
+            return false
+        }
+        return !password.isEmpty
+    }
+
+    private func copyConnectionInfoToPasteboard(_ host: RemoraCore.Host, includePassword: Bool) {
+        Task {
+            let text = await HostConnectionClipboardBuilder.connectionInfoText(
+                for: host,
+                includePassword: includePassword
+            )
             await MainActor.run {
                 copyToPasteboard(text)
             }
         }
+    }
+
+    private func applyConnectionInfoPasswordCopyChoice(_ choice: ConnectionInfoPasswordCopyConsentChoice) {
+        guard let host = pendingConnectionInfoPasswordCopyHost else {
+            isConnectionInfoPasswordWarningPresented = false
+            return
+        }
+
+        let outcome = ConnectionInfoPasswordCopyConsentGate.outcome(for: choice)
+        isConnectionInfoPasswordWarningPresented = false
+        pendingConnectionInfoPasswordCopyHost = nil
+
+        switch choice {
+        case .cancel:
+            return
+        case .continueOnce:
+            connectionInfoPasswordCopyMutedUntilEpoch = 0
+            connectionInfoPasswordCopyMuteForever = false
+        case .dontRemindAgainToday:
+            connectionInfoPasswordCopyMutedUntilEpoch = outcome.mutedUntil?.timeIntervalSince1970 ?? 0
+            connectionInfoPasswordCopyMuteForever = false
+        case .dontRemindAgainEver:
+            connectionInfoPasswordCopyMutedUntilEpoch = 0
+            connectionInfoPasswordCopyMuteForever = true
+        }
+
+        guard outcome.shouldCopy else { return }
+        copyConnectionInfoToPasteboard(host, includePassword: outcome.includePassword)
     }
 
     private func connectSelectedHost(to tabID: UUID) {

@@ -198,6 +198,7 @@
 "Connection name" = "Connection name";
 "Connection test failed" = "Connection test failed";
 "Connection test passed" = "Connection test passed";
+"Continue Once" = "Continue Once";
 "Copy Destination Path" = "Copy Destination Path";
 "Copy Local Path" = "Copy Local Path";
 "Copy Name" = "Copy Name";
@@ -205,6 +206,7 @@
 "Copy SSH command" = "Copy SSH command";
 "Copy address" = "Copy address";
 "Copy connection info" = "Copy connection info";
+"Copy saved SSH password?" = "Copy saved SSH password?";
 "Create connection" = "Create connection";
 "Credential" = "Credential";
 "DISK" = "DISK";
@@ -213,6 +215,8 @@
 "Directory" = "Directory";
 "Disconnect Session" = "Disconnect Session";
 "Disconnected" = "Disconnected";
+"Don't Remind Again" = "Don't Remind Again";
+"Don't Remind Again Today" = "Don't Remind Again Today";
 "Download Selected" = "Download Selected";
 "Edit" = "Edit";
 "Edit File" = "Edit File";
@@ -290,6 +294,7 @@
 "Saved to" = "Saved to";
 "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored." = "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored.";
 "Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
+"This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it." = "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it.";
 "Session pane count is not supported." = "Session pane count is not supported.";
 "Session title" = "Session title";
 "Show password" = "Show password";

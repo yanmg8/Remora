@@ -28,6 +28,7 @@ struct HostConnectionClipboardBuilderTests {
 
         let text = await HostConnectionClipboardBuilder.connectionInfoText(
             for: host,
+            includePassword: false,
             credentialStore: credentialStore
         )
 
@@ -37,6 +38,37 @@ struct HostConnectionClipboardBuilderTests {
         #expect(text.contains("Auth: Password"))
         #expect(!text.contains("Password:"))
         #expect(!text.contains("super-secret"))
+    }
+
+    @Test
+    func buildsPasswordConnectionInfoWithPasswordValueWhenExplicitlyIncluded() async {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-clipboard-tests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let credentialStore = CredentialStore(
+            baseDirectoryURL: tempRoot,
+            credentialsFilename: "credentials.json"
+        )
+        await credentialStore.setSecret("super-secret", for: "pw-1")
+
+        let host = Host(
+            name: "prod-api",
+            address: "10.0.0.12",
+            port: 2222,
+            username: "ops",
+            group: "Production",
+            auth: HostAuth(method: .password, passwordReference: "pw-1")
+        )
+
+        let text = await HostConnectionClipboardBuilder.connectionInfoText(
+            for: host,
+            includePassword: true,
+            credentialStore: credentialStore
+        )
+
+        #expect(text.contains("Password: super-secret"))
     }
 
     @Test

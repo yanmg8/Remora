@@ -9,6 +9,7 @@ struct HostConnectionClipboardBuilder {
 
     static func connectionInfoText(
         for host: RemoraCore.Host,
+        includePassword: Bool = false,
         credentialStore: CredentialStore = CredentialStore()
     ) async -> String {
         var lines = [
@@ -20,6 +21,13 @@ struct HostConnectionClipboardBuilder {
         switch host.auth.method {
         case .password:
             lines.append("\(tr("Auth")): \(tr("Password"))")
+            if includePassword,
+               let passwordReference = normalized(host.auth.passwordReference),
+               let password = await credentialStore.secret(for: passwordReference),
+               !password.isEmpty
+            {
+                lines.append("\(tr("Password")): \(password)")
+            }
         case .privateKey:
             lines.append("\(tr("Auth")): \(tr("Private Key"))")
             let keyPath = normalized(host.auth.keyReference) ?? tr("(not set)")
