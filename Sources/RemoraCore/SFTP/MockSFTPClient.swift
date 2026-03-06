@@ -132,6 +132,22 @@ public actor MockSFTPClient: SFTPClientProtocol {
         return file.data
     }
 
+    public func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {
+        let key = normalize(path)
+        guard let file = files[key] else {
+            throw SFTPClientError.notFound(key)
+        }
+
+        let total = Int64(file.data.count)
+        progress?(.init(bytesTransferred: 0, totalBytes: total))
+        try FileManager.default.createDirectory(
+            at: localFileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try file.data.write(to: localFileURL, options: .atomic)
+        progress?(.init(bytesTransferred: total, totalBytes: total))
+    }
+
     public func upload(data: Data, to path: String) async throws {
         try await upload(data: data, to: path, progress: nil)
     }

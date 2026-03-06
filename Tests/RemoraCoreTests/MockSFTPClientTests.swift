@@ -69,6 +69,21 @@ struct MockSFTPClientTests {
     }
 
     @Test
+    func downloadToLocalFileWritesPayloadWithoutReturningData() async throws {
+        let client = MockSFTPClient()
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-mock-sftp-download-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let destination = tempRoot.appendingPathComponent("README.txt")
+        try await client.download(path: "/README.txt", to: destination, progress: nil)
+
+        let payload = try Data(contentsOf: destination)
+        #expect(String(decoding: payload, as: UTF8.self) == "Remora mock SFTP")
+    }
+
+    @Test
     func statAndSetAttributesWorkForFiles() async throws {
         let client = MockSFTPClient()
         var attrs = try await client.stat(path: "/README.txt")

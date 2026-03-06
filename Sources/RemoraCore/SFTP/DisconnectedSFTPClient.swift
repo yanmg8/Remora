@@ -13,6 +13,13 @@ public actor DisconnectedSFTPClient: SFTPClientProtocol {
         throw SSHError.notConnected
     }
 
+    public func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {
+        _ = path
+        _ = localFileURL
+        _ = progress
+        throw SSHError.notConnected
+    }
+
     public func upload(data: Data, to path: String) async throws {
         _ = data
         _ = path

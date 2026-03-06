@@ -21,6 +21,7 @@ public protocol SFTPClientProtocol: Sendable {
     func list(path: String) async throws -> [RemoteFileEntry]
     func download(path: String) async throws -> Data
     func download(path: String, progress: TransferProgressHandler?) async throws -> Data
+    func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws
     func upload(data: Data, to path: String) async throws
     func upload(data: Data, to path: String, progress: TransferProgressHandler?) async throws
     func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws
@@ -46,6 +47,13 @@ public extension SFTPClientProtocol {
         progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
         try await upload(data: data, to: path)
         progress?(.init(bytesTransferred: totalBytes, totalBytes: totalBytes))
+    }
+
+    func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {
+        let payload = try await download(path: path, progress: progress)
+        let directory = localFileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try payload.write(to: localFileURL, options: .atomic)
     }
 
     func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws {

@@ -123,6 +123,45 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return payload
     }
 
+    public func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {
+        let normalized = normalize(path)
+        let expectedSize = try? await stat(path: normalized).size
+        progress?(.init(bytesTransferred: 0, totalBytes: expectedSize))
+
+        let prepared = try prepareDownloadDestination(localFileURL)
+        defer { try? FileManager.default.removeItem(at: prepared.tempURL) }
+
+        if prefersSSHStreamingDownload {
+            try await downloadViaSSH(path: normalized, to: prepared.tempURL)
+        } else {
+            do {
+                try await downloadViaSFTP(path: normalized, to: prepared.tempURL)
+            } catch {
+                guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
+                    throw error
+                }
+                prefersSSHStreamingDownload = true
+                Self.appendDiagnostics(
+                    Self.formatDiagnosticsMessage(
+                        host: host,
+                        phase: "download-mode-switch",
+                        body: [
+                            "reason=\(error.localizedDescription)",
+                            "mode=ssh-streaming"
+                        ]
+                    )
+                )
+                try await downloadViaSSH(path: normalized, to: prepared.tempURL)
+            }
+        }
+
+        try finalizeDownloadedFile(tempURL: prepared.tempURL, destinationURL: prepared.destinationURL)
+        let transferredBytes = expectedSize
+            ?? (try? prepared.destinationURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+            ?? 0
+        progress?(.init(bytesTransferred: transferredBytes, totalBytes: expectedSize ?? transferredBytes))
+    }
+
     public func upload(data: Data, to path: String) async throws {
         let tempURL = makeTemporaryURL(prefix: "remora-sftp-upload")
         defer { try? FileManager.default.removeItem(at: tempURL) }
@@ -634,6 +673,20 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         _ = try await runSSHCommandOutput(command)
     }
 
+    private func runSSHCommandToFile(
+        _ command: String,
+        destinationURL: URL,
+        timeout: TimeInterval? = nil
+    ) async throws {
+        _ = try await runSSHCommandWithFallbacks(
+            command: command,
+            timeout: timeout,
+            outputLogMode: .metadataOnly,
+            inputLogMode: .text,
+            stdoutFileURL: destinationURL
+        )
+    }
+
     private func runSSHCommandResult(
         _ command: String,
         stdin: Data? = nil,
@@ -721,12 +774,20 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private func downloadViaSFTP(path: String) async throws -> Data {
         let tempURL = makeTemporaryURL(prefix: "remora-sftp-download")
         defer { try? FileManager.default.removeItem(at: tempURL) }
+        try await downloadViaSFTP(path: path, to: tempURL)
+        return try Data(contentsOf: tempURL)
+    }
+
+    private func downloadViaSFTP(path: String, to localFileURL: URL) async throws {
+        try FileManager.default.createDirectory(
+            at: localFileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         _ = try await runSFTPBatch(
             commands: [
-                "get \(Self.quoteBatchArgument(path)) \(Self.quoteBatchArgument(tempURL.path))",
+                "get \(Self.quoteBatchArgument(path)) \(Self.quoteBatchArgument(localFileURL.path))",
             ]
         )
-        return try Data(contentsOf: tempURL)
     }
 
     private func uploadViaSFTP(fileURL: URL, to path: String) async throws {
@@ -740,6 +801,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private func downloadViaSSH(path: String) async throws -> Data {
         let command = "cat -- \(Self.quoteShellArgument(path))"
         return try await runSSHCommandData(command)
+    }
+
+    private func downloadViaSSH(path: String, to localFileURL: URL) async throws {
+        let command = "cat -- \(Self.quoteShellArgument(path))"
+        try await runSSHCommandToFile(command, destinationURL: localFileURL)
     }
 
     private func uploadViaSSH(fileURL: URL, to path: String) async throws {
@@ -758,7 +824,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         stdin: Data? = nil,
         timeout: TimeInterval? = nil,
         outputLogMode: OutputLogMode,
-        inputLogMode: InputLogMode
+        inputLogMode: InputLogMode,
+        stdoutFileURL: URL? = nil
     ) async throws -> ProcessResult {
         let primary = await makePrimarySSHLaunchConfiguration(command: command)
         var result = try await runProcess(
@@ -770,7 +837,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             logPhase: "ssh-primary",
             host: host,
             outputLogMode: outputLogMode,
-            inputLogMode: inputLogMode
+            inputLogMode: inputLogMode,
+            stdoutFileURL: stdoutFileURL
         )
         if result.status == 0 {
             return result
@@ -790,7 +858,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             logPhase: "ssh-retry-no-reuse",
             host: host,
             outputLogMode: outputLogMode,
-            inputLogMode: inputLogMode
+            inputLogMode: inputLogMode,
+            stdoutFileURL: stdoutFileURL
         )
         return result
     }
@@ -804,7 +873,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         logPhase: String,
         host: Host,
         outputLogMode: OutputLogMode,
-        inputLogMode: InputLogMode
+        inputLogMode: InputLogMode,
+        stdoutFileURL: URL? = nil
     ) async throws -> ProcessResult {
         Self.appendDiagnostics(
             Self.formatDiagnosticsMessage(
@@ -829,12 +899,32 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                     process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
                 }
 
-                let stdoutPipe = Pipe()
                 let stderrPipe = Pipe()
-                process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
                 let stdinPipe = Pipe()
                 process.standardInput = stdinPipe
+                var stdoutPipe: Pipe?
+                var stdoutHandle: FileHandle?
+
+                if let stdoutFileURL {
+                    do {
+                        try FileManager.default.createDirectory(
+                            at: stdoutFileURL.deletingLastPathComponent(),
+                            withIntermediateDirectories: true
+                        )
+                        FileManager.default.createFile(atPath: stdoutFileURL.path, contents: nil)
+                        let handle = try FileHandle(forWritingTo: stdoutFileURL)
+                        stdoutHandle = handle
+                        process.standardOutput = handle
+                    } catch {
+                        continuation.resume(throwing: SSHError.connectionFailed("stdout file setup failed: \(error.localizedDescription)"))
+                        return
+                    }
+                } else {
+                    let pipe = Pipe()
+                    stdoutPipe = pipe
+                    process.standardOutput = pipe
+                }
 
                 do {
                     try process.run()
@@ -874,11 +964,13 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 let stdoutBuffer = OutputBuffer()
                 let stderrBuffer = OutputBuffer()
                 let outputGroup = DispatchGroup()
-                outputGroup.enter()
-                DispatchQueue.global(qos: .utility).async {
-                    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                    stdoutBuffer.set(data)
-                    outputGroup.leave()
+                if let stdoutPipe {
+                    outputGroup.enter()
+                    DispatchQueue.global(qos: .utility).async {
+                        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                        stdoutBuffer.set(data)
+                        outputGroup.leave()
+                    }
                 }
                 outputGroup.enter()
                 DispatchQueue.global(qos: .utility).async {
@@ -915,7 +1007,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 let capturedStdout = stdoutBuffer.get()
                 let capturedStderr = stderrBuffer.get()
 
-                try? stdoutPipe.fileHandleForReading.close()
+                try? stdoutHandle?.close()
+                try? stdoutPipe?.fileHandleForReading.close()
                 try? stderrPipe.fileHandleForReading.close()
 
                 if waitOutcome == .timedOut {
@@ -1291,6 +1384,21 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     private func makeTemporaryURL(prefix: String) -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString)")
+    }
+
+    private func prepareDownloadDestination(_ destinationURL: URL) throws -> (tempURL: URL, destinationURL: URL) {
+        let standardizedDestination = destinationURL.standardizedFileURL
+        let directory = standardizedDestination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tempURL = directory.appendingPathComponent(".remora-download-\(UUID().uuidString)")
+        return (tempURL, standardizedDestination)
+    }
+
+    private func finalizeDownloadedFile(tempURL: URL, destinationURL: URL) throws {
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.moveItem(at: tempURL, to: destinationURL)
     }
 
     private func listViaSSH(path: String, timeout: TimeInterval? = nil) async throws -> [RemoteFileEntry] {

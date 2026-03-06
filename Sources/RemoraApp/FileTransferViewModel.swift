@@ -758,18 +758,16 @@ final class FileTransferViewModel: ObservableObject {
                 )
 
             case .download:
-                let data = try await sftpClient.download(
+                let destinationURL = URL(fileURLWithPath: item.destinationPath)
+                try await sftpClient.download(
                     path: item.sourcePath,
+                    to: destinationURL,
                     progress: { [weak self] snapshot in
                         Task { @MainActor in
                             self?.updateTransferProgress(itemID: itemID, snapshot: snapshot)
                         }
                     }
                 )
-                let destinationURL = URL(fileURLWithPath: item.destinationPath)
-                let destinationDirectory = destinationURL.deletingLastPathComponent()
-                try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
-                try data.write(to: destinationURL)
                 guard FileManager.default.fileExists(atPath: destinationURL.path) else {
                     throw NSError(
                         domain: "Remora.FileTransfer",
