@@ -15,6 +15,7 @@
   <a href="#功能特性">功能特性</a> •
   <a href="#截图">截图</a> •
   <a href="#快速开始">快速开始</a> •
+  <a href="#常见问题qa">常见问题</a> •
   <a href="#项目结构">项目结构</a> •
   <a href="#测试">测试</a> •
   <a href="#社区">社区</a> •
@@ -101,6 +102,25 @@ REMORA_RUN_UI_TESTS=1 swift test --filter RemoraUIAutomationTests
 ```bash
 REMORA_RUN_UI_TESTS=1 REMORA_APP_BINARY=/abs/path/to/RemoraApp swift test --filter RemoraUIAutomationTests
 ```
+
+## 常见问题（QA）
+
+### Q: 打开下载的 `Remora.app` 时提示“已损坏，无法打开”怎么办？
+
+A: 先确认这是你信任的来源（例如 GitHub Releases），并且你解压的是完整的 `Remora.app`。  
+然后在终端执行（把路径替换成你本地实际路径）：
+
+```bash
+xattr -dr com.apple.quarantine /path/to/Remora.app
+```
+
+### Q: 去除隔离标记后还是无法打开，怎么办？
+
+A: 到系统设置手动放行一次：
+
+1. 打开“系统设置” -> “隐私与安全性”。
+2. 在安全提示区域找到被阻止的 `Remora.app`。
+3. 点击“仍要打开”并确认。
 
 ## 项目结构
 

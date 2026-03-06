@@ -15,6 +15,7 @@
   <a href="#features">Features</a> •
   <a href="#screenshots">Screenshots</a> •
   <a href="#quick-start">Quick Start</a> •
+  <a href="#faq">FAQ</a> •
   <a href="#project-structure">Project Structure</a> •
   <a href="#testing">Testing</a> •
   <a href="#community">Community</a> •
@@ -101,6 +102,25 @@ If `RemoraApp` binary path is custom:
 ```bash
 REMORA_RUN_UI_TESTS=1 REMORA_APP_BINARY=/abs/path/to/RemoraApp swift test --filter RemoraUIAutomationTests
 ```
+
+## FAQ
+
+### Q: macOS says "`Remora.app` is damaged and can't be opened". What should I do?
+
+A: First confirm the app came from a trusted source (for example, GitHub Releases) and was fully unzipped.  
+Then remove the quarantine attribute in Terminal (replace with your local path):
+
+```bash
+xattr -dr com.apple.quarantine /path/to/Remora.app
+```
+
+### Q: It still won't open after removing quarantine. What next?
+
+A: Allow it once from macOS Settings:
+
+1. Open `System Settings` -> `Privacy & Security`.
+2. Find the blocked `Remora.app` notice in the Security section.
+3. Click `Open Anyway` and confirm.
 
 ## Project Structure
 
