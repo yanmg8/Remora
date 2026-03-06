@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public actor CredentialStore {
     private struct CredentialFilePayload: Codable {
@@ -11,7 +12,7 @@ public actor CredentialStore {
         }
     }
 
-    private actor SharedFileStore {
+    private actor LegacyFileStore {
         private var loadedPaths: Set<String> = []
         private var valuesByPath: [String: [String: String]] = [:]
         private let encoder: JSONEncoder
@@ -27,14 +28,6 @@ public actor CredentialStore {
         func value(for key: String, fileURL: URL) -> String? {
             loadIfNeeded(from: fileURL)
             return valuesByPath[fileURL.path]?[key]
-        }
-
-        func set(_ value: String, for key: String, fileURL: URL) throws {
-            loadIfNeeded(from: fileURL)
-            var values = valuesByPath[fileURL.path] ?? [:]
-            values[key] = value
-            try persist(values: values, to: fileURL)
-            valuesByPath[fileURL.path] = values
         }
 
         func remove(for key: String, fileURL: URL) throws {
@@ -69,6 +62,11 @@ public actor CredentialStore {
         }
 
         private func persist(values: [String: String], to fileURL: URL) throws {
+            if values.isEmpty {
+                try? FileManager.default.removeItem(at: fileURL)
+                return
+            }
+
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
@@ -84,9 +82,10 @@ public actor CredentialStore {
         }
     }
 
-    private static let sharedStore = SharedFileStore()
-    private let baseDirectoryURL: URL
-    private let credentialsFileURL: URL
+    private static let sharedLegacyStore = LegacyFileStore()
+
+    private let legacyFileURL: URL
+    private let serviceName: String
     private var inMemoryStorage: [String: String] = [:]
 
     public init(
@@ -94,14 +93,15 @@ public actor CredentialStore {
             .appendingPathComponent(".remora/ssh", isDirectory: true),
         credentialsFilename: String = "credentials.json"
     ) {
-        self.baseDirectoryURL = baseDirectoryURL
-        self.credentialsFileURL = baseDirectoryURL.appendingPathComponent(credentialsFilename)
+        self.legacyFileURL = baseDirectoryURL.appendingPathComponent(credentialsFilename)
+        self.serviceName = Self.makeServiceName(baseDirectoryURL: baseDirectoryURL, credentialsFilename: credentialsFilename)
     }
 
     public func setSecret(_ value: String, for key: String) async {
         inMemoryStorage[key] = value
         do {
-            try await Self.sharedStore.set(value, for: key, fileURL: credentialsFileURL)
+            try Self.upsertKeychainValue(value, service: serviceName, account: key)
+            try? await Self.sharedLegacyStore.remove(for: key, fileURL: legacyFileURL)
         } catch {
             return
         }
@@ -112,15 +112,103 @@ public actor CredentialStore {
             return value
         }
 
-        if let cached = await Self.sharedStore.value(for: key, fileURL: credentialsFileURL) {
-            inMemoryStorage[key] = cached
-            return cached
+        if let keychainValue = try? Self.readKeychainValue(service: serviceName, account: key) {
+            inMemoryStorage[key] = keychainValue
+            return keychainValue
         }
-        return nil
+
+        guard let legacyValue = await Self.sharedLegacyStore.value(for: key, fileURL: legacyFileURL) else {
+            return nil
+        }
+
+        inMemoryStorage[key] = legacyValue
+        do {
+            try Self.upsertKeychainValue(legacyValue, service: serviceName, account: key)
+            try? await Self.sharedLegacyStore.remove(for: key, fileURL: legacyFileURL)
+        } catch {
+            // Keep serving the migrated value from memory for this session.
+        }
+        return legacyValue
     }
 
     public func removeSecret(for key: String) async {
         inMemoryStorage.removeValue(forKey: key)
-        _ = try? await Self.sharedStore.remove(for: key, fileURL: credentialsFileURL)
+        _ = try? Self.deleteKeychainValue(service: serviceName, account: key)
+        _ = try? await Self.sharedLegacyStore.remove(for: key, fileURL: legacyFileURL)
+    }
+
+    private static func makeServiceName(baseDirectoryURL: URL, credentialsFilename: String) -> String {
+        let namespace = "\(baseDirectoryURL.standardizedFileURL.path)|\(credentialsFilename)"
+        return "io.lighting-tech.remora.credentials.\(stableHash(namespace))"
+    }
+
+    private static func stableHash(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(hash, radix: 16)
+    }
+
+    private static func keychainQuery(service: String, account: String) -> [CFString: Any] {
+        [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: account,
+        ]
+    }
+
+    private static func upsertKeychainValue(_ value: String, service: String, account: String) throws {
+        let data = Data(value.utf8)
+        var query = keychainQuery(service: service, account: account)
+        query[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock
+
+        let updateAttributes: [CFString: Any] = [
+            kSecValueData: data,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        switch status {
+        case errSecSuccess:
+            let updateStatus = SecItemUpdate(query as CFDictionary, updateAttributes as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw NSError(domain: NSOSStatusErrorDomain, code: Int(updateStatus))
+            }
+        case errSecItemNotFound:
+            query[kSecValueData] = data
+            let addStatus = SecItemAdd(query as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus))
+            }
+        default:
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
+    }
+
+    private static func readKeychainValue(service: String, account: String) throws -> String? {
+        var query = keychainQuery(service: service, account: account)
+        query[kSecReturnData] = kCFBooleanTrue
+        query[kSecMatchLimit] = kSecMatchLimitOne
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else { return nil }
+            return String(data: data, encoding: .utf8)
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
+    }
+
+    private static func deleteKeychainValue(service: String, account: String) throws {
+        let status = SecItemDelete(keychainQuery(service: service, account: account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
     }
 }

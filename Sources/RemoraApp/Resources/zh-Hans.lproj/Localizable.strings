@@ -276,7 +276,11 @@
 "Reveal in Finder" = "在访达中显示";
 "SSH Agent" = "SSH Agent";
 "Save password" = "保存密码";
+"Save password in Keychain" = "将密码保存到 Keychain";
+"Save password in Keychain?" = "要将密码保存到 Keychain 吗？";
+"Save to Keychain" = "保存到 Keychain";
 "Saved to" = "已保存到";
+"Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora 只会将已保存的密码存放在 macOS Keychain 中，并仅用于 SSH/SFTP 认证。除非你明确选择导出，否则这些密码不会被上传，也不会用于其他用途。";
 "Session pane count is not supported." = "不支持该会话面板数量。";
 "Session title" = "会话标题";
 "Show password" = "显示密码";

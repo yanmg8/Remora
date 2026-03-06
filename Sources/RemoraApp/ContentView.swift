@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var hostEditorMode: SidebarHostEditorMode = .create
     @State private var hostEditorDraft = SidebarHostEditorDraft()
     @State private var hostEditorTestState: HostConnectionTestState = .idle
+    @State private var isPasswordSaveConsentAlertPresented = false
     @State private var pendingExportScope: HostExportScope?
     @State private var isExportFormatDialogPresented = false
     @State private var isExportingHosts = false
@@ -63,6 +64,8 @@ struct ContentView: View {
     @State private var quickPathValidationMessage: String?
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
+    @AppStorage(AppSettings.passwordSaveConsentAcknowledgedKey)
+    private var hasAcknowledgedPasswordSaveConsent = false
     @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
     private var serverMetricsActiveRefreshSeconds = AppSettings.defaultServerMetricsActiveRefreshSeconds
     @AppStorage(AppSettings.serverMetricsInactiveRefreshSecondsKey)
@@ -431,6 +434,15 @@ struct ContentView: View {
         } message: {
             Text(exportAlertMessage)
         }
+        .alert(tr("Save password in Keychain?"), isPresented: $isPasswordSaveConsentAlertPresented) {
+            Button(tr("Cancel"), role: .cancel) {}
+            Button(tr("Save to Keychain")) {
+                hasAcknowledgedPasswordSaveConsent = true
+                hostEditorDraft.savePassword = true
+            }
+        } message: {
+            Text(tr("Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them."))
+        }
         .sheet(isPresented: $isGroupEditorSheetPresented) {
             SidebarGroupEditorSheet(
                 mode: groupEditorMode,
@@ -451,6 +463,7 @@ struct ContentView: View {
                 onCancel: {
                     isHostEditorSheetPresented = false
                 },
+                onPasswordSaveChange: handlePasswordSaveToggleChange,
                 onTestConnection: {
                     testHostConnection()
                 },
@@ -1112,6 +1125,19 @@ struct ContentView: View {
             await MainActor.run {
                 hostEditorTestState = result
             }
+        }
+    }
+
+    private func handlePasswordSaveToggleChange(_ requestedEnabled: Bool) {
+        switch PasswordSaveConsentGate.decision(
+            currentlyEnabled: hostEditorDraft.savePassword,
+            requestedEnabled: requestedEnabled,
+            hasAcknowledgedWarning: hasAcknowledgedPasswordSaveConsent
+        ) {
+        case .apply(let value):
+            hostEditorDraft.savePassword = value
+        case .requireConsent:
+            isPasswordSaveConsentAlertPresented = true
         }
     }
 
@@ -2215,6 +2241,7 @@ private struct SidebarHostEditorSheet: View {
     @Binding var draft: SidebarHostEditorDraft
     let testState: HostConnectionTestState
     let onCancel: () -> Void
+    let onPasswordSaveChange: (Bool) -> Void
     let onTestConnection: () -> Void
     let onConfirm: () -> Void
     @State private var isPasswordVisible = false
@@ -2271,7 +2298,13 @@ private struct SidebarHostEditorSheet: View {
                         .accessibilityLabel(isPasswordVisible ? tr("Hide password") : tr("Show password"))
                         .help(isPasswordVisible ? tr("Hide password") : tr("Show password"))
                     }
-                    Toggle(tr("Save password"), isOn: $draft.savePassword)
+                    Toggle(
+                        tr("Save password in Keychain"),
+                        isOn: Binding(
+                            get: { draft.savePassword },
+                            set: { onPasswordSaveChange($0) }
+                        )
+                    )
                         .toggleStyle(.checkbox)
                 }
             }

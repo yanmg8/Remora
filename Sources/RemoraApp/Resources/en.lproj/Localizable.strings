@@ -279,7 +279,11 @@
 "Reveal in Finder" = "Reveal in Finder";
 "SSH Agent" = "SSH Agent";
 "Save password" = "Save password";
+"Save password in Keychain" = "Save password in Keychain";
+"Save password in Keychain?" = "Save password in Keychain?";
+"Save to Keychain" = "Save to Keychain";
 "Saved to" = "Saved to";
+"Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
 "Session pane count is not supported." = "Session pane count is not supported.";
 "Session title" = "Session title";
 "Show password" = "Show password";

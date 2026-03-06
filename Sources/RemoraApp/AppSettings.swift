@@ -5,6 +5,7 @@ enum AppSettings {
     static let appearanceModeKey = "settings.appearance.mode"
     static let languageModeKey = "settings.language.mode"
     static let keyboardShortcutsStorageKey = "settings.keyboardShortcuts.bindings"
+    static let passwordSaveConsentAcknowledgedKey = "settings.credentials.passwordSaveConsentAcknowledged"
     static let terminalWordSeparatorsKey = "settings.terminal.wordSeparators"
     static let terminalScrollSensitivityKey = "settings.terminal.scrollSensitivity"
     static let terminalFastScrollSensitivityKey = "settings.terminal.fastScrollSensitivity"
