@@ -56,7 +56,7 @@ struct SystemSSHClientTests {
             auth: HostAuth(method: .agent)
         )
 
-        let launch = ProcessSSHShellSession.makeLaunchConfiguration(for: host)
+        let launch = ProcessSSHShellSession.makeStandardLaunchConfiguration(for: host)
 
         if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
             #expect(launch.executablePath == "/usr/bin/script")
@@ -64,5 +64,27 @@ struct SystemSSHClientTests {
         } else {
             #expect(launch.executablePath == "/usr/bin/ssh")
         }
+    }
+
+    @Test
+    func buildsPasswordLaunchConfigurationWithExplicitHelperTransport() {
+        let host = Host(
+            name: "prod",
+            address: "example.com",
+            port: 22,
+            username: "root",
+            auth: HostAuth(method: .password, passwordReference: "pw-ref")
+        )
+
+        let launch = ProcessSSHShellSession.makePasswordLaunchConfiguration(
+            for: host,
+            password: "top-secret",
+            sshpassPath: "/opt/homebrew/bin/sshpass",
+            askPassScriptPath: nil
+        )
+
+        #expect(launch?.executablePath == "/opt/homebrew/bin/sshpass")
+        #expect(launch?.arguments.starts(with: ["-e"]) == true)
+        #expect(launch?.environment["SSHPASS"] == "top-secret")
     }
 }

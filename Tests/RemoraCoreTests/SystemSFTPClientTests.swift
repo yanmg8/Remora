@@ -171,4 +171,13 @@ struct SystemSFTPClientTests {
         #expect(!SystemSFTPClient.shouldDeleteDiagnosticsFile(referenceDate: justInsideRetention, now: now, retentionDays: 14))
         #expect(SystemSFTPClient.shouldDeleteDiagnosticsFile(referenceDate: justOutsideRetention, now: now, retentionDays: 14))
     }
+
+    @Test
+    func batchQuotingEscapesNewlinesAndCarriageReturns() {
+        let quoted = SystemSFTPClient.quoteBatchArgument("line1\nline2\r\"tail\"")
+
+        #expect(!quoted.contains("\n"))
+        #expect(!quoted.contains("\r"))
+        #expect(quoted == "\"line1\\nline2\\r\\\"tail\\\"\"")
+    }
 }

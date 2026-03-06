@@ -1335,9 +1335,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         }
     }
 
-    private static func quoteBatchArgument(_ value: String) -> String {
+    static func quoteBatchArgument(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
     }

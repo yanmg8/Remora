@@ -24,6 +24,12 @@ public actor OpenSSHProcessClient: SSHTransportClientProtocol {
 public typealias SystemSSHClient = OpenSSHProcessClient
 
 public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @unchecked Sendable {
+    struct LaunchConfiguration {
+        var executablePath: String
+        var arguments: [String]
+        var environment: [String: String]
+    }
+
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onStateChange: (@Sendable (ShellSessionState) -> Void)?
 
@@ -33,7 +39,6 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
-    private var pendingPassword: String?
     private let credentialStore = CredentialStore()
     private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
 
@@ -49,17 +54,11 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         }
 
         let proc = Process()
-        let launch = Self.makeLaunchConfiguration(for: host)
+        let launch = await makeLaunchConfiguration()
         proc.executableURL = URL(fileURLWithPath: launch.executablePath)
         proc.arguments = launch.arguments
-
-        if host.auth.method == .password,
-           let passwordReference = host.auth.passwordReference,
-           !passwordReference.isEmpty
-        {
-            pendingPassword = await credentialStore.secret(for: passwordReference)
-        } else {
-            pendingPassword = nil
+        if !launch.environment.isEmpty {
+            proc.environment = ProcessInfo.processInfo.environment.merging(launch.environment) { _, new in new }
         }
 
         let inPipe = Pipe()
@@ -74,14 +73,12 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             let data = handle.availableData
             guard !data.isEmpty else { return }
             self?.onOutput?(data)
-            self?.handlePasswordPromptIfNeeded(from: data)
         }
 
         errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
             self?.onOutput?(data)
-            self?.handlePasswordPromptIfNeeded(from: data)
         }
 
         proc.terminationHandler = { [weak self] task in
@@ -172,23 +169,24 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         try? handles.0?.fileHandleForWriting.close()
         try? handles.1?.fileHandleForReading.close()
         try? handles.2?.fileHandleForReading.close()
-        pendingPassword = nil
     }
 
-    private func handlePasswordPromptIfNeeded(from data: Data) {
-        guard let password = pendingPassword, !password.isEmpty else { return }
-        let output = String(decoding: data, as: UTF8.self).lowercased()
-        guard output.contains("password:") else { return }
-
-        do {
-            try writeSync(Data((password + "\n").utf8))
-            pendingPassword = nil
-        } catch {
-            onOutput?(Data(("password autofill failed: \(error.localizedDescription)\r\n").utf8))
+    private func makeLaunchConfiguration() async -> LaunchConfiguration {
+        if host.auth.method == .password,
+           let passwordReference = host.auth.passwordReference,
+           !passwordReference.isEmpty,
+           let password = await credentialStore.secret(for: passwordReference),
+           !password.isEmpty,
+           let launch = Self.makePasswordLaunchConfiguration(for: host, password: password)
+        {
+            return launch
         }
+
+        let useConnectionReuse = host.auth.method != .password
+        return Self.makeStandardLaunchConfiguration(for: host, useConnectionReuse: useConnectionReuse)
     }
 
-    static func makeSSHArguments(for host: Host) -> [String] {
+    static func makeSSHArguments(for host: Host, useConnectionReuse: Bool = true) -> [String] {
         var args: [String] = [
             "-tt",
             "-p", "\(host.port)",
@@ -197,7 +195,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
-        args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        if useConnectionReuse {
+            args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
+        }
 
         switch host.auth.method {
         case .privateKey:
@@ -207,6 +207,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
         case .password:
             args.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
+            args.append(contentsOf: ["-o", "NumberOfPasswordPrompts=1"])
         case .agent:
             args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
         }
@@ -215,17 +216,100 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         return args
     }
 
-    static func makeLaunchConfiguration(for host: Host) -> (executablePath: String, arguments: [String]) {
-        let sshPath = "/usr/bin/ssh"
-        let sshArguments = makeSSHArguments(for: host)
+    static func makeStandardLaunchConfiguration(for host: Host, useConnectionReuse: Bool = true) -> LaunchConfiguration {
+        wrappedSSHLaunchConfiguration(
+            sshArguments: makeSSHArguments(for: host, useConnectionReuse: useConnectionReuse),
+            environment: [:]
+        )
+    }
 
-        if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
-            return (
-                executablePath: "/usr/bin/script",
-                arguments: ["-q", "/dev/null", sshPath] + sshArguments
+    static func makePasswordLaunchConfiguration(
+        for host: Host,
+        password: String,
+        sshpassPath: String? = defaultSSHPassPath(),
+        askPassScriptPath: String? = ensureAskPassScriptPath()
+    ) -> LaunchConfiguration? {
+        let wrapped = wrappedSSHLaunchConfiguration(
+            sshArguments: makeSSHArguments(for: host, useConnectionReuse: false),
+            environment: [:]
+        )
+
+        if let sshpassPath {
+            return LaunchConfiguration(
+                executablePath: sshpassPath,
+                arguments: ["-e", wrapped.executablePath] + wrapped.arguments,
+                environment: ["SSHPASS": password]
             )
         }
 
-        return (executablePath: sshPath, arguments: sshArguments)
+        guard let askPassScriptPath else { return nil }
+        return LaunchConfiguration(
+            executablePath: wrapped.executablePath,
+            arguments: wrapped.arguments,
+            environment: [
+                "SSH_ASKPASS": askPassScriptPath,
+                "SSH_ASKPASS_REQUIRE": "force",
+                "DISPLAY": "remora-askpass",
+                "REMORA_SSH_PASSWORD": password,
+            ]
+        )
+    }
+
+    private static func wrappedSSHLaunchConfiguration(
+        sshArguments: [String],
+        environment: [String: String]
+    ) -> LaunchConfiguration {
+        let sshPath = "/usr/bin/ssh"
+
+        if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
+            return LaunchConfiguration(
+                executablePath: "/usr/bin/script",
+                arguments: ["-q", "/dev/null", sshPath] + sshArguments,
+                environment: environment
+            )
+        }
+
+        return LaunchConfiguration(
+            executablePath: sshPath,
+            arguments: sshArguments,
+            environment: environment
+        )
+    }
+
+    private static func defaultSSHPassPath() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/sshpass",
+            "/usr/local/bin/sshpass",
+            "/usr/bin/sshpass",
+        ]
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    }
+
+    private static func ensureAskPassScriptPath() -> String? {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remora-ssh-askpass.sh")
+
+        if FileManager.default.fileExists(atPath: scriptURL.path) {
+            return scriptURL.path
+        }
+
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' "${REMORA_SSH_PASSWORD}"
+        """
+        guard let scriptData = script.data(using: .utf8) else {
+            return nil
+        }
+
+        do {
+            try scriptData.write(to: scriptURL, options: [.atomic])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: scriptURL.path
+            )
+            return scriptURL.path
+        } catch {
+            return nil
+        }
     }
 }
