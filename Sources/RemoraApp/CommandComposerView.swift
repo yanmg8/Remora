@@ -55,6 +55,7 @@ final class CommandComposerTextView: NSTextView {
 struct CommandComposerView: NSViewRepresentable {
     @Binding var text: String
     @Binding var selection: NSRange
+    var isFocused: Bool = false
     var onSubmit: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -74,8 +75,10 @@ struct CommandComposerView: NSViewRepresentable {
         textView.onSubmit = { _ in onSubmit() }
         textView.string = text
         textView.setSelectedRange(selection)
+        textView.setAccessibilityIdentifier("terminal-command-composer-editor")
 
         scrollView.documentView = textView
+        scrollView.setAccessibilityIdentifier("terminal-command-composer-scroll")
         return scrollView
     }
 
@@ -89,6 +92,11 @@ struct CommandComposerView: NSViewRepresentable {
         }
         if textView.selectedRange() != selection {
             textView.setSelectedRange(selection)
+        }
+        if isFocused, textView.window?.firstResponder as AnyObject? !== textView {
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
         }
     }
 

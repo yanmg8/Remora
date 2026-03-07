@@ -84,6 +84,14 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public var scrollSensitivity: Double = 1.0
     public var fastScrollSensitivity: Double = 5.0
     public var scrollOnUserInput: Bool = true
+    public var allowsKeyboardInput: Bool = true {
+        didSet {
+            guard !allowsKeyboardInput else { return }
+            guard let window, window.firstResponder as AnyObject? === self else { return }
+            window.makeFirstResponder(nil)
+        }
+    }
+    public var prefersInitialFocusOnWindowAttach: Bool = true
 
     private let screenBuffer: ScreenBuffer
     private let parser = ANSIParser()
@@ -157,6 +165,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard prefersInitialFocusOnWindowAttach else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.window?.makeFirstResponder(self)
@@ -204,6 +213,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public override func keyDown(with event: NSEvent) {
+        guard allowsKeyboardInput else { return }
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
             copy(nil)
             return
@@ -249,6 +259,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard allowsKeyboardInput else { return false }
         guard let input = keyEquivalentTerminalInput(for: event) else {
             return super.performKeyEquivalent(with: event)
         }
@@ -259,6 +270,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public override func keyUp(with event: NSEvent) {
+        guard allowsKeyboardInput else { return }
         if let input = inputMapper.mapKeyUp(event: event) {
             onInput?(input)
             return
@@ -288,7 +300,9 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func mouseDown(with event: NSEvent) {
         onFocus?()
-        window?.makeFirstResponder(self)
+        if allowsKeyboardInput {
+            window?.makeFirstResponder(self)
+        }
         discardMarkedText()
 
         screenBuffer.setViewportOffset(scrollbackOffset)
@@ -325,7 +339,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
-        if shouldHandleShellCursorClick(event: event, location: location) {
+        if allowsKeyboardInput, shouldHandleShellCursorClick(event: event, location: location) {
             pendingShellCursorClickLocation = location
             isSelectingWithMouse = false
             return
@@ -439,7 +453,9 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
         onFocus?()
-        window?.makeFirstResponder(self)
+        if allowsKeyboardInput {
+            window?.makeFirstResponder(self)
+        }
         discardMarkedText()
         screenBuffer.setViewportOffset(scrollbackOffset)
         let point = convert(event.locationInWindow, from: nil)

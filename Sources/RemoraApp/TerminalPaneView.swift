@@ -1,9 +1,45 @@
 import SwiftUI
 import RemoraCore
 
+enum TerminalPaneSection: Equatable {
+    case commandComposer
+    case terminal
+}
+
+struct TerminalPaneLayout: Equatable {
+    var sections: [TerminalPaneSection]
+    var terminalAllowsKeyboardInput: Bool
+    var terminalPrefersInitialFocus: Bool
+
+    static func resolve(
+        isCommandComposerVisible: Bool,
+        placement: TerminalCommandComposerPlacement,
+        isPaneFocused: Bool
+    ) -> TerminalPaneLayout {
+        if isCommandComposerVisible {
+            let sections: [TerminalPaneSection] = placement == .top
+                ? [.commandComposer, .terminal]
+                : [.terminal, .commandComposer]
+            return TerminalPaneLayout(
+                sections: sections,
+                terminalAllowsKeyboardInput: false,
+                terminalPrefersInitialFocus: false
+            )
+        }
+
+        return TerminalPaneLayout(
+            sections: [.terminal],
+            terminalAllowsKeyboardInput: true,
+            terminalPrefersInitialFocus: isPaneFocused
+        )
+    }
+}
+
 struct TerminalPaneView: View {
     @ObservedObject var pane: TerminalPaneModel
     @ObservedObject private var runtime: TerminalRuntime
+    @AppStorage(AppSettings.terminalCommandComposerPlacementKey)
+    private var commandComposerPlacementRawValue = AppSettings.defaultTerminalCommandComposerPlacement.rawValue
     var quickCommands: [HostQuickCommand]
     var isFocused: Bool
     var onSelect: () -> Void
@@ -111,9 +147,11 @@ struct TerminalPaneView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
 
-            TerminalViewRepresentable(runtime: runtime, onFocus: onSelect)
-                .background(VisualStyle.terminalBackground)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                ForEach(Array(paneLayout.sections.enumerated()), id: \.offset) { _, section in
+                    paneSectionView(section)
+                }
+            }
         }
         .background(VisualStyle.rightPanelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -156,5 +194,72 @@ struct TerminalPaneView: View {
             return false
         }
         return true
+    }
+
+    private var commandComposerPlacement: TerminalCommandComposerPlacement {
+        TerminalCommandComposerPlacement(rawValue: commandComposerPlacementRawValue)
+            ?? AppSettings.defaultTerminalCommandComposerPlacement
+    }
+
+    private var paneLayout: TerminalPaneLayout {
+        TerminalPaneLayout.resolve(
+            isCommandComposerVisible: runtime.isCommandComposerVisible,
+            placement: commandComposerPlacement,
+            isPaneFocused: isFocused
+        )
+    }
+
+    private var commandComposerTextBinding: Binding<String> {
+        Binding(
+            get: { runtime.commandComposerText },
+            set: { runtime.updateCommandComposer(text: $0, selection: runtime.commandComposerSelection) }
+        )
+    }
+
+    private var commandComposerSelectionBinding: Binding<NSRange> {
+        Binding(
+            get: { runtime.commandComposerSelection },
+            set: { runtime.updateCommandComposer(text: runtime.commandComposerText, selection: $0) }
+        )
+    }
+
+    @ViewBuilder
+    private func paneSectionView(_ section: TerminalPaneSection) -> some View {
+        switch section {
+        case .commandComposer:
+            commandComposerSection
+        case .terminal:
+            terminalSection
+        }
+    }
+
+    private var terminalSection: some View {
+        TerminalViewRepresentable(
+            runtime: runtime,
+            allowsKeyboardInput: paneLayout.terminalAllowsKeyboardInput,
+            prefersInitialFocus: paneLayout.terminalPrefersInitialFocus,
+            onFocus: onSelect
+        )
+        .background(VisualStyle.terminalBackground)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("terminal-pane-terminal")
+    }
+
+    private var commandComposerSection: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .overlay(VisualStyle.borderSoft)
+            CommandComposerView(
+                text: commandComposerTextBinding,
+                selection: commandComposerSelectionBinding,
+                isFocused: isFocused && runtime.isCommandComposerVisible,
+                onSubmit: runtime.submitCommandComposer
+            )
+            .frame(minHeight: 48, idealHeight: 72, maxHeight: 144)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(VisualStyle.rightPanelBackground)
+            .accessibilityIdentifier("terminal-command-composer")
+        }
     }
 }
