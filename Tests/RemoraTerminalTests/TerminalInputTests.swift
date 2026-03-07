@@ -190,6 +190,22 @@ struct TerminalInputTests {
     }
 
     @Test
+    func terminalInputResumesAfterReEnablingKeyboardInput() {
+        let view = TerminalView(rows: 4, columns: 20)
+        let capture = DataCapture()
+        view.onInput = { capture.append($0) }
+
+        view.allowsKeyboardInput = false
+        view.keyDown(with: arrowKeyEvent(keyCode: 123))
+        #expect(capture.values.isEmpty)
+
+        view.allowsKeyboardInput = true
+        view.keyDown(with: arrowKeyEvent(keyCode: 123))
+
+        #expect(capture.values == [Data("\u{1B}[D".utf8)])
+    }
+
+    @Test
     func terminalViewBuildsSGRMousePayload() {
         let view = TerminalView(rows: 10, columns: 10)
         let payload = view.mouseReportPayload(

@@ -448,6 +448,62 @@ struct TerminalRuntimeTests {
         #expect(runtime.commandComposerSelection.location == 0)
     }
 
+    @Test
+    func interactiveModeStopsComposerSyncUntilComposerVisibleAgain() async {
+        let recorder = TerminalCommandRecorder()
+        let manager = SessionManager(
+            sshClientFactory: {
+                RecordingSSHClient(recorder: recorder, initialDirectory: "/")
+            }
+        )
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+
+        runtime.connectLocalShell()
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        runtime.updateCommandComposer(text: "echo hello", selection: NSRange(location: 10, length: 0))
+        let initialSync = await waitUntilAsync(timeout: 2.0) {
+            await recorder.rawWrites.count == 5
+        }
+        #expect(initialSync)
+        guard initialSync else { return }
+
+        await recorder.reset()
+        runtime.updateTerminalInteractionState(
+            TerminalInteractionState(
+                isAlternateBufferActive: true,
+                isMouseReportingEnabled: true,
+                isApplicationCursorKeysEnabled: true
+            )
+        )
+        runtime.updateCommandComposer(text: "pwd", selection: NSRange(location: 3, length: 0))
+
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        #expect(await recorder.rawWrites.isEmpty)
+        #expect(runtime.commandComposerText == "pwd")
+
+        runtime.updateTerminalInteractionState(
+            TerminalInteractionState(
+                isAlternateBufferActive: false,
+                isMouseReportingEnabled: false,
+                isApplicationCursorKeysEnabled: false
+            )
+        )
+
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        #expect(await recorder.rawWrites.isEmpty)
+
+        runtime.updateCommandComposer(text: "pwd!", selection: NSRange(location: 4, length: 0))
+        let resumedSync = await waitUntilAsync(timeout: 2.0) {
+            await recorder.rawWrites.count == 5
+        }
+        #expect(resumedSync)
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
