@@ -13,6 +13,7 @@ struct AppSettingsTerminalOptionsTests {
         #expect(AppSettings.resolvedTerminalScrollSensitivity(defaults: defaults) == AppSettings.defaultTerminalScrollSensitivity)
         #expect(AppSettings.resolvedTerminalFastScrollSensitivity(defaults: defaults) == AppSettings.defaultTerminalFastScrollSensitivity)
         #expect(AppSettings.resolvedTerminalScrollOnUserInput(defaults: defaults) == true)
+        #expect(AppSettings.resolvedTerminalCommandComposerPlacement(defaults: defaults) == .bottom)
     }
 
     @Test
@@ -30,6 +31,19 @@ struct AppSettingsTerminalOptionsTests {
         #expect(AppSettings.resolvedTerminalFastScrollSensitivity(defaults: defaults) == 12.0)
         #expect(AppSettings.resolvedTerminalScrollOnUserInput(defaults: defaults) == false)
         #expect(AppSettings.resolvedTerminalWordSeparators(defaults: defaults) == "::")
+    }
+
+    @Test
+    func terminalCommandComposerPlacementRoundTrips() {
+        let suiteName = "AppSettingsTerminalOptionsTests.placement.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("top", forKey: AppSettings.terminalCommandComposerPlacementKey)
+        #expect(AppSettings.resolvedTerminalCommandComposerPlacement(defaults: defaults) == .top)
+
+        defaults.set("bottom", forKey: AppSettings.terminalCommandComposerPlacementKey)
+        #expect(AppSettings.resolvedTerminalCommandComposerPlacement(defaults: defaults) == .bottom)
     }
 
 }
