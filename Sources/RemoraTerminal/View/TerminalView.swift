@@ -2,6 +2,26 @@ import AppKit
 import Foundation
 import RemoraCore
 
+public struct TerminalInteractionState: Equatable, Sendable {
+    public var isAlternateBufferActive: Bool
+    public var isMouseReportingEnabled: Bool
+    public var isApplicationCursorKeysEnabled: Bool
+
+    public init(
+        isAlternateBufferActive: Bool,
+        isMouseReportingEnabled: Bool,
+        isApplicationCursorKeysEnabled: Bool
+    ) {
+        self.isAlternateBufferActive = isAlternateBufferActive
+        self.isMouseReportingEnabled = isMouseReportingEnabled
+        self.isApplicationCursorKeysEnabled = isApplicationCursorKeysEnabled
+    }
+
+    public var isInteractiveTerminalMode: Bool {
+        isAlternateBufferActive
+    }
+}
+
 public struct TerminalSelection: Equatable {
     // Buffer-space coordinates (absolute row across scrollback + visible lines).
     public var startRow: Int
@@ -30,6 +50,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public var onFocus: (() -> Void)?
     public var onResize: ((Int, Int) -> Void)?
     public var onOpenExternalURL: ((URL) -> Void)?
+    public var onInteractionStateChange: ((TerminalInteractionState) -> Void)?
     /// Callback for terminal query responses (DSR, DA, etc) - injects response back to PTY
     public var onTerminalQueryResponse: ((Data) -> Void)? {
         didSet {
@@ -85,6 +106,11 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var mouseReportingButtonCode: Int?
     private var pendingShellCursorClickLocation: (row: Int, column: Int)?
     private var scrollLineAccumulator: Double = 0
+    private var lastInteractionState = TerminalInteractionState(
+        isAlternateBufferActive: false,
+        isMouseReportingEnabled: false,
+        isApplicationCursorKeysEnabled: false
+    )
 
     private let flushScheduleLock = NSLock()
     nonisolated(unsafe) private var flushScheduled = false
@@ -467,6 +493,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
         focusReportingEnabled = parser.focusReportingEnabled
         bracketedPasteEnabled = parser.bracketedPasteEnabled
+        publishInteractionStateIfNeeded()
         let maxOffset = screenBuffer.maxViewportOffset()
         if scrollbackOffset > maxOffset {
             scrollbackOffset = maxOffset
@@ -532,6 +559,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
         focusReportingEnabled = parser.focusReportingEnabled
         bracketedPasteEnabled = parser.bracketedPasteEnabled
+        publishInteractionStateIfNeeded()
         dirtyRows.formUnion(screenBuffer.consumeDirtyRows())
     }
 
@@ -1032,6 +1060,17 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         markedText = NSAttributedString(string: "")
         inputContext?.discardMarkedText()
         inputContext?.invalidateCharacterCoordinates()
+    }
+
+    private func publishInteractionStateIfNeeded() {
+        let state = TerminalInteractionState(
+            isAlternateBufferActive: screenBuffer.isAlternateBuffer,
+            isMouseReportingEnabled: parser.mouseReportingEnabled,
+            isApplicationCursorKeysEnabled: parser.applicationCursorKeysEnabled
+        )
+        guard state != lastInteractionState else { return }
+        lastInteractionState = state
+        onInteractionStateChange?(state)
     }
 
     // MARK: - NSTextInputClient

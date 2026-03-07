@@ -293,6 +293,37 @@ struct TerminalInputTests {
         #expect(values.last == Data([0x7F]))
     }
 
+    @Test
+    func terminalViewPublishesInteractionStateChanges() {
+        let view = TerminalView(rows: 4, columns: 40)
+        var snapshots: [TerminalInteractionState] = []
+        view.onInteractionStateChange = { snapshots.append($0) }
+
+        view.feed(data: Data("\u{1B}[?1049h".utf8))
+        view.flushPendingOutputForTesting()
+
+        #expect(snapshots.last?.isAlternateBufferActive == true)
+        #expect(snapshots.last?.isInteractiveTerminalMode == true)
+
+        view.feed(data: Data("\u{1B}[?1000h".utf8))
+        view.flushPendingOutputForTesting()
+
+        #expect(snapshots.last?.isMouseReportingEnabled == true)
+
+        view.feed(data: Data("\u{1B}[?1h".utf8))
+        view.flushPendingOutputForTesting()
+
+        #expect(snapshots.last?.isApplicationCursorKeysEnabled == true)
+
+        view.feed(data: Data("\u{1B}[?1049l\u{1B}[?1000l\u{1B}[?1l".utf8))
+        view.flushPendingOutputForTesting()
+
+        #expect(snapshots.last?.isAlternateBufferActive == false)
+        #expect(snapshots.last?.isMouseReportingEnabled == false)
+        #expect(snapshots.last?.isApplicationCursorKeysEnabled == false)
+        #expect(snapshots.last?.isInteractiveTerminalMode == false)
+    }
+
     private func keyEvent(
         type: NSEvent.EventType = .keyDown,
         keyCode: UInt16 = 0,
