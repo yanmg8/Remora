@@ -56,6 +56,13 @@ public struct TerminalSelection: Equatable {
 }
 
 public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
+    private struct PendingShellCursorClick {
+        let targetRow: Int
+        let targetColumn: Int
+        let selectionAnchorRow: Int
+        let selectionAnchorColumn: Int
+    }
+
     public var onInput: (@Sendable (Data) -> Void)?
     public var onFocus: (() -> Void)?
     public var onResize: ((Int, Int) -> Void)?
@@ -97,6 +104,10 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public var scrollOnUserInput: Bool = true
     public var allowsKeyboardInput: Bool = true {
         didSet {
+            defer {
+                updateCaretBlinking()
+                needsDisplay = true
+            }
             guard !allowsKeyboardInput else { return }
             guard let window, window.firstResponder as AnyObject? === self else { return }
             window.makeFirstResponder(nil)
@@ -123,8 +134,10 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var isSelectingWithMouse = false
     private var isMouseReportingDrag = false
     private var mouseReportingButtonCode: Int?
-    private var pendingShellCursorClickLocation: (row: Int, column: Int)?
+    private var pendingShellCursorClick: PendingShellCursorClick?
     private var scrollLineAccumulator: Double = 0
+    private var caretBlinkTask: Task<Void, Never>?
+    private var isCaretBlinkVisible = true
     private var lastInteractionState = TerminalInteractionState(
         isAlternateBufferActive: false,
         isMouseReportingEnabled: false,
@@ -176,6 +189,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateCaretBlinking()
         guard prefersInitialFocusOnWindowAttach else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -186,6 +200,9 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
         guard accepted else { return false }
+        resetCaretBlink()
+        updateCaretBlinking()
+        needsDisplay = true
         onFocus?()
         if focusReportingEnabled {
             onInput?(Data("\u{001B}[I".utf8))
@@ -196,6 +213,8 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public override func resignFirstResponder() -> Bool {
         let accepted = super.resignFirstResponder()
         guard accepted else { return false }
+        updateCaretBlinking()
+        needsDisplay = true
         if focusReportingEnabled {
             onInput?(Data("\u{001B}[O".utf8))
         }
@@ -204,6 +223,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     deinit {
         frameScheduler?.stop()
+        caretBlinkTask?.cancel()
     }
 
     public func feed(data: Data) {
@@ -214,7 +234,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         screenBuffer.setViewportOffset(scrollbackOffset)
         renderer.draw(screen: screenBuffer, in: context, bounds: bounds, dirtyRows: [])
-        if scrollbackOffset == 0 {
+        if shouldDrawCaret {
             drawCursor(in: context)
         }
         drawSelection(in: context)
@@ -225,6 +245,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func keyDown(with event: NSEvent) {
         guard allowsKeyboardInput else { return }
+        resetCaretBlink()
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
             copy(nil)
             return
@@ -274,6 +295,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         guard let input = keyEquivalentTerminalInput(for: event) else {
             return super.performKeyEquivalent(with: event)
         }
+        resetCaretBlink()
         discardMarkedText()
         scrollToBottomOnUserInputIfNeeded()
         onInput?(input)
@@ -290,6 +312,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public func paste(_ sender: Any?) {
+        resetCaretBlink()
         scrollToBottomOnUserInputIfNeeded()
         guard let value = NSPasteboard.general.string(forType: .string) else { return }
         if bracketedPasteEnabled {
@@ -318,8 +341,8 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
         screenBuffer.setViewportOffset(scrollbackOffset)
         let point = convert(event.locationInWindow, from: nil)
-        let location = bufferCellLocation(from: point)
-        if event.modifierFlags.contains(.command), openHyperlink(atBufferRow: location.row, column: location.column) {
+        let selectionLocation = bufferCellLocation(from: point)
+        if event.modifierFlags.contains(.command), openHyperlink(atBufferRow: selectionLocation.row, column: selectionLocation.column) {
             isSelectingWithMouse = false
             return
         }
@@ -335,32 +358,38 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let isColumnSelection = event.modifierFlags.contains(.option)
 
         if event.clickCount >= 3 {
-            selectLogicalLine(atBufferRow: location.row)
+            selectLogicalLine(atBufferRow: selectionLocation.row)
             isSelectingWithMouse = false
-            pendingShellCursorClickLocation = nil
+            pendingShellCursorClick = nil
             needsDisplay = true
             return
         }
 
         if event.clickCount == 2 {
-            selectWord(atBufferRow: location.row, column: location.column)
+            selectWord(atBufferRow: selectionLocation.row, column: selectionLocation.column)
             isSelectingWithMouse = false
-            pendingShellCursorClickLocation = nil
+            pendingShellCursorClick = nil
             needsDisplay = true
             return
         }
 
-        if allowsKeyboardInput, shouldHandleShellCursorClick(event: event, location: location) {
-            pendingShellCursorClickLocation = location
+        let shellLocation = bufferCaretStopLocation(from: point)
+        if allowsKeyboardInput, shouldHandleShellCursorClick(event: event, location: shellLocation) {
+            pendingShellCursorClick = PendingShellCursorClick(
+                targetRow: shellLocation.row,
+                targetColumn: shellLocation.column,
+                selectionAnchorRow: selectionLocation.row,
+                selectionAnchorColumn: selectionLocation.column
+            )
             isSelectingWithMouse = false
             return
         }
 
         selection = TerminalSelection(
-            startRow: location.row,
-            startColumn: location.column,
-            endRow: location.row,
-            endColumn: location.column,
+            startRow: selectionLocation.row,
+            startColumn: selectionLocation.column,
+            endRow: selectionLocation.row,
+            endColumn: selectionLocation.column,
             isColumnSelection: isColumnSelection
         )
         isSelectingWithMouse = true
@@ -403,18 +432,18 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
-        if let pendingLocation = pendingShellCursorClickLocation {
+        if let pendingClick = pendingShellCursorClick {
             screenBuffer.setViewportOffset(scrollbackOffset)
             let point = convert(event.locationInWindow, from: nil)
             let location = bufferCellLocation(from: point)
             selection = TerminalSelection(
-                startRow: pendingLocation.row,
-                startColumn: pendingLocation.column,
+                startRow: pendingClick.selectionAnchorRow,
+                startColumn: pendingClick.selectionAnchorColumn,
                 endRow: location.row,
                 endColumn: location.column,
                 isColumnSelection: event.modifierFlags.contains(.option)
             )
-            pendingShellCursorClickLocation = nil
+            pendingShellCursorClick = nil
             isSelectingWithMouse = true
             needsDisplay = true
             return
@@ -438,12 +467,13 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
-        if let pendingLocation = pendingShellCursorClickLocation {
-            pendingShellCursorClickLocation = nil
+        if let pendingClick = pendingShellCursorClick {
+            pendingShellCursorClick = nil
             if let input = shellCursorRepositionInput(
-                targetBufferRow: pendingLocation.row,
-                targetColumn: pendingLocation.column
+                targetBufferRow: pendingClick.targetRow,
+                targetColumn: pendingClick.targetColumn
             ) {
+                resetCaretBlink()
                 scrollToBottomOnUserInputIfNeeded()
                 onInput?(input)
                 selection = nil
@@ -531,6 +561,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             dirtyRows.formUnion(changedRows)
             updateAccessibilitySnapshot()
         }
+        resetCaretBlink()
         onShellInputSnapshotChange?(shellInputSnapshot())
 
         let elapsed = start.duration(to: .now)
@@ -589,17 +620,12 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         bracketedPasteEnabled = parser.bracketedPasteEnabled
         publishInteractionStateIfNeeded()
         dirtyRows.formUnion(screenBuffer.consumeDirtyRows())
+        resetCaretBlink()
     }
 
     private func drawCursor(in context: CGContext) {
-        guard screenBuffer.isCursorVisible else { return }
-        let cursorRect = CGRect(
-            x: renderer.horizontalInset + CGFloat(screenBuffer.cursorColumn) * renderer.cellWidth,
-            y: bounds.height - CGFloat(screenBuffer.cursorRow + 1) * renderer.lineHeight,
-            width: renderer.cellWidth,
-            height: renderer.lineHeight
-        )
-        context.setFillColor(NSColor.white.withAlphaComponent(0.3).cgColor)
+        let cursorRect = caretRect()
+        context.setFillColor(NSColor.white.withAlphaComponent(0.85).cgColor)
         context.fill(cursorRect)
     }
 
@@ -654,10 +680,27 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         return (min(row, screenBuffer.rows - 1), min(col, screenBuffer.columns - 1))
     }
 
+    private func viewportCaretStopLocation(from point: CGPoint) -> (row: Int, column: Int) {
+        let contentX = max(point.x - renderer.horizontalInset, 0)
+        let rawColumn = contentX / renderer.cellWidth
+        let floorColumn = Int(rawColumn.rounded(.down))
+        let columnOffset = rawColumn - CGFloat(floorColumn)
+        let caretColumn = floorColumn + (columnOffset >= 0.5 ? 1 : 0)
+        let row = max(Int((bounds.height - point.y) / renderer.lineHeight), 0)
+        return (min(row, screenBuffer.rows - 1), min(max(0, caretColumn), screenBuffer.columns - 1))
+    }
+
     private func bufferCellLocation(from point: CGPoint) -> (row: Int, column: Int) {
         let viewportLocation = viewportCellLocation(from: point)
         let bufferRow = screenBuffer.bufferRow(forViewportRow: viewportLocation.row)
         let normalizedColumn = normalizedColumn(atBufferRow: bufferRow, column: viewportLocation.column)
+        return (bufferRow, normalizedColumn)
+    }
+
+    private func bufferCaretStopLocation(from point: CGPoint) -> (row: Int, column: Int) {
+        let viewportLocation = viewportCaretStopLocation(from: point)
+        let bufferRow = screenBuffer.bufferRow(forViewportRow: viewportLocation.row)
+        let normalizedColumn = normalizedCaretStopColumn(atBufferRow: bufferRow, column: viewportLocation.column)
         return (bufferRow, normalizedColumn)
     }
 
@@ -670,6 +713,17 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             normalized -= 1
         }
         return normalized
+    }
+
+    private func normalizedCaretStopColumn(atBufferRow row: Int, column: Int) -> Int {
+        let line = screenBuffer.line(atBufferRow: row)
+        guard line.count > 0 else { return 0 }
+
+        let clamped = min(max(0, column), line.count - 1)
+        if line[clamped].displayWidth == 0 {
+            return min(clamped + 1, line.count - 1)
+        }
+        return clamped
     }
 
     private func orderedSelection(_ selection: TerminalSelection) -> TerminalSelection {
@@ -770,6 +824,56 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let components = duration.components
         return Double(components.seconds) * 1_000
             + Double(components.attoseconds) / 1_000_000_000_000_000
+    }
+
+    private var shouldDrawCaret: Bool {
+        guard screenBuffer.isCursorVisible else { return false }
+        guard scrollbackOffset == 0 else { return false }
+        guard allowsKeyboardInput else { return false }
+        guard isCaretBlinkVisible else { return false }
+        return window?.firstResponder as AnyObject? === self
+    }
+
+    private func caretRect() -> CGRect {
+        let rowY = bounds.height - CGFloat(screenBuffer.cursorRow + 1) * renderer.lineHeight
+        let textHeight = min(renderer.contentHeightForCaret, renderer.lineHeight - 2)
+        let verticalPadding = max(0, renderer.lineHeight - textHeight)
+        let width = min(renderer.cellWidth, max(2, round(renderer.cellWidth * 0.18)))
+        return CGRect(
+            x: renderer.horizontalInset + CGFloat(screenBuffer.cursorColumn) * renderer.cellWidth,
+            y: rowY + floor(verticalPadding * 0.5),
+            width: width,
+            height: textHeight
+        )
+    }
+
+    private func updateCaretBlinking() {
+        guard window?.firstResponder as AnyObject? === self, allowsKeyboardInput else {
+            caretBlinkTask?.cancel()
+            caretBlinkTask = nil
+            isCaretBlinkVisible = true
+            return
+        }
+        guard caretBlinkTask == nil else { return }
+
+        caretBlinkTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(550))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    guard self.window?.firstResponder as AnyObject? === self, self.allowsKeyboardInput else { return }
+                    self.isCaretBlinkVisible.toggle()
+                    self.needsDisplay = true
+                }
+            }
+        }
+    }
+
+    private func resetCaretBlink() {
+        isCaretBlinkVisible = true
+        updateCaretBlinking()
+        needsDisplay = true
     }
 
     private func sanitizeDirtyRows() {
@@ -1100,6 +1204,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     private func sendInputString(_ value: String) {
         guard !value.isEmpty else { return }
+        resetCaretBlink()
         onInput?(Data(value.utf8))
     }
 
@@ -1146,6 +1251,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     }
 
     public func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        resetCaretBlink()
         if let attributed = string as? NSAttributedString {
             markedText = attributed
         } else if let plain = string as? String {
@@ -1169,6 +1275,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public func insertText(_ string: Any, replacementRange: NSRange) {
         markedText = NSAttributedString(string: "")
+        resetCaretBlink()
         scrollToBottomOnUserInputIfNeeded()
         sendInputString(plainString(from: string))
     }
@@ -1179,6 +1286,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func doCommand(by selector: Selector) {
         if let input = inputMapper.map(command: selector) {
+            resetCaretBlink()
             scrollToBottomOnUserInputIfNeeded()
             onInput?(input)
             return
@@ -1192,13 +1300,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         actualRange?.pointee = NSRange(location: NSNotFound, length: 0)
-        let caretRect = CGRect(
-            x: renderer.horizontalInset + CGFloat(screenBuffer.cursorColumn) * renderer.cellWidth,
-            y: bounds.height - CGFloat(screenBuffer.cursorRow + 1) * renderer.lineHeight,
-            width: renderer.cellWidth,
-            height: renderer.lineHeight
-        )
-        let rectInWindow = convert(caretRect, to: nil)
+        let rectInWindow = convert(caretRect(), to: nil)
         guard let window else { return .zero }
         return window.convertToScreen(rectInWindow)
     }
@@ -1217,6 +1319,14 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     func shellCursorRepositionInputForTesting(targetBufferRow: Int, targetColumn: Int) -> Data? {
         shellCursorRepositionInput(targetBufferRow: targetBufferRow, targetColumn: targetColumn)
+    }
+
+    func isCaretBlinkVisibleForTesting() -> Bool {
+        isCaretBlinkVisible
+    }
+
+    func advanceCaretBlinkForTesting() {
+        isCaretBlinkVisible.toggle()
     }
 
     func pointForBufferCellForTesting(row: Int, column: Int) -> CGPoint {

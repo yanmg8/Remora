@@ -310,6 +310,61 @@ struct TerminalInputTests {
     }
 
     @Test
+    func terminalViewFirstRectUsesInsertionCaretGeometry() throws {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        let window = hostViewInWindow(view, size: NSSize(width: 400, height: 120))
+        defer { window.close() }
+
+        let cursor = view.cursorBufferPositionForTesting()
+        let caretRect = localCaretRect(in: view)
+        let cellWidth = view.pointForBufferCellForTesting(row: cursor.row, column: cursor.column).x
+            - view.pointForBufferCellForTesting(row: cursor.row, column: max(0, cursor.column - 1)).x
+        let lineHeight = view.pointForBufferCellForTesting(row: cursor.row, column: cursor.column).y
+            - view.pointForBufferCellForTesting(row: cursor.row + 1, column: cursor.column).y
+
+        #expect(caretRect.width < abs(cellWidth))
+        #expect(caretRect.height < abs(lineHeight))
+    }
+
+    @Test
+    func terminalViewFocusedCaretBlinks() throws {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        let window = hostViewInWindow(view, size: NSSize(width: 400, height: 120))
+        defer { window.close() }
+
+        _ = window.makeFirstResponder(view)
+        #expect(view.isCaretBlinkVisibleForTesting())
+
+        view.advanceCaretBlinkForTesting()
+        #expect(!view.isCaretBlinkVisibleForTesting())
+
+        view.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(view.isCaretBlinkVisibleForTesting())
+    }
+
+    @Test
+    func terminalViewShellClickUsesNearestCaretStop() {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        view.setFrameSize(NSSize(width: 400, height: 120))
+        let capture = DataCapture()
+        view.onInput = { capture.append($0) }
+
+        let cursor = view.cursorBufferPositionForTesting()
+        let columnTwoCenter = view.pointForBufferCellForTesting(row: cursor.row, column: 2)
+        let columnThreeCenter = view.pointForBufferCellForTesting(row: cursor.row, column: 3)
+        let point = CGPoint(
+            x: columnTwoCenter.x + (columnThreeCenter.x - columnTwoCenter.x) * 0.35,
+            y: columnTwoCenter.y
+        )
+
+        view.mouseDown(with: mouseEvent(type: .leftMouseDown, location: point))
+        view.mouseUp(with: mouseEvent(type: .leftMouseUp, location: point))
+
+        let expected = Data(String(repeating: "\u{1B}[D", count: max(0, cursor.column - 3)).utf8)
+        #expect(capture.values == [expected])
+    }
+
+    @Test
     func terminalViewPublishesInteractionStateChanges() {
         let view = TerminalView(rows: 4, columns: 40)
         var snapshots: [TerminalInteractionState] = []
@@ -428,4 +483,30 @@ struct TerminalInputTests {
         view.flushPendingOutputForTesting()
         return view
     }
+
+    private func hostViewInWindow(_ view: TerminalView, size: NSSize) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        let container = NSView(frame: NSRect(origin: .zero, size: size))
+        window.contentView = container
+        view.frame = container.bounds
+        container.addSubview(view)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(view)
+        return window
+    }
+
+    private func localCaretRect(in view: TerminalView) -> CGRect {
+        let screenRect = view.firstRect(forCharacterRange: NSRange(location: 0, length: 0), actualRange: nil)
+        guard let window = view.window else {
+            fatalError("Expected hosted window")
+        }
+        let windowRect = window.convertFromScreen(screenRect)
+        return view.convert(windowRect, from: nil)
+    }
+
 }

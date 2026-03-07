@@ -16,9 +16,14 @@ public final class CoreTextTerminalRenderer {
 
     private let glyphCache = GlyphCache()
     private var baselineOffset: CGFloat = 2
+    private var contentHeight: CGFloat = 14
 
     var baselineOffsetForTesting: CGFloat {
         baselineOffset
+    }
+
+    var contentHeightForCaret: CGFloat {
+        contentHeight
     }
 
     public init(font: NSFont = .monospacedSystemFont(ofSize: 13, weight: .regular)) {
@@ -116,6 +121,7 @@ public final class CoreTextTerminalRenderer {
         cellWidth = max(1, ceil(size.width))
 
         let contentHeight = max(1, ascent + descent)
+        self.contentHeight = contentHeight
         let naturalLineHeight = max(contentHeight + leading, ceil(font.boundingRectForFont.height))
         lineHeight = max(1, ceil(naturalLineHeight + 2))
 
