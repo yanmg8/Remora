@@ -61,6 +61,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     public var onResize: ((Int, Int) -> Void)?
     public var onOpenExternalURL: ((URL) -> Void)?
     public var onInteractionStateChange: ((TerminalInteractionState) -> Void)?
+    public var onShellInputSnapshotChange: ((TerminalShellInputSnapshot?) -> Void)?
     /// Callback for terminal query responses (DSR, DA, etc) - injects response back to PTY
     public var onTerminalQueryResponse: ((Data) -> Void)? {
         didSet {
@@ -530,6 +531,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             dirtyRows.formUnion(changedRows)
             updateAccessibilitySnapshot()
         }
+        onShellInputSnapshotChange?(shellInputSnapshot())
 
         let elapsed = start.duration(to: .now)
         flushSequence += 1

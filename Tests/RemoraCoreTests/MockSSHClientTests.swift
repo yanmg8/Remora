@@ -51,7 +51,7 @@ struct MockSSHClientTests {
         try await session.write(Data("\r".utf8))
 
         let output = capture.combinedString
-        #expect(output.contains("Available commands: help, date, whoami, ls, clear, tui, exit-tui"))
+        #expect(output.contains("Available commands: help, date, whoami, ls, clear, top, tui, exit-tui"))
     }
 
     @Test
@@ -96,6 +96,30 @@ struct MockSSHClientTests {
 
         let output = capture.combinedString
         #expect(output.contains("cd /tmp"))
+    }
+
+    @Test
+    func mockShellSessionSupportsCtrlCForForegroundProgramWithoutAlternateBuffer() async throws {
+        let capture = OutputCapture()
+        let session = MockShellSession(
+            host: Host(
+                name: "demo",
+                address: "127.0.0.1",
+                username: "tester",
+                auth: HostAuth(method: .agent)
+            ),
+            pty: .init(columns: 120, rows: 30)
+        )
+        session.onOutput = { capture.append($0) }
+
+        try await session.start()
+        try await session.write(Data("top\r".utf8))
+        try await session.write(Data([0x03]))
+
+        let output = capture.combinedString
+        #expect(output.contains("top - demo"))
+        #expect(output.contains("^C"))
+        #expect(output.contains("tester@demo % "))
     }
 }
 

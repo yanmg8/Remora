@@ -80,6 +80,7 @@ final class TerminalRuntime: ObservableObject {
     private var isWorkingDirectoryTrackingEnabled = false
     private var pendingWorkingDirectoryProbeTask: Task<Void, Never>?
     private var pendingCommandComposerRefreshTask: Task<Void, Never>?
+    private var isAwaitingShellPrompt = false
     private var awaitingPwdResponse = false
     private var workingDirectoryLineBuffer = ""
 
@@ -109,6 +110,11 @@ final class TerminalRuntime: ObservableObject {
         view.onInteractionStateChange = { [weak self] state in
             DispatchQueue.main.async {
                 self?.updateTerminalInteractionState(state)
+            }
+        }
+        view.onShellInputSnapshotChange = { [weak self] snapshot in
+            DispatchQueue.main.async {
+                self?.handleShellInputSnapshotChange(snapshot)
             }
         }
         flushPendingOutputIfNeeded()
@@ -295,7 +301,7 @@ final class TerminalRuntime: ObservableObject {
 
     func updateTerminalInteractionState(_ state: TerminalInteractionState) {
         isInteractiveTerminalMode = state.isInteractiveTerminalMode
-        isCommandComposerVisible = !state.isInteractiveTerminalMode
+        updateCommandComposerVisibility()
     }
 
     func updateCommandComposer(text: String, selection: NSRange) {
@@ -314,14 +320,21 @@ final class TerminalRuntime: ObservableObject {
         pendingCommandComposerRefreshTask = nil
         let clampedSelection = clampedCommandComposerSelection(commandComposerSelection, text: commandComposerText)
         commandComposerSelection = clampedSelection
+        let submittedText = commandComposerText
 
         if isCommandComposerVisible {
             replaceCurrentInputLine(with: commandComposerText, cursorAt: clampedSelection.location)
         }
 
+        isAwaitingShellPrompt = !submittedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        updateCommandComposerVisibility()
         enqueueInput(Data([0x0D]))
         commandComposerText = ""
         commandComposerSelection = NSRange(location: 0, length: 0)
+    }
+
+    func sendInterrupt() {
+        enqueueInput(Data([0x03]), trackWorkingDirectory: false)
     }
 
     func requestCommandComposerCompletion() {
@@ -675,6 +688,7 @@ final class TerminalRuntime: ObservableObject {
         pendingWorkingDirectoryProbeTask = nil
         pendingCommandComposerRefreshTask?.cancel()
         pendingCommandComposerRefreshTask = nil
+        isAwaitingShellPrompt = false
         transcriptRefreshTask?.cancel()
         transcriptRefreshTask = nil
         awaitingPwdResponse = false
@@ -992,6 +1006,26 @@ final class TerminalRuntime: ObservableObject {
             NSRange(location: shellCursorColumn, length: 0),
             text: shellLineText
         )
+    }
+
+    private func handleShellInputSnapshotChange(_ snapshot: TerminalShellInputSnapshot?) {
+        guard isAwaitingShellPrompt else { return }
+        guard let snapshot, shellPromptLikelyReady(snapshot) else { return }
+        isAwaitingShellPrompt = false
+        updateCommandComposerVisibility()
+    }
+
+    private func updateCommandComposerVisibility() {
+        isCommandComposerVisible = !isInteractiveTerminalMode && !isAwaitingShellPrompt
+    }
+
+    private func shellPromptLikelyReady(_ snapshot: TerminalShellInputSnapshot) -> Bool {
+        guard snapshot.cursorColumn == snapshot.logicalLineText.count else { return false }
+        let line = snapshot.logicalLineText
+        guard !line.isEmpty, line.count <= 256 else { return false }
+
+        let knownPromptSuffixes = ["$ ", "% ", "# ", "> ", ": "]
+        return knownPromptSuffixes.contains(where: { line.hasSuffix($0) })
     }
 
     private func promptPrefixLengthForCurrentComposerLine() -> Int {

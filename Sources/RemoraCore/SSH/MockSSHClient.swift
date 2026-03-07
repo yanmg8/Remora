@@ -28,6 +28,7 @@ public final class MockShellSession: SSHTransportSessionProtocol, @unchecked Sen
     private let host: Host
     private var pty: PTYSize
     private var isRunning = false
+    private var isForegroundProgramActive = false
     private var commandBuffer: [Character] = []
     private var cursorIndex = 0
 
@@ -52,6 +53,16 @@ public final class MockShellSession: SSHTransportSessionProtocol, @unchecked Sen
         var index = 0
         while index < characters.count {
             let character = characters[index]
+            if isForegroundProgramActive {
+                if character == "\u{3}" {
+                    isForegroundProgramActive = false
+                    emit("^C\r\n")
+                    prompt()
+                }
+                index += 1
+                continue
+            }
+
             if character == "\u{1B}" {
                 index += handleEscapeSequence(in: characters, startingAt: index)
                 continue
@@ -141,13 +152,17 @@ public final class MockShellSession: SSHTransportSessionProtocol, @unchecked Sen
         case "clear":
             emit("\u{001B}[2J\u{001B}[H")
         case "help":
-            emit("Available commands: help, date, whoami, ls, clear, tui, exit-tui\r\n")
+            emit("Available commands: help, date, whoami, ls, clear, top, tui, exit-tui\r\n")
         case "date":
             emit("\(Date.now.formatted(date: .abbreviated, time: .standard))\r\n")
         case "whoami":
             emit("\(host.username)\r\n")
         case "ls":
             emit("app.log  releases  config.yml\r\n")
+        case "top":
+            isForegroundProgramActive = true
+            emit("top - \(host.name)\r\n")
+            emit("Press Ctrl+C to quit.\r\n")
         case "tui":
             emit("\u{001B}[?1049h\u{001B}[2J\u{001B}[H[TUI MODE]\r\nType exit-tui to return.\r\n")
         case "exit-tui":
