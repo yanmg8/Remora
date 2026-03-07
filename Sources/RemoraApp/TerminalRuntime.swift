@@ -297,6 +297,28 @@ final class TerminalRuntime: ObservableObject {
         isCommandComposerVisible = !state.isInteractiveTerminalMode
     }
 
+    func updateCommandComposer(text: String, selection: NSRange) {
+        commandComposerText = text
+        let clampedSelection = clampedCommandComposerSelection(selection, text: text)
+        commandComposerSelection = clampedSelection
+
+        guard isCommandComposerVisible else { return }
+        replaceCurrentInputLine(with: text, cursorAt: clampedSelection.location)
+    }
+
+    func submitCommandComposer() {
+        let clampedSelection = clampedCommandComposerSelection(commandComposerSelection, text: commandComposerText)
+        commandComposerSelection = clampedSelection
+
+        if isCommandComposerVisible {
+            replaceCurrentInputLine(with: commandComposerText, cursorAt: clampedSelection.location)
+        }
+
+        enqueueInput(Data([0x0D]))
+        commandComposerText = ""
+        commandComposerSelection = NSRange(location: 0, length: 0)
+    }
+
     // PTY Debug Logging
     private static let ptyDebugQueue = DispatchQueue(label: "io.lighting-tech.remora.pty-diagnostics")
     private static let ptyDebugEnabled: Bool = {
@@ -531,7 +553,7 @@ final class TerminalRuntime: ObservableObject {
         
         // Go back to start and move to target
         sendCtrlA()
-        let targetIndex = relativeIndex ?? text.count
+        let targetIndex = min(max(relativeIndex ?? text.count, 0), text.count)
         if targetIndex > 0 {
             sendRightArrow(count: targetIndex)
         }
@@ -911,6 +933,14 @@ final class TerminalRuntime: ObservableObject {
         guard !trimmed.isEmpty else { return "/" }
         let prefixed = trimmed.hasPrefix("/") ? trimmed : "/\(trimmed)"
         return prefixed.replacingOccurrences(of: "//", with: "/")
+    }
+
+    private func clampedCommandComposerSelection(_ selection: NSRange, text: String) -> NSRange {
+        let maxLocation = NSString(string: text).length
+        let location = min(max(selection.location, 0), maxLocation)
+        let maxLength = max(0, maxLocation - location)
+        let length = min(max(selection.length, 0), maxLength)
+        return NSRange(location: location, length: length)
     }
 
     private func shellSingleQuoted(_ value: String) -> String {

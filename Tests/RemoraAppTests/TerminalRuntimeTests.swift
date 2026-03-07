@@ -383,6 +383,71 @@ struct TerminalRuntimeTests {
         #expect(runtime.commandComposerSelection.location == 4)
     }
 
+    @Test
+    func commandComposerSyncReplacesCurrentInputLine() async {
+        let recorder = TerminalCommandRecorder()
+        let manager = SessionManager(
+            sshClientFactory: {
+                RecordingSSHClient(recorder: recorder, initialDirectory: "/")
+            }
+        )
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+
+        runtime.connectLocalShell()
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        await recorder.reset()
+        runtime.updateCommandComposer(text: "echo hello", selection: NSRange(location: 4, length: 0))
+
+        let synced = await waitUntilAsync(timeout: 2.0) {
+            await recorder.rawWrites.count == 5
+        }
+        #expect(synced)
+        guard synced else { return }
+
+        let writes = await recorder.rawWrites
+        #expect(writes[0] == String(UnicodeScalar(0x01)!))
+        #expect(writes[1] == String(UnicodeScalar(0x0B)!))
+        #expect(writes[2] == "echo hello")
+        #expect(writes[3] == String(UnicodeScalar(0x01)!))
+        #expect(writes[4] == String(repeating: "\u{1B}[C", count: 4))
+    }
+
+    @Test
+    func commandComposerSubmitClearsDraftAndSendsReturn() async {
+        let recorder = TerminalCommandRecorder()
+        let manager = SessionManager(
+            sshClientFactory: {
+                RecordingSSHClient(recorder: recorder, initialDirectory: "/")
+            }
+        )
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+
+        runtime.connectLocalShell()
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        runtime.commandComposerText = "pwd"
+        runtime.commandComposerSelection = NSRange(location: 3, length: 0)
+
+        await recorder.reset()
+        runtime.submitCommandComposer()
+
+        let submitted = await waitUntilAsync(timeout: 2.0) {
+            await recorder.rawWrites.contains(String(UnicodeScalar(0x0D)!))
+        }
+        #expect(submitted)
+        #expect(runtime.commandComposerText.isEmpty)
+        #expect(runtime.commandComposerSelection.location == 0)
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

@@ -3,10 +3,15 @@ import RemoraCore
 
 actor TerminalCommandRecorder {
     private(set) var commands: [String] = []
+    private(set) var rawWrites: [String] = []
     private(set) var resizeRequests: [PTYSize] = []
 
     func append(_ command: String) {
         commands.append(command)
+    }
+
+    func appendRawWrite(_ text: String) {
+        rawWrites.append(text)
     }
 
     func appendResize(_ size: PTYSize) {
@@ -15,6 +20,7 @@ actor TerminalCommandRecorder {
 
     func reset() {
         commands.removeAll(keepingCapacity: false)
+        rawWrites.removeAll(keepingCapacity: false)
         resizeRequests.removeAll(keepingCapacity: false)
     }
 }
@@ -97,6 +103,7 @@ final class RecordingShellSession: SSHTransportSessionProtocol, @unchecked Senda
     func write(_ data: Data) async throws {
         guard isRunning else { return }
         guard let input = String(data: data, encoding: .utf8) else { return }
+        await recorder.appendRawWrite(input)
 
         for character in input {
             if character == "\r" || character == "\n" {
