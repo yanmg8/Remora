@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import RemoraCore
+import RemoraTerminal
 @testable import RemoraApp
 
 @MainActor
@@ -323,6 +324,63 @@ struct TerminalRuntimeTests {
             #expect(only.columns == 96 && only.rows == 33, "Coalesced resize should use the latest size.")
         }
         runtime.disconnect()
+    }
+
+    @Test
+    func commandComposerIsVisibleByDefault() {
+        let runtime = TerminalRuntime()
+
+        #expect(runtime.isInteractiveTerminalMode == false)
+        #expect(runtime.isCommandComposerVisible == true)
+        #expect(runtime.commandComposerText.isEmpty)
+    }
+
+    @Test
+    func commandComposerHidesInInteractiveTerminalMode() {
+        let runtime = TerminalRuntime()
+
+        runtime.updateTerminalInteractionState(
+            TerminalInteractionState(
+                isAlternateBufferActive: true,
+                isMouseReportingEnabled: false,
+                isApplicationCursorKeysEnabled: false
+            )
+        )
+
+        #expect(runtime.isInteractiveTerminalMode == true)
+        #expect(runtime.isCommandComposerVisible == false)
+    }
+
+    @Test
+    func commandComposerDraftSurvivesInteractiveModeTransitions() {
+        let runtime = TerminalRuntime()
+        runtime.commandComposerText = "echo hello"
+        runtime.commandComposerSelection = NSRange(location: 4, length: 0)
+
+        runtime.updateTerminalInteractionState(
+            TerminalInteractionState(
+                isAlternateBufferActive: true,
+                isMouseReportingEnabled: true,
+                isApplicationCursorKeysEnabled: true
+            )
+        )
+
+        #expect(runtime.isCommandComposerVisible == false)
+        #expect(runtime.commandComposerText == "echo hello")
+        #expect(runtime.commandComposerSelection.location == 4)
+
+        runtime.updateTerminalInteractionState(
+            TerminalInteractionState(
+                isAlternateBufferActive: false,
+                isMouseReportingEnabled: false,
+                isApplicationCursorKeysEnabled: false
+            )
+        )
+
+        #expect(runtime.isInteractiveTerminalMode == false)
+        #expect(runtime.isCommandComposerVisible == true)
+        #expect(runtime.commandComposerText == "echo hello")
+        #expect(runtime.commandComposerSelection.location == 4)
     }
 
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {

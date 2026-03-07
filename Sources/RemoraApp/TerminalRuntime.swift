@@ -33,6 +33,10 @@ final class TerminalRuntime: ObservableObject {
     @Published var connectionMode: ConnectionMode = .local
     @Published var transcriptSnapshot: String = ""
     @Published var hostKeyPromptMessage: String?
+    @Published var commandComposerText: String = ""
+    @Published var commandComposerSelection: NSRange = NSRange(location: 0, length: 0)
+    @Published private(set) var isCommandComposerVisible: Bool = true
+    @Published private(set) var isInteractiveTerminalMode: Bool = false
     @Published private(set) var workingDirectory: String?
     @Published private(set) var connectedSSHHost: RemoraCore.Host?
     @Published private(set) var lastConnectedSSHHost: RemoraCore.Host?
@@ -99,6 +103,11 @@ final class TerminalRuntime: ObservableObject {
             // Inject response back into PTY input
             DispatchQueue.main.async {
                 self?.enqueueInput(data)
+            }
+        }
+        view.onInteractionStateChange = { [weak self] state in
+            DispatchQueue.main.async {
+                self?.updateTerminalInteractionState(state)
             }
         }
         flushPendingOutputIfNeeded()
@@ -281,6 +290,11 @@ final class TerminalRuntime: ObservableObject {
 
     func dismissHostKeyPrompt() {
         hostKeyPromptMessage = nil
+    }
+
+    func updateTerminalInteractionState(_ state: TerminalInteractionState) {
+        isInteractiveTerminalMode = state.isInteractiveTerminalMode
+        isCommandComposerVisible = !state.isInteractiveTerminalMode
     }
 
     // PTY Debug Logging
