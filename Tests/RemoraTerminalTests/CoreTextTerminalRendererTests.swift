@@ -14,4 +14,13 @@ struct CoreTextTerminalRendererTests {
         #expect(renderer.baselineOffsetForTesting >= descent)
         #expect(renderer.baselineOffsetForTesting < renderer.lineHeight)
     }
+
+    @Test
+    func cellWidthTracksFontAdvanceWithoutArtificialExpansion() {
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let renderer = CoreTextTerminalRenderer(font: font)
+        let expectedWidth = ("W" as NSString).size(withAttributes: [.font: font]).width
+
+        #expect(abs(renderer.cellWidth - expectedWidth) < 0.5)
+    }
 }

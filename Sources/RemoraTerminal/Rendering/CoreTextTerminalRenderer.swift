@@ -118,7 +118,7 @@ public final class CoreTextTerminalRenderer {
 
         let sample = "W" as NSString
         let size = sample.size(withAttributes: [.font: font])
-        cellWidth = max(1, ceil(size.width))
+        cellWidth = max(1, size.width)
 
         let contentHeight = max(1, ascent + descent)
         self.contentHeight = contentHeight
