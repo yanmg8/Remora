@@ -328,6 +328,43 @@ struct TerminalRuntimeTests {
     }
 
     @Test
+    func transcriptSnapshotStripsANSIEditingSequences() async {
+        let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+
+        runtime.connectLocalShell()
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+                && runtime.transcriptSnapshot.contains("% ")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        runtime.sendText("whoami")
+        let typed = await waitUntil(timeout: 2.0) {
+            runtime.transcriptSnapshot.contains("whoami")
+        }
+        #expect(typed)
+        guard typed else { return }
+
+        let baselineSnapshot = runtime.transcriptSnapshot
+        runtime.sendLeftArrow(count: 2)
+        runtime.sendText("X")
+        let updated = await waitUntil(timeout: 2.0) {
+            runtime.transcriptSnapshot != baselineSnapshot
+                && runtime.transcriptSnapshot.contains("X")
+        }
+        #expect(updated)
+        guard updated else { return }
+
+        #expect(
+            !runtime.transcriptSnapshot.contains("\u{1B}"),
+            "Transcript snapshot should not expose raw ANSI editing sequences."
+        )
+        runtime.disconnect()
+    }
+
+    @Test
     func typedEchoReachesTerminalViewWithoutFrameScaleDelay() async {
         let manager = SessionManager(sshClientFactory: { MockSSHClient() })
         let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)

@@ -742,7 +742,13 @@ final class TerminalRuntime: ObservableObject {
     }
 
     private func refreshTranscriptSnapshot() {
-        transcriptSnapshot = transcriptBuffer
+        let sanitized = stripANSISequences(from: transcriptBuffer)
+            .unicodeScalars
+            .filter {
+                !CharacterSet.controlCharacters.contains($0) || $0 == "\t" || $0 == "\n" || $0 == "\r"
+            }
+            .map(Character.init)
+        transcriptSnapshot = String(sanitized)
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
     }
