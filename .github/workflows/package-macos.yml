@@ -175,10 +175,19 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Build release notes from changelog
+        if: steps.ref_guard.outputs.tag_on_main == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x scripts/extract_release_notes.sh
+          scripts/extract_release_notes.sh "${GITHUB_REF_NAME}" CHANGELOG.md > RELEASE_NOTES.md
+
       - name: Attach assets to GitHub release
         if: steps.ref_guard.outputs.tag_on_main == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          body_path: RELEASE_NOTES.md
           files: |
             dist/Remora-*.zip
             dist/Remora-*.zip.sha256

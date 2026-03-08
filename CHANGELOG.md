@@ -6,9 +6,27 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [v0.10.4] - 2026-03-08
+
+### Added
+
+- Shell cursor navigation now supports direct mouse positioning on the active prompt line.
+- Terminal shell editing now hands off keyboard input correctly when TUI apps take over the screen.
+
 ### Changed
 
+- Terminal input now feels more immediate by flushing active-pane output without the extra frame of delay.
+- Terminal caret rendering now blinks, aligns with glyph metrics, and stays in sync with IME placement.
+- Terminal buffer reflow behaves more reliably after width changes.
 - License switched from Apache-2.0 to MIT.
+
+### Fixed
+
+- Left/right arrow movement, Command-based cursor jumps, and prompt-line mouse clicks now land on the expected shell position.
+- Terminal caret hit-testing no longer requires repeated clicks to settle onto the intended column.
+- Terminal cell width uses precise glyph measurements, removing the visible gap between prompt text and caret.
+- Accessibility transcript snapshots now strip shell editing escape sequences instead of exposing raw ANSI bytes.
+- Packaged app bundles keep SwiftPM resources under `Contents/Resources`, avoiding launch-time `Bundle.module` failures.
 
 ## [v0.9.1-open-source-readiness] - 2026-03-04
 
