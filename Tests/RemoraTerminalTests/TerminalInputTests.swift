@@ -319,11 +319,15 @@ struct TerminalInputTests {
         let caretRect = localCaretRect(in: view)
         let cellWidth = view.pointForBufferCellForTesting(row: cursor.row, column: cursor.column).x
             - view.pointForBufferCellForTesting(row: cursor.row, column: max(0, cursor.column - 1)).x
-        let lineHeight = view.pointForBufferCellForTesting(row: cursor.row, column: cursor.column).y
-            - view.pointForBufferCellForTesting(row: cursor.row + 1, column: cursor.column).y
+        let currentCenterY = view.pointForBufferCellForTesting(row: cursor.row, column: cursor.column).y
+        let nextRowCenterY = view.pointForBufferCellForTesting(row: cursor.row + 1, column: cursor.column).y
+        let lineHeight = currentCenterY - nextRowCenterY
+        let rowTopY = currentCenterY + (lineHeight * 0.5)
+        let caretTopInset = rowTopY - caretRect.maxY
 
         #expect(caretRect.width < abs(cellWidth))
         #expect(caretRect.height < abs(lineHeight))
+        #expect(caretTopInset <= 1.5)
     }
 
     @Test

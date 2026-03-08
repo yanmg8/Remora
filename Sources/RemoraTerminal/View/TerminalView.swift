@@ -839,9 +839,13 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let textHeight = min(renderer.contentHeightForCaret, renderer.lineHeight - 2)
         let verticalPadding = max(0, renderer.lineHeight - textHeight)
         let width = min(renderer.cellWidth, max(2, round(renderer.cellWidth * 0.18)))
+        let caretY = min(
+            rowY + verticalPadding,
+            rowY + floor(verticalPadding * 0.5) + 2
+        )
         return CGRect(
             x: renderer.horizontalInset + CGFloat(screenBuffer.cursorColumn) * renderer.cellWidth,
-            y: rowY + floor(verticalPadding * 0.5),
+            y: caretY,
             width: width,
             height: textHeight
         )
