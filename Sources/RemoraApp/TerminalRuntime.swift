@@ -391,6 +391,10 @@ final class TerminalRuntime: ObservableObject {
         }
 
         outputBatchBuffer.append(data)
+        if isPaneActive {
+            flushPendingOutputBatch(for: sessionID)
+            return
+        }
         if outputBatchBuffer.count >= outputCoalesceMaxBytes {
             flushPendingOutputBatch(for: sessionID)
             return

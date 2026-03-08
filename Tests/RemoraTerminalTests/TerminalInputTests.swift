@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import RemoraTerminal
 
+@Suite(.serialized)
 @MainActor
 struct TerminalInputTests {
     private final class DataCapture: @unchecked Sendable {
@@ -347,6 +348,25 @@ struct TerminalInputTests {
     }
 
     @Test
+    func terminalViewFeedPublishesShellSnapshotWithoutVisibleLag() async {
+        let view = TerminalView(rows: 4, columns: 20)
+        view.setFrameSize(NSSize(width: 320, height: 120))
+        view.flushPendingOutputForTesting()
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        view.feed(data: Data("$ x".utf8))
+
+        let updated = await waitUntil(timeout: 0.1) {
+            view.shellInputSnapshot()?.logicalLineText.contains("$ x") == true
+        }
+        let elapsed = milliseconds(start.duration(to: clock.now))
+
+        #expect(updated)
+        #expect(elapsed < 14, "Terminal view consumed shell output in \(elapsed)ms, which adds visible input lag.")
+    }
+
+    @Test
     func terminalViewShellClickUsesNearestCaretStop() {
         let view = makeShellPromptViewForTesting(command: "hello")
         view.setFrameSize(NSSize(width: 400, height: 120))
@@ -511,6 +531,23 @@ struct TerminalInputTests {
         }
         let windowRect = window.convertFromScreen(screenRect)
         return view.convert(windowRect, from: nil)
+    }
+
+    private func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return condition()
+    }
+
+    private func milliseconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1_000_000_000_000_000
     }
 
 }

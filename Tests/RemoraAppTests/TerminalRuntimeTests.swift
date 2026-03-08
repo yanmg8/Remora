@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import RemoraCore
+import RemoraTerminal
 @testable import RemoraApp
 
 @MainActor
@@ -184,6 +185,7 @@ struct TerminalRuntimeTests {
         runtime.connectLocalShell()
         let connected = await waitUntil(timeout: 2.0) {
             runtime.connectionState.contains("Connected")
+                && runtime.transcriptSnapshot.contains("% ")
         }
         #expect(connected)
         guard connected else { return }
@@ -325,6 +327,38 @@ struct TerminalRuntimeTests {
         runtime.disconnect()
     }
 
+    @Test
+    func typedEchoReachesTerminalViewWithoutFrameScaleDelay() async {
+        let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+        let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+        let view = TerminalView(rows: 4, columns: 40)
+        view.setFrameSize(NSSize(width: 480, height: 120))
+        runtime.attach(view: view)
+
+        runtime.connectLocalShell()
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected")
+                && view.shellInputSnapshot()?.logicalLineText.contains("% ") == true
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        let baselineLength = view.shellInputSnapshot()?.logicalLineText.count ?? 0
+        let clock = ContinuousClock()
+        let start = clock.now
+        runtime.sendText("x")
+
+        let echoed = await waitUntilFast(timeout: 0.1) {
+            (view.shellInputSnapshot()?.logicalLineText.count ?? 0) > baselineLength
+        }
+        let elapsed = start.duration(to: clock.now)
+        let elapsedMS = milliseconds(elapsed)
+
+        #expect(echoed)
+        #expect(elapsedMS < 20, "Terminal echo took \(elapsedMS)ms, which feels laggy for prompt editing.")
+        runtime.disconnect()
+    }
+
     private func waitUntil(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -345,5 +379,22 @@ struct TerminalRuntimeTests {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         return await condition()
+    }
+
+    private func waitUntilFast(timeout: TimeInterval, condition: @escaping () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return condition()
+    }
+
+    private func milliseconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) * 1_000
+            + Double(components.attoseconds) / 1_000_000_000_000_000
     }
 }

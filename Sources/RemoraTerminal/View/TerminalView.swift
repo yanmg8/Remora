@@ -228,6 +228,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public func feed(data: Data) {
         _ = ringBuffer.write(data)
+        scheduleImmediateFlush()
     }
 
     public override func draw(_ dirtyRect: NSRect) {
@@ -533,6 +534,16 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             }
         }
         frameScheduler?.start()
+    }
+
+    private func scheduleImmediateFlush() {
+        guard markFlushScheduled() else { return }
+        DispatchQueue.main.async {
+            defer {
+                self.clearFlushScheduled()
+            }
+            self.flushFrame()
+        }
     }
 
     private func scheduleWelcomeText() {
