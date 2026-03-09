@@ -348,6 +348,30 @@ struct TerminalInputTests {
     }
 
     @Test
+    func terminalViewKeepsCaretVisibleWhileCursorMovementContinues() {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        #expect(view.isCaretBlinkVisibleForTesting())
+
+        view.registerCaretMovementForTesting()
+        view.registerCaretMovementForTesting()
+        view.processCaretBlinkTickRelativeToSuppressionDeadlineForTesting(.milliseconds(-150))
+
+        #expect(view.isCaretBlinkVisibleForTesting())
+    }
+
+    @Test
+    func terminalViewResumesBlinkingAfterCursorMovementStops() {
+        let view = makeShellPromptViewForTesting(command: "hello")
+        #expect(view.isCaretBlinkVisibleForTesting())
+
+        view.registerCaretMovementForTesting()
+        view.registerCaretMovementForTesting()
+        view.processCaretBlinkTickRelativeToSuppressionDeadlineForTesting(.milliseconds(1))
+
+        #expect(!view.isCaretBlinkVisibleForTesting())
+    }
+
+    @Test
     func terminalViewFeedPublishesShellSnapshotWithoutVisibleLag() async {
         let view = TerminalView(rows: 4, columns: 20)
         view.setFrameSize(NSSize(width: 320, height: 120))

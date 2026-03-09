@@ -138,6 +138,9 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
     private var scrollLineAccumulator: Double = 0
     private var caretBlinkTask: Task<Void, Never>?
     private var isCaretBlinkVisible = true
+    private let caretBlinkClock = ContinuousClock()
+    private let caretBlinkInterval: Duration = .milliseconds(550)
+    private var caretBlinkSuppressedUntil: ContinuousClock.Instant?
     private var lastInteractionState = TerminalInteractionState(
         isAlternateBufferActive: false,
         isMouseReportingEnabled: false,
@@ -246,19 +249,20 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func keyDown(with event: NSEvent) {
         guard allowsKeyboardInput else { return }
-        resetCaretBlink()
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c" {
+            resetCaretBlink()
             copy(nil)
             return
         }
 
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "v" {
+            resetCaretBlink()
             paste(nil)
             return
         }
 
-        if let input = directTerminalControlInput(for: event)
-        {
+        if let input = directTerminalControlInput(for: event) {
+            registerCaretMovement()
             discardMarkedText()
             scrollToBottomOnUserInputIfNeeded()
             onInput?(input)
@@ -266,18 +270,21 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         }
 
         if let legacyControl = inputMapper.mapLegacyControl(event: event) {
+            resetCaretBlink()
             scrollToBottomOnUserInputIfNeeded()
             onInput?(legacyControl)
             return
         }
 
         if let input = inputMapper.mapKittyKeyDown(event: event) {
+            resetCaretBlink()
             scrollToBottomOnUserInputIfNeeded()
             onInput?(input)
             return
         }
 
         if shouldSendRawControlInput(event) {
+            resetCaretBlink()
             guard let input = inputMapper.map(event: event) else {
                 super.keyDown(with: event)
                 return
@@ -287,6 +294,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             return
         }
 
+        resetCaretBlink()
         scrollToBottomOnUserInputIfNeeded()
         interpretKeyEvents([event])
     }
@@ -296,7 +304,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         guard let input = keyEquivalentTerminalInput(for: event) else {
             return super.performKeyEquivalent(with: event)
         }
-        resetCaretBlink()
+        registerCaretMovement()
         discardMarkedText()
         scrollToBottomOnUserInputIfNeeded()
         onInput?(input)
@@ -474,7 +482,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
                 targetBufferRow: pendingClick.targetRow,
                 targetColumn: pendingClick.targetColumn
             ) {
-                resetCaretBlink()
+                registerCaretMovement()
                 scrollToBottomOnUserInputIfNeeded()
                 onInput?(input)
                 selection = nil
@@ -556,6 +564,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let chunk = ringBuffer.read(maxBytes: 64 * 1024)
         guard !chunk.isEmpty else { return }
 
+        let cursorBeforeParse = (row: screenBuffer.cursorRow, column: screenBuffer.cursorColumn)
         parser.parse(chunk, into: screenBuffer)
         inputMapper.applicationCursorKeysEnabled = parser.applicationCursorKeysEnabled
         inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
@@ -572,7 +581,10 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             dirtyRows.formUnion(changedRows)
             updateAccessibilitySnapshot()
         }
-        resetCaretBlink()
+        let cursorAfterParse = (row: screenBuffer.cursorRow, column: screenBuffer.cursorColumn)
+        if cursorBeforeParse != cursorAfterParse {
+            registerCaretMovement()
+        }
         onShellInputSnapshotChange?(shellInputSnapshot())
 
         let elapsed = start.duration(to: .now)
@@ -624,6 +636,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         let pending = ringBuffer.drainAll()
         guard !pending.isEmpty else { return }
 
+        let cursorBeforeParse = (row: screenBuffer.cursorRow, column: screenBuffer.cursorColumn)
         parser.parse(pending, into: screenBuffer)
         inputMapper.applicationCursorKeysEnabled = parser.applicationCursorKeysEnabled
         inputMapper.kittyKeyboardFlags = parser.kittyKeyboardFlags
@@ -631,7 +644,10 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         bracketedPasteEnabled = parser.bracketedPasteEnabled
         publishInteractionStateIfNeeded()
         dirtyRows.formUnion(screenBuffer.consumeDirtyRows())
-        resetCaretBlink()
+        let cursorAfterParse = (row: screenBuffer.cursorRow, column: screenBuffer.cursorColumn)
+        if cursorBeforeParse != cursorAfterParse {
+            registerCaretMovement()
+        }
     }
 
     private func drawCursor(in context: CGContext) {
@@ -867,19 +883,18 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
             caretBlinkTask?.cancel()
             caretBlinkTask = nil
             isCaretBlinkVisible = true
+            caretBlinkSuppressedUntil = nil
             return
         }
         guard caretBlinkTask == nil else { return }
 
         caretBlinkTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(550))
+                guard let self else { return }
+                try? await Task.sleep(for: self.caretBlinkInterval)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
-                    guard let self else { return }
-                    guard self.window?.firstResponder as AnyObject? === self, self.allowsKeyboardInput else { return }
-                    self.isCaretBlinkVisible.toggle()
-                    self.needsDisplay = true
+                    self.processCaretBlinkTick(now: self.caretBlinkClock.now, requireFocusedResponder: true)
                 }
             }
         }
@@ -887,7 +902,34 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     private func resetCaretBlink() {
         isCaretBlinkVisible = true
+        caretBlinkSuppressedUntil = nil
         updateCaretBlinking()
+        needsDisplay = true
+    }
+
+    private func registerCaretMovement() {
+        isCaretBlinkVisible = true
+        caretBlinkSuppressedUntil = caretBlinkClock.now.advanced(by: caretBlinkInterval)
+        updateCaretBlinking()
+        needsDisplay = true
+    }
+
+    private func processCaretBlinkTick(
+        now: ContinuousClock.Instant,
+        requireFocusedResponder: Bool
+    ) {
+        if requireFocusedResponder {
+            guard window?.firstResponder as AnyObject? === self, allowsKeyboardInput else { return }
+        }
+        if let suppressedUntil = caretBlinkSuppressedUntil {
+            if now < suppressedUntil {
+                isCaretBlinkVisible = true
+                needsDisplay = true
+                return
+            }
+            caretBlinkSuppressedUntil = nil
+        }
+        isCaretBlinkVisible.toggle()
         needsDisplay = true
     }
 
@@ -1301,7 +1343,7 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
 
     public override func doCommand(by selector: Selector) {
         if let input = inputMapper.map(command: selector) {
-            resetCaretBlink()
+            registerCaretMovement()
             scrollToBottomOnUserInputIfNeeded()
             onInput?(input)
             return
@@ -1340,8 +1382,23 @@ public final class TerminalView: NSView, @preconcurrency NSTextInputClient {
         isCaretBlinkVisible
     }
 
+    func registerCaretMovementForTesting() {
+        isCaretBlinkVisible = true
+        caretBlinkSuppressedUntil = caretBlinkClock.now.advanced(by: caretBlinkInterval)
+    }
+
     func advanceCaretBlinkForTesting() {
         isCaretBlinkVisible.toggle()
+    }
+
+    func processCaretBlinkTickRelativeToSuppressionDeadlineForTesting(_ offset: Duration) {
+        guard let suppressedUntil = caretBlinkSuppressedUntil else {
+            fatalError("Expected active caret blink suppression window")
+        }
+        processCaretBlinkTick(
+            now: suppressedUntil.advanced(by: offset),
+            requireFocusedResponder: false
+        )
     }
 
     func pointForBufferCellForTesting(row: Int, column: Int) -> CGPoint {
