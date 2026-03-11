@@ -10,6 +10,9 @@
   A native macOS SSH + SFTP workspace built with SwiftUI and a custom high-performance terminal engine.
 </p>
 
+> [!WARNING]
+> Remora is still a WIP, early-stage project. Expect rough edges, missing workflows, and behavioral changes between releases. If you hit a bug, regression, or confusing UX, please open an issue as early as possible: <https://github.com/wuuJiawei/Remora/issues>
+
 <p align="center">
   <a href="./README_ZH.md">简体中文</a> •
   <a href="#features">Features</a> •

@@ -10,6 +10,9 @@
   一个使用 SwiftUI 构建的原生 macOS SSH + SFTP 工作台，内置自研高性能终端引擎。
 </p>
 
+> [!WARNING]
+> Remora 目前仍是 WIP 的早期版本，功能和交互还会持续调整，也可能存在缺口或回归问题。若你遇到 Bug、回归或任何不顺手的体验，请尽快提交 Issue：<https://github.com/wuuJiawei/Remora/issues>
+
 <p align="center">
   <a href="./README.md">English</a> •
   <a href="#功能特性">功能特性</a> •
