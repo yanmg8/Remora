@@ -2,6 +2,8 @@
 
 Thanks for your interest in Remora.
 
+Please follow [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) in project and community spaces.
+
 ## Ground Rules
 
 - Be respectful and collaborative.
@@ -38,6 +40,9 @@ UI automation tests are opt-in:
 ```bash
 REMORA_RUN_UI_TESTS=1 swift test --filter RemoraUIAutomationTests
 ```
+
+The repository also includes a manual GitHub Actions UI automation workflow intended for a
+self-hosted macOS runner with Accessibility permission enabled.
 
 ## Branches & Commits
 
@@ -81,3 +86,5 @@ Use GitHub Issues: <https://github.com/wuuJiawei/Remora/issues>
 Please do not post sensitive vulnerabilities publicly first.
 
 For security-related reports, follow `SECURITY.md`.
+
+For general usage help and troubleshooting, see `SUPPORT.md`.

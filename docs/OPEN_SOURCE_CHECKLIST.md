@@ -7,13 +7,13 @@ Use this checklist before making the repository public.
 - [ ] Confirm no secrets/tokens/private keys are present in git history.
 - [ ] Review logs/diagnostics to ensure sensitive data is redacted.
 - [ ] Validate host key trust flow and credential storage behavior.
-- [ ] Ensure `SECURITY.md` reflects the correct private contact channel.
+- [x] Ensure `SECURITY.md` reflects the correct private contact channel.
 
 ## 2. Licensing & Legal
 
 - [x] Add top-level `LICENSE` (MIT).
-- [ ] Verify all bundled assets/fonts/icons are redistributable.
-- [ ] Add `NOTICE` file if third-party notices are required.
+- [x] Verify all bundled assets/fonts/icons are redistributable.
+- [x] Add `NOTICE` file if third-party notices are required.
 - [ ] Confirm no proprietary/internal docs remain in public tree.
 
 ## 3. Documentation Quality
@@ -22,12 +22,12 @@ Use this checklist before making the repository public.
 - [x] Add `CONTRIBUTING.md`.
 - [x] Add `SECURITY.md`.
 - [x] Add screenshots/GIFs for core workflows (terminal, SSH, file manager).
-- [ ] Add architecture diagram for `RemoraCore` / `RemoraTerminal` / `RemoraApp`.
+- [x] Add architecture diagram for `RemoraCore` / `RemoraTerminal` / `RemoraApp`.
 
 ## 4. Build & CI
 
-- [ ] Add CI workflow for `swift build` + targeted tests.
-- [ ] Add optional CI lane for UI automation (separate/manual trigger).
+- [x] Add CI workflow for `swift build` + targeted tests.
+- [x] Add optional CI lane for UI automation (separate/manual trigger).
 - [ ] Enforce formatting/lint strategy (if adopted).
 
 ## 5. Product Readiness
@@ -42,10 +42,10 @@ Use this checklist before making the repository public.
 - [x] Decide versioning policy (SemVer suggested).
 - [x] Create initial changelog (`CHANGELOG.md`).
 - [ ] Tag first public release and attach release notes.
-- [ ] Add issue templates and PR template.
+- [x] Add issue templates and PR template.
 
 ## 7. Community Setup (Recommended)
 
-- [ ] Add `CODE_OF_CONDUCT.md`.
-- [ ] Add `SUPPORT.md` (where to ask usage questions).
+- [x] Add `CODE_OF_CONDUCT.md`.
+- [x] Add `SUPPORT.md` (where to ask usage questions).
 - [ ] Configure Discussions (optional).

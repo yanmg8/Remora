@@ -1,0 +1,16 @@
+Remora
+Copyright (c) 2026 JaveysWuu
+
+This repository currently ships:
+
+- Remora source code under the MIT License in `LICENSE`
+- project-owned brand assets in `logo.png`, `Resources/AppIcon.icns`, and
+  `Resources/AppIcon.iconset/*`
+
+This repository does not bundle third-party font files or third-party icon packs.
+Typography and symbols shown by the app come from Apple platform resources at runtime and
+are not redistributed as standalone assets in this repository.
+
+No additional third-party notice text is currently required for the files bundled in this
+repository. If that changes, this file should be updated alongside the relevant asset or
+dependency addition.

@@ -142,12 +142,14 @@ A: 到系统设置手动放行一次：
 欢迎贡献代码与建议。
 
 - 提交 PR 前请先阅读 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。
+- 社区互动请遵守 [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)。
 - Bug 或功能建议请使用 [GitHub Issues](https://github.com/wuuJiawei/Remora/issues)。
 
 ## 社区
 
 - GitHub: [wuuJiawei/Remora](https://github.com/wuuJiawei/Remora)
 - Issues: [提交 Bug / 功能建议](https://github.com/wuuJiawei/Remora/issues)
+- Support: [`SUPPORT.md`](./SUPPORT.md)
 - X（更新公告）: [@1Javeys](https://x.com/1Javeys)
 
 ## 安全

@@ -143,12 +143,14 @@ high-level flow between `RemoraCore`, `RemoraTerminal`, and `RemoraApp`.
 Contributions are welcome.
 
 - Please read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a PR.
+- Please follow [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) in community spaces.
 - For bugs/feature requests, use [GitHub Issues](https://github.com/wuuJiawei/Remora/issues).
 
 ## Community
 
 - GitHub: [wuuJiawei/Remora](https://github.com/wuuJiawei/Remora)
 - Issues: [Report a bug / request a feature](https://github.com/wuuJiawei/Remora/issues)
+- Support: [`SUPPORT.md`](./SUPPORT.md)
 - X (updates): [@1Javeys](https://x.com/1Javeys)
 
 ## Security
