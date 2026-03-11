@@ -16,6 +16,9 @@ This note compares export or persisted connection formats from the SSH tools the
 - WindTerm
 - FinalShell
 - electerm
+- Shell sessions
+- PuTTY sessions
+- OpenSSH sessions
 
 The goal is to identify which formats are practical to import directly, which fields map cleanly to `RemoraCore.Host`, and which tools still need a real sample file before implementation.
 
@@ -291,13 +294,176 @@ Recommendation:
 
 - Ask for one anonymized Termius export file before implementation.
 
+### 6. Shell Sessions
+
+Confidence: medium-high for parsing, low for product fit
+
+Observed source:
+
+- WindTerm stores shell sessions in the same `user.sessions` array as SSH sessions.
+- Sample entries on this machine include:
+  - `session.protocol = "Shell"`
+  - `session.label`
+  - `session.target`
+  - `session.system`
+  - `session.group = "Shell sessions"`
+  - `process.arguments`
+  - `process.workingDirectory`
+
+Observed meaning:
+
+- These are local process launch profiles, not remote hosts.
+- Example targets are `/bin/zsh`, `/bin/bash`, `/bin/sh`.
+
+Import implications:
+
+- Parsing is easy.
+- Mapping into current `RemoraCore.Host` is not a good fit because `Host` assumes:
+  - remote `address`
+  - remote authentication method
+  - SSH connection policies
+
+Product implication:
+
+- Supporting shell-session import is not blocked by format complexity.
+- It is blocked by the current data model and UI semantics.
+- To support it properly, Remora would need a separate local-session model, or a broader unified session model instead of only `Host`.
+
+Practicality:
+
+- Feasible only if product scope expands beyond SSH hosts.
+- Not recommended as part of the current `HostConnectionImporter`.
+
+### 7. PuTTY Sessions
+
+Confidence: medium-high
+
+Most useful import artifacts:
+
+- Windows registry export file: `.reg`
+- Live registry dump from:
+  - `HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions`
+- On Unix, PuTTY stores data under `~/.putty`, but I do not yet have a trustworthy per-session file sample from that path.
+
+Documented storage:
+
+- Official PuTTY docs say saved sessions are stored in:
+  - `HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions`
+- Official docs also say Unix builds store data under:
+  - `~/.putty`
+
+Observed session structure from public `.reg` examples:
+
+- File type: Windows Registry export text
+- Top level: one or more registry sections like:
+  - `[HKEY_CURRENT_USER\\Software\\SimonTatham\\PuTTY\\Sessions\\My%20Session]`
+- Common values inside each section:
+  - `HostName`
+  - `Protocol`
+  - `PortNumber`
+  - `UserName`
+  - `PublicKeyFile`
+  - `ProxyHost`
+  - `ProxyPort`
+  - `ProxyUsername`
+  - `PingIntervalSecs`
+  - `Compression`
+  - `RemoteCommand`
+
+Import implications:
+
+- Supporting exported `.reg` is practical.
+- Limit import to sections under:
+  - `...\\PuTTY\\Sessions\\...`
+- Limit import to:
+  - `Protocol = "ssh"`
+- Session name comes from the registry key path and needs URL-style decoding of escaped names like `%20`.
+- `HostName -> address`
+- `PortNumber -> port`
+- `UserName -> username`
+- `PublicKeyFile -> privateKeyPath`
+- Keepalive can be inferred from `PingIntervalSecs`
+
+Credential implications:
+
+- PuTTY does not give a clean portable plain-text password field in normal saved session exports.
+- Key passphrases and passwords should be treated as unsupported for import.
+
+Practicality:
+
+- Good target.
+- `.reg` import on macOS is realistic because the file is plain text and does not require Windows APIs.
+- Windows live-registry import is out of scope for the current macOS app, but exported `.reg` import is enough.
+
+### 8. OpenSSH Sessions
+
+Confidence: high
+
+Most useful import artifacts:
+
+- `~/.ssh/config`
+- files referenced via `Include`
+
+Documented structure:
+
+- OpenSSH client configuration is plain text.
+- It is organized by `Host` blocks with directives such as:
+  - `Host`
+  - `HostName`
+  - `User`
+  - `Port`
+  - `IdentityFile`
+  - `ProxyJump`
+  - `ProxyCommand`
+  - `Include`
+  - `Match`
+
+Import implications:
+
+- This is the most practical non-proprietary format to support.
+- For common configs, mapping is direct:
+  - `Host` alias -> `name`
+  - `HostName` -> `address`
+  - `User` -> `username`
+  - `Port` -> `port`
+  - `IdentityFile` -> `privateKeyPath`
+- Passwords are not stored in `ssh_config`, which is expected and acceptable.
+
+Complexity notes:
+
+- `Host` can contain multiple patterns on one line.
+- Wildcards such as `*` and `?` are legal and do not always describe a concrete saved host.
+- `Include` can pull in more files and globs.
+- `Match` introduces context-sensitive rules that are much more complex than simple host aliases.
+- Token expansion exists in some directives.
+
+Recommended support boundary:
+
+- Phase 1:
+  - parse top-level files plus `Include`
+  - support simple `Host` aliases without wildcards
+  - support `HostName`, `User`, `Port`, `IdentityFile`, `ProxyJump`
+  - ignore or warn on `Match`
+- Phase 2:
+  - add wildcard/pattern handling
+  - partial support for `ProxyCommand`
+  - consider merge precedence across multiple matching blocks
+
+Practicality:
+
+- Best target overall.
+- High value, low lock-in, straightforward to test.
+- This should move ahead of most proprietary formats.
+
 ## Recommended Import Priority
 
 ### Tier 1: implement now
 
-1. WindTerm
-2. electerm
-3. Xshell
+1. OpenSSH sessions
+2. WindTerm
+3. electerm
+4. Xshell
+5. PuTTY sessions
 
 These already have a discoverable file structure and enough fields to build a reliable host import path.
 
@@ -307,6 +473,12 @@ These already have a discoverable file structure and enough fields to build a re
 2. Termius
 
 These still need real exported artifacts before we should design a parser.
+
+### Out of current scope unless product model changes
+
+1. Shell sessions
+
+These are parseable, but they do not map cleanly to the current remote-host model.
 
 ## Proposed Parser Strategy
 
@@ -322,6 +494,15 @@ These still need real exported artifacts before we should design a parser.
   - `session.group -> group`
   - `ssh.identityFilePath -> auth.keyReference`
 - Ignore `session.autoLogin` for now
+
+If product scope later includes local sessions:
+
+- keep `session.protocol == "Shell"` in a separate import path
+- map:
+  - `session.label -> displayName`
+  - `session.target -> executable`
+  - `process.arguments -> launchArguments`
+  - `process.workingDirectory -> workingDirectory`
 
 ### electerm
 
@@ -348,19 +529,51 @@ These still need real exported artifacts before we should design a parser.
   - accept `.xts`
   - unzip and import all `.xsh`
 
+### PuTTY
+
+- Phase 1:
+  - accept exported `.reg`
+  - parse sections under `...\\PuTTY\\Sessions\\...`
+  - import only `Protocol=ssh`
+  - decode session name from registry key path
+- Phase 2:
+  - evaluate Unix `~/.putty` file support after obtaining a real sample
+
+### OpenSSH
+
+- Phase 1:
+  - accept `~/.ssh/config` or a selected ssh config file
+  - resolve `Include`
+  - import simple concrete `Host` aliases
+  - map `HostName`, `User`, `Port`, `IdentityFile`, `ProxyJump`
+- Phase 2:
+  - better merge semantics for repeated/matching blocks
+  - optional support for wildcard aliases and more advanced directives
+
 ## Risks
 
 - Credentials are the unstable part across all three feasible targets.
+- Shell sessions are not a parsing risk, but a product-model risk.
 - Session metadata is much easier than password portability.
 - For first implementation, importing host, port, username, group, and key path is much safer than trying to preserve encrypted secrets.
+- OpenSSH and PuTTY both have advanced features whose exact runtime semantics are richer than a simple import model:
+  - `Match`, `Include`, wildcard `Host` blocks in OpenSSH
+  - proxies, remote commands, and non-SSH protocols in PuTTY
 
 ## Sources
 
 - Xshell official export packaging: [NetSarang Xshell/Xftp session export guide](https://netsarang.atlassian.net/wiki/spaces/PUB/pages/175276032/Xshell%2BXftp%2BExporting%2Band%2BImporting%2BSession%2BFiles)
 - Xshell `.xsh` parser sample: [convert_xsh.py gist](https://gist.github.com/serkanh/3782857)
 - WindTerm repository and release notes: [WindTerm GitHub repository](https://github.com/kingToolbox/WindTerm)
+- WindTerm release notes mentioning shell-session import behavior: [WindTerm releases](https://github.com/kingToolbox/WindTerm/releases)
 - FinalShell official docs root: [Hostbuf FinalShell docs](https://www.hostbuf.com/)
 - FinalShell config path article: [How to share or move FinalShell config files](https://www.hostbuf.com/t/988.html)
+- PuTTY saved-session storage docs: [PuTTY config saving](https://documentation.help/PuTTY/config-saving.html)
+- PuTTY data location docs: [PuTTY FAQ A.5.2](https://www.puttyssh.org/0.83/htmldoc/AppendixA.html)
+- OpenSSH client config reference: [OpenBSD ssh_config(5)](https://man.openbsd.org/ssh_config.5)
+- Public PuTTY `.reg` samples used only to infer common field names:
+  - [Sample 1](https://gist.github.com/3047608)
+  - [Sample 2](https://gist.github.com/Ficik/b90d6267859300cf17bb0588ffa95243)
 
 ## Local Inspection Notes
 
