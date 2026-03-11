@@ -1,97 +1,39 @@
 ---
-title: FAQ & Troubleshooting
-description: Frequently asked questions and common issues.
+title: 常见问题
+description: 常见问题解答。
 ---
 
-# FAQ & Troubleshooting
+# 常见问题
 
-## Frequently Asked Questions
+## 如何保存密码？
 
-### General
+Remora 使用 macOS Keychain 安全存储您的凭据。首次连接时，系统会询问是否保存密码到 Keychain。
 
-**Q: Is Remora free?**
-A: Yes, Remora is open source and free to use under the MIT license.
+## 支持哪些 SSH 密钥格式？
 
-**Q: What macOS versions are supported?**
-A: Remora requires macOS 14.0 (Sonoma) or later.
+Remora 支持以下 SSH 密钥格式：
+- RSA (2048/4096 位)
+- ED25519
+- ECDSA (256/384/521 位)
+- DSA (已废弃)
 
-**Q: Can I use Remora for commercial purposes?**
-A: Yes, the MIT license allows commercial use.
+## 如何导入现有 SSH 配置？
 
-### SSH
+Remora 可以从以下来源导入 SSH 配置：
+- SSH config 文件 (`~/.ssh/config`)
+- Remora 导出文件 (`.remora`)
 
-**Q: Does Remora support SSH keys?**
-A: Yes, Remora supports RSA, Ed25519, and ECDSA keys. Place your keys in `~/.ssh/`.
+## 终端支持哪些功能？
 
-**Q: Can I use SSH agent forwarding?**
-A: Yes, enable SSH agent forwarding in host settings.
+Remora 终端支持：
+- ANSI/VT100/VT220 转义序列
+- 256 色和真彩色
+- xterm 鼠标报告
+- 文本选择和复制
 
-**Q: Why can't I connect to my server?**
-A: Check:
-- Server address and port are correct
-- Username is correct
-- Firewall allows SSH connections
-- Server's SSH daemon is running
+## SFTP 传输失败怎么办？
 
-### SFTP
-
-**Q: Can I resume interrupted transfers?**
-A: Yes, SFTP resume is supported for compatible servers.
-
-**Q: Does drag and drop work?**
-A: Yes, drag files from Finder to upload, drag to Finder to download.
-
-### Terminal
-
-**Q: Why doesn't my terminal render correctly?**
-A: Ensure your terminal emulator sends correct escape sequences. Most modern tools are supported.
-
-**Q: Can I use my vim/emacs configuration?**
-A: Yes, Remora's terminal is compatible with vim, neovim, emacs, and other terminal applications.
-
-## Troubleshooting
-
-### Connection Issues
-
-**Problem: "Connection refused"**
-- Verify the server is running
-- Check the port (default is 22)
-- Ensure firewall allows connections
-
-**Problem: "Connection timeout"**
-- Check network connectivity
-- Increase connection timeout in settings
-- Verify server is reachable with `ping`
-
-**Problem: "Authentication failed"**
-- Verify username and password
-- Check SSH key is correctly configured
-- Ensure key permissions are correct (600 for private key)
-
-### Display Issues
-
-**Problem: Terminal colors look wrong**
-- Check $TERM environment variable
-- Set to `xterm-256color` for 256 colors
-
-**Problem: Characters display incorrectly**
-- Ensure UTF-8 encoding is set
-- Check locale settings
-
-### Performance Issues
-
-**Problem: Terminal is slow**
-- Reduce scrollback buffer size
-- Disable unnecessary features in your shell (e.g., git prompt)
-
-**Problem: High CPU usage**
-- Check for runaway processes in the session
-- Reduce terminal refresh rate if needed
-
-## Getting Help
-
-If you encounter issues not covered here:
-
-1. Check [GitHub Issues](https://github.com/wuuJiawei/Remora/issues)
-2. Search for similar issues
-3. Open a new issue with details about your problem
+1. 检查网络连接
+2. 确认服务器 SFTP 服务正常运行
+3. 查看传输日志获取详细错误信息
+4. 重试失败的传输任务

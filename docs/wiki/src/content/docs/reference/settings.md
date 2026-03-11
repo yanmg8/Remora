@@ -1,81 +1,47 @@
 ---
-title: Settings
-description: Application settings and preferences.
+title: 设置
+description: Remora 设置参考。
 ---
 
-# Settings
+# 设置参考
 
-Remora provides comprehensive settings to customize your experience. Access settings via **Remora > Settings** or press `Cmd+,`.
+## 常规设置
 
-## General
+### 外观
 
-### Language
-- **Options**: System, English, 简体中文
-- Default: System (follows your macOS language preference)
+| 设置 | 说明 |
+|------|------|
+| 主题 | 亮色/暗色/跟随系统 |
+| 缩放 | 界面缩放比例 |
 
-### Appearance
-- **Theme**: Light, Dark, System
-- Default: System
+### 语言
 
-### Startup
-- **Launch at Login**: Start Remora when you log in
-- **Restore Sessions**: Restore previous SSH sessions on launch
+选择界面显示语言：
+- English
+- 简体中文
 
-## Terminal
+## 连接设置
 
-### Font
-- **Font Family**: Monospace font for terminal
-- **Font Size**: Adjustable (default: 13pt)
+### 默认连接参数
 
-### Scrollback
-- **Buffer Size**: Number of lines to keep (default: 10000)
-- **Scroll to Bottom on Input**: Automatically scroll to bottom when you type
+- 默认端口：22
+- 连接超时：30 秒
+- 保持连接间隔：60 秒
 
-### Bell
-- **Terminal Bell**: Audible or visual bell on BEL character
-- **Visual Bell Flash**: Flash window on bell
+### 凭据存储
 
-## SSH
+选择凭据存储方式：
+- **仅 Keychain** (推荐)：安全存储在 macOS Keychain
+- **记住密码**：短期内存储
 
-### Authentication
-- **Default Auth Method**: Password or SSH Key
-- **SSH Key Directory**: Custom path (default: ~/.ssh)
+## 终端设置
 
-### Connection
-- **Keep Alive Interval**: Seconds between keep-alive packets (default: 60)
-- **Connection Timeout**: Seconds to wait before timeout (default: 30)
+- 默认终端类型
+- 启动 shell 命令
+- 环境变量
 
-### Security
-- **Strict Host Key Checking**: ask, yes, or no
-- **Verify Host Keys**: Enable/disable host key verification
+## 高级设置
 
-## File Manager
-
-### Transfers
-- **Concurrent Transfers**: Maximum simultaneous transfers (default: 3)
-- **Transfer Buffer**: Buffer size for file transfers
-- **Resume Support**: Enable/disable resume for interrupted transfers
-
-### Display
-- **Show Hidden Files**: Toggle display of hidden files
-- **Confirm Delete**: Require confirmation before deletion
-
-## Keyboard Shortcuts
-
-### Custom Shortcuts
-You can customize keyboard shortcuts in Settings > Keyboard.
-
-### Default Shortcuts
-
-| Action | Shortcut |
-|--------|----------|
-| New Tab | `Cmd+T` |
-| Close Tab | `Cmd+W` |
-| New Split | `Cmd+D` |
-| Close Split | `Cmd+Shift+D` |
-| Next Tab | `Cmd+]` |
-| Previous Tab | `Cmd+[` |
-| Quick Connect | `Cmd+K` |
-| File Manager | `Cmd+Shift+F` |
-| Settings | `Cmd+,` |
-| Search | `Cmd+F` |
+- 调试日志
+- 网络诊断
+- 重置所有设置

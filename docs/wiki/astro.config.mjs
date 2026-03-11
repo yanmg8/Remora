@@ -7,16 +7,16 @@ export default defineConfig({
     starlight({
       title: {
         en: 'Remora Docs',
-        'zh-cn': 'Remora 文档',
+        'zh-CN': 'Remora 文档',
       },
-      defaultLocale: 'en',
+      defaultLocale: 'root',
       locales: {
-        en: {
-          label: 'English',
-        },
-        'zh-cn': {
+        root: {
           label: '简体中文',
           lang: 'zh-CN',
+        },
+        en: {
+          label: 'English',
         },
       },
       social: [
@@ -24,6 +24,11 @@ export default defineConfig({
           label: 'GitHub',
           icon: 'github',
           href: 'https://github.com/wuuJiawei/Remora',
+        },
+        {
+          label: 'X (Twitter)',
+          icon: 'x.com',
+          href: 'https://x.com/1Javeys',
         },
       ],
       sidebar: [

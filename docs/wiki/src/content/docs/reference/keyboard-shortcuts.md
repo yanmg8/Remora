@@ -1,87 +1,40 @@
 ---
-title: Keyboard Shortcuts
-description: Complete list of keyboard shortcuts in Remora.
+title: 键盘快捷键
+description: Remora 键盘快捷键参考。
 ---
 
-# Keyboard Shortcuts
+# 键盘快捷键
 
-This page lists all keyboard shortcuts available in Remora.
+## 全局快捷键
 
-## Global Shortcuts
+| 快捷键 | 说明 |
+|--------|------|
+| `⌘,` | 打开设置 |
+| `⌘N` | 新建连接 |
+| `⌘W` | 关闭当前标签 |
+| `⌘T` | 新建标签 |
+| `⌘⇧[` | 上一个标签 |
+| `⌘⇧]` | 下一个标签 |
+| `⌘Q` | 退出应用 |
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+,` | Open Settings |
-| `Cmd+Q` | Quit Remora |
-| `Cmd+H` | Hide Remora |
-| `Cmd+Opt+H` | Hide other applications |
+## 终端快捷键
 
-## Tabs & Sessions
+| 快捷键 | 说明 |
+|--------|------|
+| `⌘C` | 复制选中内容 |
+| `⌘V` | 粘贴 |
+| `⌘K` | 清空终端 |
+| `⌘L` | 滚动到末尾 |
+| `⌘F` | 搜索终端输出 |
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+T` | New tab |
-| `Cmd+W` | Close current tab |
-| `Cmd+[` | Previous tab |
-| `Cmd+]` | Next tab |
-| `Cmd+Shift+[` | Move tab left |
-| `Cmd+Shift+]` | Move tab right |
-| `Cmd+1-9` | Switch to tab 1-9 |
-| `Cmd+Shift+Close` | Close all tabs |
+## 文件管理器快捷键
 
-## Split Panes
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+D` | Split horizontally |
-| `Cmd+Shift+D` | Split vertically |
-| `Cmd+Alt+←` | Focus left pane |
-| `Cmd+Alt+→` | Focus right pane |
-| `Cmd+Alt+↑` | Focus upper pane |
-| `Cmd+Alt+↓` | Focus lower pane |
-
-## Terminal
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+C` | Copy selected text |
-| `Cmd+V` | Paste |
-| `Cmd+K` | Clear terminal |
-| `Cmd+L` | Clear screen |
-| `Cmd+F` | Search in terminal |
-| `Cmd+↑/↓` | Scroll up/down |
-| `Cmd+Home` | Scroll to beginning |
-| `Cmd+End` | Scroll to end |
-| `Cmd+Shift+K` | Clear scrollback |
-
-## File Manager
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Shift+F` | Toggle file manager |
-| `↑/↓` | Navigate files |
-| `Enter` | Open file/folder |
-| `Space` | Quick Look |
-| `Cmd+↑` | Go to parent folder |
-| `Cmd+Shift+N` | New folder |
-| `Delete` | Delete selected |
-| `Cmd+D` | Duplicate |
-| `Cmd+R` | Rename |
-
-## Quick Access
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Shift+K` | Quick command palette |
-| `Cmd+Shift+P` | Quick path palette |
-| `Cmd+Shift+S` | Quick connect |
-| `Cmd+K` | Quick connect (alternate) |
-
-## Search
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+F` | Find in terminal |
-| `Cmd+G` | Find next |
-| `Cmd+Shift+G` | Find previous |
-| `Escape` | Close search |
+| 快捷键 | 说明 |
+|--------|------|
+| `Enter` | 打开文件/目录 |
+| `Backspace` | 返回上级目录 |
+| `Space` | 预览文件 |
+| `⌘N` | 新建文件 |
+| `⌘⇧N` | 新建目录 |
+| `Delete` | 删除选中 |
+| `⌘R` | 重命名 |

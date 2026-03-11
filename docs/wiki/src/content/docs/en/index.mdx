@@ -1,0 +1,47 @@
+---
+title: Welcome to Remora
+description: Your native macOS SSH + SFTP workspace
+template: splash
+hero:
+  image:
+    file: ../../../assets/logo.png
+  tagline: Hitch a ride to any shell
+  actions:
+    - text: View Docs
+      link: /en/guides/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/wuuJiawei/Remora
+      icon: github
+---
+
+import { Card, CardGrid, Icon } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid stagger>
+	<Card title="Fantastic" icon="star">
+		Local-first SSH + SFTP workspace with ANSI/VT support for modern TUIs, xterm-style selection, quick commands/paths, and drag-and-drop transfers.
+	</Card>
+	<Card title="Beautiful" icon="laptop">
+		Native macOS UI with clean split layout, light/dark/system themes, and distraction-free terminal focus.
+	</Card>
+	<Card title="Fast" icon="rocket">
+		Swift 6 native architecture with custom terminal engine (buffer + parser + renderer), built to outperform typical Electron-based terminal apps.
+	</Card>
+	<Card title="Secure" icon="shield">
+		Local-first credential strategy with passwords stored in macOS Keychain, SSH host key verification via StrictHostKeyChecking=ask.
+	</Card>
+	<Card title="Simple" icon="setting">
+		Lightweight app with 99% Swift-native stack, keyboard-driven workflows, and practical defaults that work out of the box.
+	</Card>
+</CardGrid>
+
+## What You Can Do Today
+
+- Run local shell and SSH sessions with multi-tab/pane workspace
+- Manage hosts with groups, search, favorites, and quick connect
+- Use SFTP file manager for create/rename/move/delete/copy/paste/upload/download
+- Drag files onto directories with visual upload target hints
+- Get immediate operation feedback via toasts and retry failed transfers

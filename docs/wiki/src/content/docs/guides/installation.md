@@ -1,34 +1,30 @@
 ---
-title: Installation
-description: How to install Remora on your Mac.
+title: 安装
+description: 在 macOS 上安装 Remora。
 ---
 
-# Installation
+# 安装
 
-## Download from GitHub Releases
+## 系统要求
 
-1. Go to the [Remora Releases](https://github.com/wuuJiawei/Remora/releases) page
-2. Download the latest `Remora-x.x.x.dmg` file
-3. Open the DMG and drag Remora to your Applications folder
-4. (Optional) Remove quarantine: `xattr -dr com.apple.quarantine /Applications/Remora.app`
+- macOS 14.0 (Sonoma) 或更高版本
 
-## Build from Source
+## 下载安装
+
+1. 从 [GitHub Releases](https://github.com/wuuJiawei/Remora/releases) 下载最新的 `.dmg` 文件
+2. 打开下载的 `.dmg` 文件
+3. 将 `Remora.app` 拖入应用程序文件夹
+
+## 信任开发者
+
+首次运行 Remora 时，macOS 可能会阻止应用打开（显示"已损坏"错误）。请运行以下命令移除隔离属性：
 
 ```bash
-# Clone the repository
-git clone https://github.com/wuuJiawei/Remora.git
-
-# Navigate to project directory
-cd Remora
-
-# Build
-swift build
-
-# Run
-swift run RemoraApp
+xattr -dr com.apple.quarantine /Applications/Remora.app
 ```
 
-## Requirements
+如果仍然无法打开，请到系统设置中手动允许：
 
-- macOS 14.0+
-- Xcode 15.4+ (if building from source)
+1. 打开 **系统设置** → **隐私与安全性**
+2. 在安全区域找到被阻止的 Remora 通知
+3. 点击 **仍要打开** 并确认

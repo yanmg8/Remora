@@ -1,42 +1,33 @@
 ---
 title: SSH
-description: SSH connection and session management reference.
+description: SSH 连接配置参考。
 ---
 
-# SSH Reference
+# SSH 参考
 
-## Connection Management
+## 连接参数
 
-### Adding Hosts
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| 主机 | SSH 服务器地址 | - |
+| 端口 | SSH 端口号 | 22 |
+| 用户名 | SSH 用户名 | - |
+| 认证方式 | 密码/密钥 | 密码 |
 
-1. Click the **+** button in the hosts sidebar
-2. Enter connection details:
-   - **Host**: hostname or IP address
-   - **Port**: SSH port (default: 22)
-   - **Username**: your login username
-   - **Authentication**: Password or SSH key
+## 认证方式
 
-### SSH Keys
+### 密码认证
 
-Remora supports:
-- RSA (2048/4096)
-- Ed25519
-- ECDSA
+输入密码进行连接。密码会安全存储在 macOS Keychain 中。
 
-Place your keys in `~/.ssh/` directory.
+### SSH 密钥认证
 
-## Session Features
+1. 点击 **选择密钥**
+2. 选择私钥文件 (通常在 `~/.ssh/` 目录)
+3. 如有 passphrase，输入密钥密码
 
-- **Multi-tab**: Open multiple SSH sessions in tabs
-- **Split Pane**: Split terminal horizontally or vertically
-- **Quick Commands**: Save frequently used commands
-- **Quick Paths**: Save frequently visited directories
+## SSH 选项
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+T` | New tab |
-| `Cmd+W` | Close tab |
-| `Cmd+[` | Previous tab |
-| `Cmd+]` | Next tab |
+- **保持连接**：定期发送保活包防止连接断开
+- **压缩**：启用 zlib 压缩
+- **转发代理**：配置 SSH 代理跳转

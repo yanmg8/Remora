@@ -1,58 +1,38 @@
 ---
-title: Terminal
-description: Terminal features and configuration.
+title: 终端
+description: 终端配置和功能参考。
 ---
 
-# Terminal
+# 终端参考
 
-Remora includes a custom high-performance terminal engine built from scratch, optimized for modern TUI applications.
+## 终端类型
 
-## Features
+Remora 支持两种终端类型：
 
-### ANSI/VT Support
-- Full ANSI escape sequence support
-- 256 color and true color (24-bit) support
-- Unicode and emoji support
-- Cursor shape reporting
+1. **本地终端**：运行本地 shell (zsh, bash 等)
+2. **SSH 终端**：通过 SSH 连接运行远程 shell
 
-### Selection & Copy
-- Click and drag to select text
-- Shift+click to extend selection
-- Double-click to select word
-- Triple-click to select line
-- Copy with `Cmd+C` or right-click menu
+## 显示设置
 
-### Scrollback
-- Configurable scrollback buffer (default: 10000 lines)
-- Search in scrollback with `Cmd+F`
-- Navigate to beginning/end with `Cmd+Home` / `Cmd+End`
+| 设置 | 说明 |
+|------|------|
+| 字体 | 终端显示字体 |
+| 字体大小 | 字体大小 |
+| 行高 | 行间距 |
+| 光标样式 | 块/线/下划线 |
+| 光标闪烁 | 光标是否闪烁 |
 
-## Keyboard Shortcuts
+## 颜色方案
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+C` | Copy selected text |
-| `Cmd+V` | Paste |
-| `Cmd+F` | Search in terminal |
-| `Cmd+K` | Clear terminal |
-| `Cmd+L` | Clear screen (like clear command) |
-| `Cmd+↑/↓` | Scroll up/down |
-| `Cmd+Home` | Scroll to beginning |
-| `Cmd+End` | Scroll to end |
+Remora 内置多种终端颜色方案：
+- 亮色主题
+- 暗色主题
+- 跟随系统
 
-## Mouse Support
+## TUI 兼容性
 
-- **Click**: Position cursor
-- **Double-click**: Select word
-- **Triple-click**: Select line
-- **Right-click**: Context menu
-- **Scroll**: Navigate history
-
-## TUI Compatibility
-
-Remora's terminal is compatible with:
-
-- ** shells**: bash, zsh, fish, sh
-- **Editors**: vim, neovim, nano, emacs
-- **Tools**: htop, top, less, more, git
-- **Package Managers**: npm, yarn, cargo, pip
+Remora 终端经过优化，支持主流 TUI 应用：
+- vim, neovim
+- tmux, zellij
+- htop,btop
+- ranger, nnn

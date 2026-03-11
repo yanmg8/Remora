@@ -1,84 +1,27 @@
 ---
-title: Host Groups
-description: Organize and manage SSH hosts with groups.
+title: 主机分组
+description: 使用主机分组组织您的 SSH 连接。
 ---
 
-# Host Groups
+# 主机分组
 
-Remora allows you to organize your SSH hosts into groups for easier management.
+Remora 允许您将 SSH 主机分组，以便更好地组织连接。
 
-## Creating Groups
+## 创建主机分组
 
-### Via Settings
+1. 点击侧边栏底部的 **+** 按钮
+2. 选择 **新建分组**
+3. 输入分组名称
+4. 选择分组图标和颜色
 
-1. Open **Settings > Hosts**
-2. Click the **+** button next to "Groups"
-3. Enter group name
-4. (Optional) Choose a color and icon
+## 添加主机到分组
 
-### Via Context Menu
+1. 在主机列表中选择一个主机
+2. 拖拽到目标分组
+3. 或右键点击主机 → **移动到** → 选择分组
 
-1. Right-click in the hosts sidebar
-2. Select **New Group**
-3. Enter group name
+## 分组管理
 
-## Managing Hosts
-
-### Adding Hosts to Groups
-
-**Method 1: Drag and Drop**
-- Drag a host onto a group in the sidebar
-
-**Method 2: Edit Host**
-1. Double-click a host or right-click > Edit
-2. Select a group from the dropdown
-
-**Method 3: New Host in Group**
-- Right-click on a group > **New Host**
-
-### Moving Hosts
-
-- Drag and drop hosts between groups
-- Use cut/paste to move hosts
-
-### Host Properties
-
-Each host can have:
-
-| Property | Description |
-|----------|-------------|
-| **Name** | Display name |
-| **Host** | Hostname or IP |
-| **Port** | SSH port (default: 22) |
-| **Username** | Login username |
-| **Group** | Parent group |
-| **Auth** | Password or SSH Key |
-| **Quick Connect** | Show in quick connect |
-
-## Group Features
-
-### Color Coding
-Assign colors to groups for visual organization:
-- Red, Orange, Yellow, Green, Blue, Purple
-
-### Collapsible Groups
-Groups can be collapsed/expanded to show/hide hosts.
-
-### Nested Groups
-Create nested groups for hierarchical organization:
-- Folder 1
-  - Subfolder A
-  - Subfolder B
-
-### Quick Connect
-Mark groups as "Quick Connect" to show in quick connect palette.
-
-## Search & Filter
-
-### Search Hosts
-- Use the search bar to filter hosts by name
-- Search searches across all groups
-
-### Filter by Group
-- Click a group header to filter only that group
-- Click "All Hosts" to show everything
+- 重命名分组：右键点击分组 → **重命名**
+- 删除分组：右键点击分组 → **删除**（主机不会被删除）
+- 排序：拖拽调整分组顺序

@@ -1,43 +1,35 @@
 ---
 title: SFTP
-description: SFTP file transfer reference.
+description: SFTP 文件传输参考。
 ---
 
-# SFTP Reference
+# SFTP 参考
 
-## File Manager
+## 文件操作
 
-The SFTP file manager provides a graphical interface for file operations:
+Remora 提供完整的 SFTP 文件管理功能：
 
-- **Browse**: Navigate remote directories
-- **Create**: Create new files and folders
-- **Rename**: Rename files and folders
-- **Move**: Drag and drop or cut/paste
-- **Delete**: Remove files and folders
-- **Copy**: Duplicate files
+- **浏览**：在本地和远程目录之间导航
+- **上传**：拖拽文件到目标目录
+- **下载**：拖拽文件到本地目标
+- **新建**：创建文件和目录
+- **重命名**：修改文件/目录名称
+- **删除**：删除文件或目录
+- **复制/粘贴**：复制和粘贴文件
 
-## Transfer Operations
+## 传输队列
 
-### Upload
+所有传输操作都会进入队列，您可以：
 
-1. Drag files from Finder onto the file manager
-2. Or use **Upload** from context menu
+- 查看传输进度
+- 暂停/恢复传输
+- 取消传输
+- 重试失败的传输
 
-### Download
+## 传输设置
 
-1. Select files in the file manager
-2. Drag to Finder
-3. Or use **Download** from context menu
-
-## Transfer Queue
-
-All transfers appear in the transfer queue:
-- View progress for each file
-- Retry failed transfers
-- Cancel ongoing transfers
-
-## Drag & Drop
-
-- Drag files onto directories to upload
-- Drag files onto Finder to download
-- Visual hints show upload target
+| 选项 | 说明 |
+|------|------|
+| 并发传输数 | 同时进行的传输任务数 |
+| 保留时间戳 | 上传/下载时保留文件时间 |
+| 覆盖策略 | 询问/覆盖/跳过 |

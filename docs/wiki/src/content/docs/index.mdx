@@ -1,26 +1,47 @@
 ---
-title: Welcome to Remora
-description: Get started building your SSH + SFTP workspace with Remora.
+title: 欢迎使用 Remora
+description: 您的原生 macOS SSH + SFTP 工作区
 template: splash
 hero:
-  tagline: Your native macOS SSH + SFTP workspace
+  image:
+    file: ../../assets/logo.png
+  tagline: 让你轻松连接任意 Shell
+  actions:
+    - text: 查看文档
+      link: /guides/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/wuuJiawei/Remora
+      icon: github
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, Icon } from '@astrojs/starlight/components';
 
-## Features
+## 功能特性
 
 <CardGrid stagger>
-	<Card title="SSH + SFTP" icon="setting">
-		Native SSH sessions and SFTP file transfers in one unified workspace.
+	<Card title="Fantastic" icon="star">
+		本地优先的 SSH + SFTP 工作区，支持现代 TUI 所需 ANSI/VT、xterm 风格选择、快捷命令/快捷路径、拖拽传输。
 	</Card>
-	<Card title="Native macOS" icon="laptop">
-		Built with SwiftUI for a truly native experience on macOS.
+	<Card title="Beautiful" icon="laptop">
+		原生 macOS 视觉与交互，布局简洁，支持浅色/深色/跟随系统，终端专注无干扰。
 	</Card>
-	<Card title="High Performance" icon="rocket">
-		Custom terminal engine optimized for heavy TUI workloads.
+	<Card title="Fast" icon="rocket">
+		Swift 6 原生实现 + 自研终端引擎（buffer/parser/renderer），高频 TUI 与滚动场景下性能优异。
 	</Card>
-	<Card title="Secure by Default" icon="shield">
-		Keychain-based credential storage and SSH host key verification.
+	<Card title="Secure" icon="shield">
+		本地优先凭据策略，密码仅写入 macOS Keychain，SSH 主机指纹显式确认，确保安全。
+	</Card>
+	<Card title="Simple" icon="setting">
+		轻量设计，99% Swift-native 技术栈，默认配置即可开箱使用，支持键盘快捷工作流。
 	</Card>
 </CardGrid>
+
+## 你现在就可以做的事
+
+- 在同一工作区里运行本地 Shell 与 SSH 会话（多标签/分栏）
+- 管理主机分组、搜索、收藏，并使用快速连接
+- 通过 SFTP 文件管理器执行新建，重命名，移动、删除、复制/粘贴、上传/下载
+- 拖拽上传到目录或当前路径，带目标高亮与提示
+- 获取即时操作反馈（toast）并重试失败传输

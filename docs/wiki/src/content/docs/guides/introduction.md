@@ -1,26 +1,26 @@
 ---
-title: Introduction
-description: Learn about Remora and what you can do with it.
+title: 简介
+description: 了解 Remora 及其功能。
 ---
 
-# Introduction
+# 简介
 
-Remora is a native macOS SSH + SFTP workspace built with SwiftUI. It provides a clean split layout with:
+Remora 是一个使用 SwiftUI 构建的原生 macOS SSH + SFTP 工作区，提供清晰的分栏布局：
 
-- **SSH Sessions**: Local shell and remote SSH connections with multi-tab/pane workspace
-- **SFTP File Manager**: Create, rename, move, delete, copy, upload, and download files
-- **Terminal**: Full VT/ANSI support with xterm-style selection
-- **Quick Commands**: Execute frequently used commands with shortcuts
+- **SSH 会话**：本地 Shell 和远程 SSH 连接，支持多标签/分栏工作区
+- **SFTP 文件管理器**：创建、重命名、移动、删除、复制、上传和下载文件
+- **终端**：完整的 VT/ANSI 支持，支持 xterm 风格选择
+- **快速命令**：使用快捷方式执行常用命令
 
-## Why Remora?
+## 为什么选择 Remora？
 
-Remora focuses on a practical split between connection management and terminal performance:
+Remora 专注于连接管理和终端性能之间的实用平衡：
 
-1. **Native macOS UX** - Connection and session management built with SwiftUI
-2. **Custom Terminal Core** - High-performance VT rendering and input handling
-3. **Unified Workflows** - SSH and SFTP in one place
+1. **原生 macOS 体验** - 使用 SwiftUI 构建的连接和会话管理
+2. **自定义终端核心** - 高性能的 VT 渲染和输入处理
+3. **统一工作流** - 在一个地方完成 SSH 和 SFTP
 
-## System Requirements
+## 系统要求
 
 - macOS 14.0+
-- Xcode 15.4+ (for building from source)
+- Xcode 15.4+（用于从源码构建）

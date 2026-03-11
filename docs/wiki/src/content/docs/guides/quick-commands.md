@@ -1,67 +1,28 @@
 ---
-title: Quick Commands & Paths
-description: Save and use frequently used commands and directories.
+title: 快速命令
+description: 使用快速命令提高工作效率。
 ---
 
-# Quick Commands & Paths
+# 快速命令
 
-Remora allows you to save frequently used commands and directory paths for quick access.
+快速命令让您只需几次按键即可执行常用操作。
 
-## Quick Commands
+## 创建快速命令
 
-### Creating a Quick Command
+1. 打开 **设置** → **快速命令**
+2. 点击 **+** 添加新命令
+3. 输入命令内容和可选的快捷键
 
-1. Open **Settings > Quick Commands**
-2. Click the **+** button
-3. Enter:
-   - **Name**: Display name (e.g., "Git Status")
-   - **Command**: The command to execute (e.g., `git status`)
-   - **Working Directory**: (Optional) Directory to run in
-   - **Description**: (Optional) Description
+## 使用快速命令
 
-### Using Quick Commands
+- 在终端中输入 `/` 激活快速命令面板
+- 使用上下箭头选择命令
+- 按 Enter 执行
 
-- **Keyboard**: Press `Cmd+Shift+K` to open quick command palette
-- **Menu**: Access from **Sessions > Quick Commands** menu
+## 内置快速命令
 
-### Example Commands
-
-| Name | Command |
-|------|---------|
-| Git Status | `git status` |
-| Git Pull | `git pull` |
-| NPM Install | `npm install` |
-| Docker PS | `docker ps` |
-| Top Processes | `htop` |
-
-## Quick Paths
-
-### Creating a Quick Path
-
-1. Open **Settings > Quick Paths**
-2. Click the **+** button
-3. Enter:
-   - **Name**: Display name (e.g., "Project Root")
-   - **Path**: Directory path (e.g., `/Users/you/project`)
-   - **Description**: (Optional) Description
-
-### Using Quick Paths
-
-- **Keyboard**: Press `Cmd+Shift+P` to open quick path palette
-- **Menu**: Access from **Sessions > Quick Paths** menu
-
-### Sync with File Manager
-
-Enable **Sync Terminal with File Manager** in settings to automatically change terminal directory when navigating in the file manager.
-
-## Variables
-
-Quick commands support the following variables:
-
-| Variable | Description |
-|----------|-------------|
-| `$HOST` | Current host name |
-| `$USER` | Current user name |
-| `$CWD` | Current working directory |
-| `$DATE` | Current date (YYYY-MM-DD) |
-| `$TIME` | Current time (HH:MM:SS) |
+| 命令 | 说明 |
+|------|------|
+| `/clear` | 清空终端 |
+| `/reconnect` | 重新连接当前会话 |
+| `/transfer` | 打开文件传输面板 |
