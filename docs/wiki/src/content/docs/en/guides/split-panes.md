@@ -9,24 +9,18 @@ Remora supports flexible tab and split pane layouts, allowing you to manage mult
 
 ### Basic Operations
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+T` | New tab |
-| `Cmd+W` | Close current tab |
-| `Cmd+[` | Previous tab |
-| `Cmd+]` | Next tab |
-| `Cmd+Shift+[` | Move tab left |
-| `Cmd+Shift+]` | Move tab right |
-| `Cmd+1-9` | Switch to tab number |
+Remora uses standard macOS tab operations:
+
+- Use **Cmd+T** to create a new tab (via menu or shortcut)
+- Use **Cmd+W** to close a tab
 
 ### Tab Context Menu
 
 Right-click a tab to:
+
 - Close tab
-- Close other tabs
-- Close all tabs
-- Rename tab
-- Duplicate tab content
+- Close tabs to the right
+- Duplicate tab content to new tab
 
 ## Split Pane Operations
 
@@ -34,23 +28,14 @@ Split panes let you view multiple terminals side by side within a single tab.
 
 ### Creating Splits
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+D` | Split horizontally |
-| `Cmd+Shift+D` | Split vertically |
+1. Right-click on a tab
+2. Select **Split Horizontal** or **Split Vertical**
 
-### Navigating Splits
-
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Alt+←` | Focus left pane |
-| `Cmd+Alt+→` | Focus right pane |
-| `Cmd+Alt+↑` | Focus upper pane |
-| `Cmd+Alt+↓` | Focus lower pane |
+Note: Each tab supports a maximum of 2 panes.
 
 ### Resizing Splits
 
-Drag the split divider to resize panes. Double-click to equalize.
+Drag the split divider to resize panes.
 
 ## Layout Combinations
 

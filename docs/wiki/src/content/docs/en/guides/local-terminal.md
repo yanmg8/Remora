@@ -11,43 +11,15 @@ Remora not only supports SSH remote connections but also provides complete local
 
 1. Click the **+** button in the sidebar
 2. Select **New Local Terminal**
-3. Or use `Cmd+N` shortcut
 
 ### Differences from SSH Terminal
 
 | Feature | Local Terminal | SSH Terminal |
 |---------|----------------|--------------|
 | Runs on | Local macOS | Remote server |
-| Startup command | Customizable | SSH connection |
+| Startup | Local shell process | SSH connection |
 | Environment variables | Local environment | Remote server environment |
 | File system | Local filesystem | Remote server filesystem |
-
-## Configuring Local Terminal
-
-Configure in **Settings > Terminal**:
-
-### Startup Shell
-
-Choose the default shell to launch:
-
-```bash
-# Use zsh (default)
-/bin/zsh
-
-# Use bash
-/bin/bash
-
-# Use fish
-/usr/local/bin/fish
-```
-
-### Environment Variables
-
-Set custom environment variables that load on each terminal startup.
-
-### Prompt Customization
-
-Remora respects your existing shell prompt configuration (e.g., PS1 in .zshrc).
 
 ## Local Terminal Features
 
@@ -61,4 +33,3 @@ Remora respects your existing shell prompt configuration (e.g., PS1 in .zshrc).
 - Local development and testing
 - Quick local command execution
 - Use alongside SSH sessions (split panes)
-- File management comparison

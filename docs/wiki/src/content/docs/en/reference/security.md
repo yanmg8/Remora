@@ -7,21 +7,16 @@ Remora uses a local-first security strategy to protect your credentials and conn
 
 ## Credential Storage
 
-### Keychain Storage (Recommended)
+### Keychain Storage
 
 Remora uses macOS Keychain to securely store passwords:
 
 - Passwords encrypted in system Keychain
-- Credentials won't leak after app exit
 - Asked to save on first connection
 
-### Temporary Storage
+### Exporting Credentials
 
-You can also choose to store passwords only during the session:
-
-- Password stored only in memory
-- Cleared when app closes or disconnects
-- Suitable for public devices
+When exporting host configurations, you can choose whether to include saved passwords. Exported files with passwords are stored in plaintext - handle with care.
 
 ## SSH Keys
 
@@ -53,31 +48,4 @@ chmod 600 ~/.ssh/id_ed25519
 
 ## Host Fingerprints
 
-### StrictHostKeyChecking
-
-When connecting to a new host for the first time, Remora displays the host fingerprint for confirmation:
-
-- **Ask (default)**: Show fingerprint, save after confirmation
-- **Accept**: Auto-accept and save fingerprint
-- **Reject**: Reject connection
-
-### Managing Known Hosts
-
-In **Settings > SSH > Security** you can:
-
-- View saved host fingerprints
-- Delete individual or all saved fingerprints
-- Re-verify host fingerprints
-
-## Sensitive Operation Confirmation
-
-Remora requires confirmation for the following sensitive operations:
-
-- Copy plaintext password to clipboard
-- Export passwords
-- Disable key storage
-- Delete saved hosts
-
-## Security Logs
-
-Check **Settings > Advanced > Debug Logs** for security-related logs to help troubleshoot issues.
+When connecting to a new host for the first time, Remora displays the host fingerprint for confirmation. You can choose to accept or reject the host key.

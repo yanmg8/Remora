@@ -7,67 +7,49 @@ Remora supports importing host configurations from multiple sources and exportin
 
 ## Importing Config
 
-### Import from SSH Config
-
-Remora can read host configurations from `~/.ssh/config`:
-
-1. Open **Settings > Hosts**
-2. Click **Import**
-3. Select **Import from SSH Config**
-4. Select hosts to import
-5. Click **Import**
-
 ### Import Formats
 
 Remora supports the following import formats:
 
-| Format | Description |
-|--------|-------------|
-| SSH Config | `~/.ssh/config` |
-| Remora Export | `.remora` file |
-| JSON | Generic JSON format |
+- **SSH Config**: Import from `~/.ssh/config`
+- **Remora Export**: Import from `.remora` or `.csv` file
+- **WindTerm**: Import from WindTerm user.sessions JSON
+- **electerm**: Import from electerm bookmark export JSON
+- **Xshell**: Import from Xshell `.sh` or `.xts` files
+- **PuTTY**: Import from exported PuTTY `.reg` files
 
-### JSON Format Example
+### Import Steps
 
-```json
-{
-  "hosts": [
-    {
-      "name": "My Server",
-      "host": "192.168.1.100",
-      "port": 22,
-      "username": "admin",
-      "auth": "password"
-    }
-  ]
-}
-```
+1. Open **Remora > Import Connections**
+2. Select import source
+3. Select file to import
+4. Select hosts to import
+5. Click **Import**
 
 ## Exporting Data
 
 ### Export as Remora Format
 
-Export all host configurations as a `.remora` file:
+Export host configurations as a `.remora` file:
 
-1. Open **Settings > Hosts**
-2. Click **Export**
-3. Select **Export as Remora Format**
+1. Open **Remora > Export Connections**
+2. Select export scope (all or specific group)
+3. Choose whether to include saved passwords
 4. Choose save location
 
 Exported file contains:
-
-- Host configuration (without passwords)
+- Host configuration
 - Host groups
 - Quick commands
 - Quick paths
 
+### Export as CSV
+
+Export as CSV format for spreadsheet processing.
+
 ### Export as JSON
 
-Export as generic JSON format for use with other tools:
-
-1. Open **Settings > Hosts**
-2. Click **Export**
-3. Select **Export as JSON**
+Export as JSON format for use with other tools.
 
 ## Data Migration
 
@@ -79,8 +61,5 @@ Export as generic JSON format for use with other tools:
 
 ### Backup Recommendations
 
-Regularly backup your configuration:
-
-- Backup after significant config changes
+- Regularly backup your configuration
 - Keep export files secure
-- Remember your Keychain password
