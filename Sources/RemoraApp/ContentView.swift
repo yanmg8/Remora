@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 import RemoraCore
 
 private struct ActiveRuntimeSFTPState: Equatable {
@@ -50,10 +51,12 @@ struct ContentView: View {
     @State private var pendingConnectionInfoPasswordCopyHost: RemoraCore.Host?
     @State private var isExportingHosts = false
     @State private var isImportingHosts = false
+    @State private var isImportSourceSheetPresented = false
     @State private var isExportResultAlertPresented = false
     @State private var exportAlertTitle = ""
     @State private var exportAlertMessage = ""
     @State private var isImportProgressSheetPresented = false
+    @State private var importSource = HostConnectionImportSource.remora
     @State private var importSourceFilename = ""
     @State private var importProgress = HostConnectionImportProgress(phase: tr("Preparing"), completed: 0, total: 1)
     @State private var importResultMessage: String?
@@ -536,6 +539,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: quickPathEditorBinding) {
             quickPathManagerSheet
+        }
+        .sheet(isPresented: $isImportSourceSheetPresented) {
+            importSourceSheet
         }
         .sheet(isPresented: $isImportProgressSheetPresented) {
             importProgressSheet
@@ -1264,23 +1270,49 @@ struct ContentView: View {
 
     private func beginImportHosts() {
         guard !isImportingHosts else { return }
+        isImportSourceSheetPresented = true
+    }
+
+    private func beginImportHosts(from source: HostConnectionImportSource) {
+        guard source.isSupported, !isImportingHosts else { return }
 
         let panel = NSOpenPanel()
-        panel.title = tr("Import SSH Connections")
+        panel.title = source.title
+        panel.message = source.detail
         panel.prompt = tr("Import")
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
+        if let directoryURL = source.defaultDirectoryURL,
+           FileManager.default.fileExists(atPath: directoryURL.path)
+        {
+            panel.directoryURL = directoryURL
+        }
+        if let supportedExtensions = source.supportedFileExtensions {
+            let contentTypes = supportedExtensions.compactMap { UTType(filenameExtension: $0) }
+            if !contentTypes.isEmpty {
+                panel.allowedContentTypes = contentTypes
+            }
+        }
 
         if panel.runModal() == .OK, let url = panel.urls.first {
-            startImport(from: url)
+            startImport(from: url, source: source)
         }
     }
 
-    private func startImport(from fileURL: URL) {
+    private func selectImportSource(_ source: HostConnectionImportSource) {
+        guard source.isSupported else { return }
+        isImportSourceSheetPresented = false
+        DispatchQueue.main.async {
+            beginImportHosts(from: source)
+        }
+    }
+
+    private func startImport(from fileURL: URL, source: HostConnectionImportSource) {
         guard !isImportingHosts else { return }
         isImportingHosts = true
+        importSource = source
         importSourceFilename = fileURL.lastPathComponent
         importProgress = HostConnectionImportProgress(phase: tr("Preparing"), completed: 0, total: 1)
         importResultMessage = nil
@@ -1291,6 +1323,7 @@ struct ContentView: View {
             do {
                 let importedHosts = try await HostConnectionImporter.importConnections(
                     from: fileURL,
+                    source: source,
                     progress: { progress in
                         Task { @MainActor in
                             importProgress = progress
@@ -1744,10 +1777,25 @@ struct ContentView: View {
         "tab:\(tabID.uuidString)|pane:\(paneID.uuidString)|disconnected"
     }
 
+    private var importSourceSheet: some View {
+        HostImportSourceSheet(
+            onCancel: {
+                isImportSourceSheetPresented = false
+            },
+            onSelect: { source in
+                selectImportSource(source)
+            }
+        )
+    }
+
     private var importProgressSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(tr("Import SSH Connections"))
                 .font(.headline)
+
+            Text(importSource.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(VisualStyle.textSecondary)
 
             Text(importSourceFilename)
                 .font(.caption.monospaced())
@@ -1784,6 +1832,101 @@ struct ContentView: View {
         }
         .padding(16)
         .frame(width: 460)
+    }
+}
+
+private struct HostImportSourceSheet: View {
+    let onCancel: () -> Void
+    let onSelect: (HostConnectionImportSource) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(tr("Choose Import Source"))
+                .font(.headline)
+
+            Text(tr("Select a format to import into Remora."))
+                .font(.subheadline)
+                .foregroundStyle(VisualStyle.textSecondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(tr("Supported Now"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VisualStyle.textSecondary)
+
+                ForEach(HostConnectionImportSource.supportedCases) { source in
+                    HostImportSourceRow(
+                        source: source,
+                        accessoryTitle: tr("Choose File"),
+                        action: { onSelect(source) }
+                    )
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(tr("Coming Soon"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VisualStyle.textSecondary)
+
+                ForEach(HostConnectionImportSource.upcomingCases) { source in
+                    HostImportSourceRow(
+                        source: source,
+                        accessoryTitle: tr("Coming Soon"),
+                        action: nil
+                    )
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button(tr("Cancel")) {
+                    onCancel()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+    }
+}
+
+private struct HostImportSourceRow: View {
+    let source: HostConnectionImportSource
+    let accessoryTitle: String
+    let action: (() -> Void)?
+
+    var body: some View {
+        Button(action: {
+            action?()
+        }) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(source.title)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(VisualStyle.textPrimary)
+
+                    Text(source.detail)
+                        .font(.caption)
+                        .foregroundStyle(VisualStyle.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 12)
+
+                Text(accessoryTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(action == nil ? VisualStyle.textSecondary : VisualStyle.textPrimary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(action == nil ? VisualStyle.mutedSurfaceBackground : VisualStyle.leftHoverBackground)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+        .opacity(action == nil ? 0.8 : 1)
     }
 }
 
