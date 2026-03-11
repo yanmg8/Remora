@@ -37,6 +37,7 @@ Remora 聚焦在一个实用组合：
 - Fantastic：本地优先的 SSH + SFTP 工作区，支持现代 TUI 所需 ANSI/VT、xterm 风格选择、快捷命令/快捷路径、拖拽传输。
 - Beautiful：原生 macOS 视觉与交互，布局简洁，支持浅色/深色/跟随系统，终端专注无干扰。
 - Fast：Swift 6 原生实现 + 自研终端引擎（buffer/parser/renderer），在高频 TUI 与滚动场景下目标体验优于典型 Electron 终端应用。
+- Secure：采用本地优先的凭据策略，保存密码仅写入 macOS Keychain，SSH 主机指纹通过 `StrictHostKeyChecking=ask` 显式确认，任何明文密码导出或复制都需要用户主动确认。
 - Simple：轻量设计，99% Swift-native 技术栈，默认配置即可开箱使用，并支持键盘快捷工作流。
 
 ### 你现在就可以做的事
