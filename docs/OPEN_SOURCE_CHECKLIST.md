@@ -14,7 +14,7 @@ Use this checklist before making the repository public.
 - [x] Add top-level `LICENSE` (MIT).
 - [x] Verify all bundled assets/fonts/icons are redistributable.
 - [x] Add `NOTICE` file if third-party notices are required.
-- [ ] Confirm no proprietary/internal docs remain in public tree.
+- [x] Confirm no proprietary/internal docs remain in public tree.
 
 ## 3. Documentation Quality
 
