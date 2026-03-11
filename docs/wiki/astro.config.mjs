@@ -65,6 +65,17 @@ export default defineConfig({
             { link: '/reference/keyboard-shortcuts/', label: 'Keyboard Shortcuts', translations: { 'zh-CN': '键盘快捷键' } },
           ],
         },
+        {
+          label: 'Principles',
+          translations: {
+            'zh-CN': '原理剖析',
+          },
+          items: [
+            { link: '/principles/concurrent-transfer/', label: 'Concurrent Transfer', translations: { 'zh-CN': '并发传输控制' } },
+            { link: '/principles/transfer-conflict/', label: 'Transfer Conflict', translations: { 'zh-CN': '传输冲突处理' } },
+            { link: '/principles/transfer-direction/', label: 'Transfer Direction', translations: { 'zh-CN': '传输方向' } },
+          ],
+        },
       ],
     }),
   ],
