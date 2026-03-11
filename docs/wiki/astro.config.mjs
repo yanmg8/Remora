@@ -11,51 +11,13 @@ export default defineConfig({
       sidebar: [
         {
           label: 'Getting Started',
-          items: [
-            { label: 'Introduction', link: '/guides/introduction/' },
-            { label: 'Installation', link: '/guides/installation/' },
-          ],
+          autogenerate: { directory: 'guides' },
         },
         {
           label: 'Reference',
-          items: [
-            { label: 'SSH', link: '/reference/ssh/' },
-            { label: 'SFTP', link: '/reference/sftp/' },
-          ],
+          autogenerate: { directory: 'reference' },
         },
       ],
-    }),
-  ],
-});
-import starlight from '@astrojs/starlight';
-
-export default defineConfig({
-  integrations: [
-    starlight({
-      title: 'Remora Docs',
-      logo: {
-        src: './src/assets/logo.svg',
-      },
-      social: {
-        github: 'https://github.com/wuuJiawei/Remora',
-      },
-      sidebar: [
-        {
-          label: 'Getting Started',
-          items: [
-            { label: 'Introduction', link: '/guides/introduction/' },
-            { label: 'Installation', link: '/guides/installation/' },
-          ],
-        },
-        {
-          label: 'Reference',
-          items: [
-            { label: 'SSH', link: '/reference/ssh/' },
-            { label: 'SFTP', link: '/reference/sftp/' },
-          ],
-        },
-      ],
-      customCss: ['./src/styles/custom.css'],
     }),
   ],
 });
