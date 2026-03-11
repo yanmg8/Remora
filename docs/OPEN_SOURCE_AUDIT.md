@@ -41,7 +41,10 @@ public. It is not a replacement for manual product validation on real hosts.
 
 ### Remaining manual review
 
-- Review whether `AGENTS.md` should stay in the public repository.
-- Review whether design notes under `docs/plans/` are intentionally public-facing.
+- `AGENTS.md` and the agent-oriented implementation-plan docs were removed from the public
+  tree.
+- `docs/plans/2026-03-11-ssh-import-format-research.md` still contains local-machine
+  inspection notes and should be rewritten or removed before checking the final
+  “no proprietary/internal docs remain” item.
 - Re-check future docs for internal-only roadmap or customer-specific language before
   publishing.
