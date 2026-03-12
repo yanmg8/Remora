@@ -189,7 +189,6 @@
 "Collapse Transfer Queue" = "收起传输队列";
 "Collapse group" = "收起分组";
 "Completed" = "已完成";
-"Connect Selected SSH Host" = "连接所选 SSH 主机";
 "Connected" = "已连接";
 "Connecting" = "连接中";
 "Connection name" = "连接名称";
@@ -208,6 +207,7 @@
 "Credential" = "凭据";
 "DISK" = "磁盘";
 "Delete connection" = "删除连接";
+"Delete SSH connection?" = "删除 SSH 连接？";
 "Delete group" = "删除分组";
 "Directory" = "目录";
 "Disconnect Session" = "断开会话";
@@ -215,6 +215,7 @@
 "Don't Remind Again" = "以后不再提醒";
 "Don't Remind Again Today" = "今天不再提醒";
 "Download Selected" = "下载所选项";
+"This will permanently remove \"%@\" (%@) from the SSH list." = "这会将“%@”（%@）从 SSH 列表中永久移除。";
 "Edit" = "编辑";
 "Edit File" = "编辑文件";
 "Edit SSH Connection" = "编辑 SSH 连接";

@@ -192,7 +192,6 @@
 "Collapse Transfer Queue" = "Collapse Transfer Queue";
 "Collapse group" = "Collapse group";
 "Completed" = "Completed";
-"Connect Selected SSH Host" = "Connect Selected SSH Host";
 "Connected" = "Connected";
 "Connecting" = "Connecting";
 "Connection name" = "Connection name";
@@ -211,6 +210,7 @@
 "Credential" = "Credential";
 "DISK" = "DISK";
 "Delete connection" = "Delete connection";
+"Delete SSH connection?" = "Delete SSH connection?";
 "Delete group" = "Delete group";
 "Directory" = "Directory";
 "Disconnect Session" = "Disconnect Session";
@@ -218,6 +218,7 @@
 "Don't Remind Again" = "Don't Remind Again";
 "Don't Remind Again Today" = "Don't Remind Again Today";
 "Download Selected" = "Download Selected";
+"This will permanently remove \"%@\" (%@) from the SSH list." = "This will permanently remove \"%@\" (%@) from the SSH list.";
 "Edit" = "Edit";
 "Edit File" = "Edit File";
 "Edit SSH Connection" = "Edit SSH Connection";

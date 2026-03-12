@@ -18,6 +18,12 @@ private struct HostExportDraft: Equatable {
     var includeSavedPasswords = false
 }
 
+private struct PendingHostDeletion: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+    let address: String
+}
+
 @MainActor
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
@@ -49,6 +55,7 @@ struct ContentView: View {
     @State private var isPasswordExportWarningPresented = false
     @State private var isConnectionInfoPasswordWarningPresented = false
     @State private var pendingConnectionInfoPasswordCopyHost: RemoraCore.Host?
+    @State private var pendingHostDeletion: PendingHostDeletion?
     @State private var isExportingHosts = false
     @State private var isImportingHosts = false
     @State private var isImportSourceSheetPresented = false
@@ -136,6 +143,17 @@ struct ContentView: View {
     private var selectedTemplate: HostSessionTemplate? {
         guard let selectedTemplateID else { return nil }
         return availableTemplates.first(where: { $0.id == selectedTemplateID })
+    }
+
+    private var isHostDeletionConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pendingHostDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingHostDeletion = nil
+                }
+            }
+        )
     }
 
     private var visibleGroupSections: [HostGroupSection] {
@@ -393,7 +411,7 @@ struct ContentView: View {
                                     beginManageQuickCommands(for: hostID)
                                 },
                                 onDeleteThread: { hostID in
-                                    deleteHost(hostID)
+                                    requestHostDeletion(hostID)
                                 }
                             )
                         }
@@ -472,6 +490,22 @@ struct ContentView: View {
             }
         } message: {
             Text(tr("This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it."))
+        }
+        .alert(tr("Delete SSH connection?"), isPresented: isHostDeletionConfirmationPresented, presenting: pendingHostDeletion) { pending in
+            Button(tr("Cancel"), role: .cancel) {
+                pendingHostDeletion = nil
+            }
+            Button(tr("Delete"), role: .destructive) {
+                confirmHostDeletion(pending)
+            }
+        } message: { pending in
+            Text(
+                String(
+                    format: tr("This will permanently remove \"%@\" (%@) from the SSH list."),
+                    pending.name,
+                    pending.address
+                )
+            )
         }
         .sheet(isPresented: $isGroupEditorSheetPresented) {
             SidebarGroupEditorSheet(
@@ -702,7 +736,8 @@ struct ContentView: View {
                             },
                             onClose: {
                                 workspace.closeTab(tab.id)
-                            }
+                            },
+                            accessibilityIdentifier: "session-tab-\(tab.title)"
                         )
                         .contextMenu {
                             sessionContextMenu(for: tab)
@@ -730,9 +765,12 @@ struct ContentView: View {
 
     @ViewBuilder
     private func sessionContextMenu(for tab: TerminalTabModel) -> some View {
+        let runtime = runtimeForTab(tab)
         let tabIndex = workspace.tabs.firstIndex(where: { $0.id == tab.id })
         let hasTabsOnLeft = tabIndex.map { $0 > 0 } ?? false
         let hasTabsOnRight = tabIndex.map { $0 + 1 < workspace.tabs.count } ?? false
+        let canReconnectSSH = runtime?.reconnectableSSHHost != nil
+        let canDisconnectSession = runtime != nil
         let canCloseInactiveTabs: Bool = {
             guard let activeTabID = workspace.activeTabID else { return false }
             return workspace.tabs.contains { $0.id != activeTabID }
@@ -785,14 +823,17 @@ struct ContentView: View {
         }
         .disabled(tab.panes.count > 1)
 
-        if selectedHost != nil {
+        if canReconnectSSH || canDisconnectSession {
             Divider()
-            Button(tr("Connect Selected SSH Host")) {
-                connectSelectedHost(to: tab.id)
+            Button(tr("Reconnect SSH")) {
+                reconnectSession(tab.id)
             }
+            .disabled(!canReconnectSSH)
+
             Button(tr("Disconnect Session")) {
                 disconnectSession(tab.id)
             }
+            .disabled(!canDisconnectSession)
         }
     }
 
@@ -1371,6 +1412,20 @@ struct ContentView: View {
         }
     }
 
+    private func requestHostDeletion(_ hostID: UUID) {
+        guard let host = hostCatalog.host(id: hostID) else { return }
+        pendingHostDeletion = PendingHostDeletion(
+            id: host.id,
+            name: host.name,
+            address: host.address
+        )
+    }
+
+    private func confirmHostDeletion(_ pending: PendingHostDeletion) {
+        pendingHostDeletion = nil
+        deleteHost(pending.id)
+    }
+
     private func beginRenameSession(_ tabID: UUID) {
         guard let tab = workspace.tab(id: tabID) else { return }
         renameSessionID = tabID
@@ -1609,14 +1664,6 @@ struct ContentView: View {
         copyConnectionInfoToPasteboard(host, includePassword: outcome.includePassword)
     }
 
-    private func connectSelectedHost(to tabID: UUID) {
-        guard let host = selectedHost else { return }
-        workspace.selectTab(tabID)
-        workspace.connectActivePane(host: host, template: selectedTemplate)
-        bootstrapFileManagerBindingForActiveRuntime()
-        hostCatalog.markConnected(hostID: host.id)
-    }
-
     private func openHostInNewSession(_ hostID: UUID) {
         guard let host = hostCatalog.host(id: hostID) else { return }
         selectedHostID = hostID
@@ -1632,6 +1679,20 @@ struct ContentView: View {
     private func disconnectSession(_ tabID: UUID) {
         workspace.selectTab(tabID)
         workspace.disconnectActivePane()
+    }
+
+    private func reconnectSession(_ tabID: UUID) {
+        guard let tab = workspace.tab(id: tabID),
+              let runtime = runtimeForTab(tab),
+              let host = runtime.reconnectableSSHHost
+        else {
+            return
+        }
+
+        workspace.selectTab(tabID)
+        runtime.reconnectSSHSession()
+        bootstrapFileManagerBindingForActiveRuntime()
+        hostCatalog.markConnected(hostID: host.id)
     }
 
     private func openSettingsAndFocusDownloadPath() {
@@ -2259,6 +2320,7 @@ private struct SidebarHostRow: View {
                             .frame(width: 18, height: 18)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("sidebar-host-delete-\(host.name)")
                 }
             } else if host.connectCount > 0 {
                 Text("\(host.connectCount)")
@@ -2931,6 +2993,7 @@ private struct SessionTabBarItem: View {
     let onSelect: () -> Void
     let onOpenMetricsWindow: () -> Void
     let onClose: () -> Void
+    let accessibilityIdentifier: String
     @State private var isHovering = false
     @State private var isMetricsPopoverPresented = false
 
@@ -3018,6 +3081,7 @@ private struct SessionTabBarItem: View {
                 isMetricsPopoverPresented = false
             }
         }
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 

@@ -634,6 +634,193 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func hostQuickDeleteButtonRequiresConfirmation() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard let hostRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                self.identifier(of: element) == self.sidebarHostRowIdentifier(for: "prod-api")
+                    || self.isSidebarHostRow(element, named: "prod-api")
+            }
+        ), let hostFrame = frame(of: hostRow) else {
+            Issue.record("Could not find prod-api row.")
+            return
+        }
+
+        moveMouse(to: CGPoint(x: hostFrame.midX, y: hostFrame.midY))
+
+        guard let deleteButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "sidebar-host-delete-prod-api" }
+        ) else {
+            Issue.record("Could not find quick delete button for prod-api.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(deleteButton, kAXPressAction as CFString)
+
+        let confirmationShown = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.title(of: $0) == "Delete SSH connection?" }
+        ) != nil
+        #expect(confirmationShown, "Quick delete should require confirmation.")
+        guard confirmationShown else { return }
+
+        guard let cancelButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.title(of: $0) == "Cancel" }
+        ) else {
+            Issue.record("Could not find delete confirmation cancel button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(cancelButton, kAXPressAction as CFString)
+
+        let hostStillVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { element in
+                self.identifier(of: element) == self.sidebarHostRowIdentifier(for: "prod-api")
+                    || self.isSidebarHostRow(element, named: "prod-api")
+            }) != nil
+        }
+        #expect(hostStillVisible, "Cancelling quick delete should keep the SSH host in the list.")
+    }
+
+    @Test
+    func hostContextMenuDeleteRequiresConfirmation() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard let hostRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                self.identifier(of: element) == self.sidebarHostRowIdentifier(for: "prod-api")
+                    || self.isSidebarHostRow(element, named: "prod-api")
+            }
+        ) else {
+            Issue.record("Could not find prod-api row.")
+            return
+        }
+
+        guard openContextMenu(for: hostRow) else {
+            Issue.record("Could not open host context menu.")
+            return
+        }
+
+        guard let deleteItem = waitForMenuItem(named: "Delete connection", timeout: 5) else {
+            Issue.record("Could not find context menu delete item.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(deleteItem, kAXPressAction as CFString)
+
+        let confirmationShown = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.title(of: $0) == "Delete SSH connection?" }
+        ) != nil
+        #expect(confirmationShown, "Context menu delete should require confirmation.")
+        guard confirmationShown else { return }
+
+        guard let cancelButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.title(of: $0) == "Cancel" }
+        ) else {
+            Issue.record("Could not find delete confirmation cancel button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(cancelButton, kAXPressAction as CFString)
+
+        let hostStillVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { element in
+                self.identifier(of: element) == self.sidebarHostRowIdentifier(for: "prod-api")
+                    || self.isSidebarHostRow(element, named: "prod-api")
+            }) != nil
+        }
+        #expect(hostStillVisible, "Cancelling context-menu delete should keep the SSH host in the list.")
+    }
+
+    @Test
+    func sessionTabContextMenuShowsReconnectAndHidesConnectSelectedHost() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let connected = ensureSSHSessionAvailable(in: appElement, timeout: 8)
+        #expect(connected, "Expected SSH session to be available before checking tab context menu.")
+        guard connected else { return }
+
+        guard let sessionTab = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                self.identifier(of: element) == "session-tab-prod-api"
+                    || (self.role(of: element) == kAXButtonRole as String && self.title(of: element) == "prod-api")
+            }
+        ) else {
+            Issue.record("Could not find prod-api session tab.")
+            return
+        }
+
+        guard openContextMenu(for: sessionTab) else {
+            Issue.record("Could not open session tab context menu.")
+            return
+        }
+
+        let reconnectItem = waitForMenuItem(named: "Reconnect SSH", timeout: 5)
+        #expect(reconnectItem != nil, "Session tab context menu should expose Reconnect SSH.")
+
+        let connectSelectedItem = waitForMenuItem(named: "Connect Selected SSH Host", timeout: 1)
+        #expect(connectSelectedItem == nil, "Session tab context menu should not expose Connect Selected SSH Host anymore.")
+    }
+
+    @Test
     func fileManagerShowsRemoteEntriesOrErrorAfterSSHConnect() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -1875,6 +2062,18 @@ struct RemoraUIAutomationTests {
         up.post(tap: .cghidEventTap)
     }
 
+    private func moveMouse(to point: CGPoint) {
+        guard let move = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .mouseMoved,
+            mouseCursorPosition: point,
+            mouseButton: .left
+        ) else { return }
+
+        move.post(tap: .cghidEventTap)
+        usleep(20_000)
+    }
+
     private func doubleClick(point: CGPoint) {
         for clickState in [1, 2] {
             guard let down = CGEvent(
@@ -1896,6 +2095,47 @@ struct RemoraUIAutomationTests {
             up.post(tap: .cghidEventTap)
             usleep(8_000)
         }
+    }
+
+    private func rightClick(point: CGPoint) {
+        guard let down = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .rightMouseDown,
+            mouseCursorPosition: point,
+            mouseButton: .right
+        ),
+        let up = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .rightMouseUp,
+            mouseCursorPosition: point,
+            mouseButton: .right
+        ) else { return }
+
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        usleep(30_000)
+    }
+
+    private func openContextMenu(for element: AXUIElement) -> Bool {
+        let status = AXUIElementPerformAction(element, kAXShowMenuAction as CFString)
+        if status == .success {
+            return true
+        }
+
+        guard let elementFrame = frame(of: element) else { return false }
+        rightClick(point: CGPoint(x: elementFrame.midX, y: elementFrame.midY))
+        return true
+    }
+
+    private func waitForMenuItem(named title: String, timeout: TimeInterval) -> AXUIElement? {
+        let systemWide = AXUIElementCreateSystemWide()
+        return waitForElement(
+            in: systemWide,
+            timeout: timeout,
+            matching: { element in
+                self.role(of: element) == kAXMenuItemRole as String && self.title(of: element) == title
+            }
+        )
     }
 
     private func drag(from start: CGPoint, to end: CGPoint) {
