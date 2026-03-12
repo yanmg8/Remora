@@ -33,11 +33,6 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Setup Swift 6.2
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.2"
-
       - name: Show Xcode version
         run: xcodebuild -version
 
@@ -61,90 +56,19 @@ jobs:
             echo "Tag commit is not on main. Skip packaging for this tag."
           fi
 
-      - name: Build Remora (Release)
-        if: steps.ref_guard.outputs.tag_on_main == 'true'
-        run: swift build -c release --arch "${{ matrix.arch }}" --product RemoraApp -Xswiftc -strict-concurrency=minimal
-
-      - name: Create app bundle and archive
+      - name: Package Remora.app
         if: steps.ref_guard.outputs.tag_on_main == 'true'
         shell: bash
         run: |
           set -euo pipefail
-
-          ARCH="${{ matrix.arch }}"
-          LABEL="${{ matrix.label }}"
           VERSION="${GITHUB_REF_NAME:-dev-${GITHUB_SHA::7}}"
-          PRODUCT_DIR=".build/${ARCH}-apple-macosx/release"
-          BINARY_PATH="${PRODUCT_DIR}/RemoraApp"
-          RESOURCE_BUNDLE="$(find "${PRODUCT_DIR}" -maxdepth 1 -type d -name '*_RemoraApp.bundle' | head -n 1 || true)"
-
-          if [[ ! -x "${BINARY_PATH}" ]]; then
-            echo "Missing binary at ${BINARY_PATH}" >&2
-            exit 1
-          fi
-          if [[ -z "${RESOURCE_BUNDLE}" ]]; then
-            echo "Missing SwiftPM resource bundle in ${PRODUCT_DIR}" >&2
-            exit 1
-          fi
-
-          STAGE_DIR="dist/${LABEL}"
-          APP_DIR="${STAGE_DIR}/Remora.app"
-          mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
-
-          cp "${BINARY_PATH}" "${APP_DIR}/Contents/MacOS/Remora"
-          RESOURCE_BUNDLE_NAME="$(basename "${RESOURCE_BUNDLE}")"
-          cp -R "${RESOURCE_BUNDLE}" "${APP_DIR}/Contents/Resources/${RESOURCE_BUNDLE_NAME}"
-
-          if [[ -f "Resources/AppIcon.icns" ]]; then
-            cp "Resources/AppIcon.icns" "${APP_DIR}/Contents/Resources/AppIcon.icns"
-          fi
-
-          if [[ ! -d "${APP_DIR}/Contents/Resources/${RESOURCE_BUNDLE_NAME}" ]]; then
-            echo "Missing bundled resources at ${APP_DIR}/Contents/Resources/${RESOURCE_BUNDLE_NAME}" >&2
-            exit 1
-          fi
-
-          cat > "${APP_DIR}/Contents/Info.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleDisplayName</key>
-            <string>Remora</string>
-            <key>CFBundleExecutable</key>
-            <string>Remora</string>
-            <key>CFBundleIdentifier</key>
-            <string>io.github.wuujiawei.remora</string>
-            <key>CFBundleIconFile</key>
-            <string>AppIcon.icns</string>
-            <key>CFBundleName</key>
-            <string>Remora</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>CFBundleShortVersionString</key>
-            <string>0.0.0</string>
-            <key>CFBundleVersion</key>
-            <string>0</string>
-            <key>LSMinimumSystemVersion</key>
-            <string>14.0</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
-
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION#v}" "${APP_DIR}/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "${APP_DIR}/Contents/Info.plist"
-
-          # Ad-hoc sign for cleaner local launch after download.
-          codesign --force --deep --sign - "${APP_DIR}"
-
-          ARCHIVE_PATH="dist/Remora-${VERSION}-macos-${LABEL}.zip"
-          ditto -c -k --sequesterRsrc --keepParent "${APP_DIR}" "${ARCHIVE_PATH}"
-          shasum -a 256 "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
-
-          file "${APP_DIR}/Contents/MacOS/Remora"
-          ls -lh "${ARCHIVE_PATH}" "${ARCHIVE_PATH}.sha256"
+          chmod +x scripts/package_macos.sh
+          scripts/package_macos.sh \
+            --arch "${{ matrix.arch }}" \
+            --version "${VERSION#v}" \
+            --build-number "${GITHUB_RUN_NUMBER}" \
+            --output-dir dist \
+            --zip-name "Remora-${VERSION}-macos-${{ matrix.label }}.zip"
 
       - name: Upload build artifact
         if: steps.ref_guard.outputs.tag_on_main == 'true'

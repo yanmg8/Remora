@@ -8,6 +8,9 @@ dist/
 
 # Xcode
 DerivedData/
+.derived/
+.derived-native/
+.derived-package/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
@@ -37,4 +40,3 @@ DerivedData/
 docs/wiki/node_modules/
 docs/wiki/.astro/
 docs/wiki/dist/
-

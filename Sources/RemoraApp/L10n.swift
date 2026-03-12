@@ -1,7 +1,7 @@
 import Foundation
 
 enum L10n {
-    private static let resourceBundle = resolveResourceBundle() ?? .main
+    private static let resourceBundle = resolveAppResourceBundle()
     private static let resourceBundleName = "Remora_RemoraApp.bundle"
 
     static func tr(_ key: String, fallback: String, modeOverride: AppLanguageMode? = nil) -> String {
@@ -16,6 +16,13 @@ enum L10n {
         }
 
         return resourceBundle.localizedString(forKey: key, value: fallback, table: nil)
+    }
+
+    static func resolveAppResourceBundle() -> Bundle {
+        if mainBundleContainsLocalizedResources() {
+            return .main
+        }
+        return resolveResourceBundle() ?? .main
     }
 
     static func resolveResourceBundle(
@@ -84,6 +91,19 @@ enum L10n {
         }
 
         return candidates.filter { $0.lastPathComponent == resourceBundleName }
+    }
+
+    static func mainBundleContainsLocalizedResources(
+        resourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard let resourceURL else { return false }
+        return ["en.lproj", "zh-Hans.lproj"].contains { localization in
+            let candidate = resourceURL
+                .appendingPathComponent(localization, isDirectory: true)
+                .appendingPathComponent("Localizable.strings")
+            return fileManager.fileExists(atPath: candidate.path)
+        }
     }
 
     static func sourceRootBundleURLs(fileManager: FileManager = .default) -> [URL] {

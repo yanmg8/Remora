@@ -50,6 +50,21 @@ struct L10nTests {
         #expect(bundle?.bundleURL.standardizedFileURL == bundleURL.standardizedFileURL)
     }
 
+    @Test
+    func prefersMainBundleResourcesWhenLocalizedStringsExist() throws {
+        let tempRoot = try makeTemporaryDirectory()
+        let resourcesURL = tempRoot.appending(path: "Contents/Resources", directoryHint: .isDirectory)
+        let localizationURL = resourcesURL.appending(path: "en.lproj", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: localizationURL, withIntermediateDirectories: true)
+        try "Language = \"Language\";".write(
+            to: localizationURL.appending(path: "Localizable.strings"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        #expect(L10n.mainBundleContainsLocalizedResources(resourceURL: resourcesURL))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appending(path: UUID().uuidString, directoryHint: .isDirectory)
