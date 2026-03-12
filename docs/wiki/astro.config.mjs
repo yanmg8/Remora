@@ -22,6 +22,11 @@ export default defineConfig({
       },
       social: [
         {
+          label: '下载',
+          icon: 'cloud-download',
+          href: 'https://github.com/wuuJiawei/Remora/releases/latest',
+        },
+        {
           label: 'GitHub',
           icon: 'github',
           href: 'https://github.com/wuuJiawei/Remora',
