@@ -3,10 +3,6 @@ title: 更新日志
 description: Remora 版本更新历史
 ---
 
-import { Link } from '@astrojs/starlight/components';
-
-# 更新日志
-
 本页面内容同步自 [GitHub 仓库 CHANGELOG.md](https://github.com/wuuJiawei/Remora/blob/main/CHANGELOG.md)。
 
 ## [v0.10.4] - 2026-03-08

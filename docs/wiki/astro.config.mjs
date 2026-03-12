@@ -31,13 +31,12 @@ export default defineConfig({
           icon: 'x.com',
           href: 'https://x.com/1Javeys',
         },
-        {
-          label: '更新日志',
-          icon: 'add-document',
-          href: '/changelog/',
-        },
       ],
       sidebar: [
+        {
+          label: '更新日志',
+          link: 'https://github.com/wuuJiawei/Remora/blob/main/CHANGELOG.md',
+        },
         {
           label: 'Getting Started',
           translations: {
