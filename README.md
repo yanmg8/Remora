@@ -82,7 +82,7 @@ swift build
 swift run RemoraApp
 ```
 
-如果你更习惯 Xcode，直接打开 `Remora.xcodeproj`，运行 `Remora` scheme 即可。
+如果你更习惯 Xcode，直接打开 `Remora.xcodeproj`，首次等待 Xcode 自动解析 Swift packages，然后运行 `Remora` scheme 即可。
 
 ### 本地打包
 

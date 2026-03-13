@@ -4,7 +4,7 @@ description: Terminal features and configuration.
 ---
 
 
-Remora includes a custom high-performance terminal engine built from scratch, optimized for modern TUI applications.
+Remora uses a SwiftTerm-based terminal stack, with `RemoraTerminal` keeping only the app-facing adapter layer and integration points.
 
 ## Features
 

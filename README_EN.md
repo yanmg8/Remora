@@ -82,7 +82,7 @@ swift build
 swift run RemoraApp
 ```
 
-If you prefer Xcode, open `Remora.xcodeproj` and run the `Remora` scheme.
+If you prefer Xcode, open `Remora.xcodeproj`, let Xcode resolve Swift packages on first launch, and run the `Remora` scheme.
 
 ### Package Locally
 

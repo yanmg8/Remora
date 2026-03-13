@@ -16,7 +16,7 @@ description: 在 macOS 上安装 Remora。
 
 ## 从源码运行
 
-推荐直接打开仓库根目录下的 `Remora.xcodeproj`，运行 `Remora` scheme。
+推荐直接打开仓库根目录下的 `Remora.xcodeproj`，首次等待 Xcode 自动解析 Swift packages，再运行 `Remora` scheme。
 
 命令行开发运行：
 

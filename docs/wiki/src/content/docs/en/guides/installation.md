@@ -14,7 +14,7 @@ description: How to install Remora on your Mac.
 
 ## Build from Source
 
-Open `Remora.xcodeproj` and run the `Remora` scheme for the standard macOS app workflow.
+Open `Remora.xcodeproj`, let Xcode resolve Swift packages on first launch, then run the `Remora` scheme for the standard macOS app workflow.
 
 You can also use the command line for development:
 
