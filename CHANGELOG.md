@@ -6,6 +6,25 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [v0.10.7] - 2026-03-13
+
+### Added
+
+- SSH sidebar now supports drag-and-drop ordering for top-level groups and SSH connections, including moving connections between groups and the ungrouped flat list.
+- New SSH connections can now remain ungrouped instead of being forced into a named group.
+- Session tab context menus now include a direct SSH reconnect action.
+- Project site homepage now includes direct download buttons for Apple Silicon and Intel release builds.
+
+### Changed
+
+- Deleting an SSH group can now either delete its contained connections or move them back to the ungrouped list.
+- Split session panes now preserve the original terminal content, create a live connected pane from the current session context, and allow closing the extra pane directly.
+
+### Fixed
+
+- SSH sidebar quick-delete and context-menu delete actions now require confirmation before removing a connection.
+- Local shell sessions now force a UTF-8 locale so Chinese filenames and command input round-trip correctly.
+
 ## [v0.10.6] - 2026-03-12
 
 ### Fixed

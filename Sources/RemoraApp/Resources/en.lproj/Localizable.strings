@@ -97,6 +97,7 @@
 "SSH Threads" = "SSH Threads";
 "Settings" = "Settings";
 "Create an SSH connection to start your first session." = "Create an SSH connection to start your first session.";
+"Drop here to keep this SSH connection ungrouped." = "Drop here to keep this SSH connection ungrouped.";
 "No SSH connections yet" = "No SSH connections yet";
 "Click \"New SSH Connection\" to create your first connection." = "Click \"New SSH Connection\" to create your first connection.";
 

@@ -30,6 +30,41 @@ private struct PendingGroupDeletion: Identifiable, Equatable {
     var deleteHosts: Bool
 }
 
+private enum SidebarDragPayload: Equatable {
+    case host(UUID)
+    case group(String)
+
+    private static let hostPrefix = "host:"
+    private static let groupPrefix = "group:"
+
+    var rawValue: String {
+        switch self {
+        case .host(let id):
+            return "\(Self.hostPrefix)\(id.uuidString)"
+        case .group(let name):
+            return "\(Self.groupPrefix)\(name)"
+        }
+    }
+
+    init?(_ rawValue: String) {
+        if rawValue.hasPrefix(Self.hostPrefix) {
+            let suffix = String(rawValue.dropFirst(Self.hostPrefix.count))
+            guard let id = UUID(uuidString: suffix) else { return nil }
+            self = .host(id)
+            return
+        }
+
+        if rawValue.hasPrefix(Self.groupPrefix) {
+            let suffix = String(rawValue.dropFirst(Self.groupPrefix.count))
+            guard !suffix.isEmpty else { return nil }
+            self = .group(suffix)
+            return
+        }
+
+        return nil
+    }
+}
+
 @MainActor
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
@@ -165,6 +200,10 @@ struct ContentView: View {
 
     private var visibleGroupSections: [HostGroupSection] {
         hostCatalog.groupSections(matching: hostSearchQuery)
+    }
+
+    private var visibleUngroupedHosts: [RemoraCore.Host] {
+        hostCatalog.ungroupedHosts(matching: hostSearchQuery)
     }
 
     private var groupDeletionSheetBinding: Binding<Bool> {
@@ -559,6 +598,7 @@ struct ContentView: View {
                     .padding(.bottom, 8)
             } else {
                 LazyVStack(spacing: 6) {
+                    sidebarUngroupedHosts
                     ForEach(visibleGroupSections) { section in
                         sidebarGroupSection(section)
                     }
@@ -566,6 +606,67 @@ struct ContentView: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sidebarUngroupedHosts: some View {
+        if !visibleUngroupedHosts.isEmpty {
+            VStack(spacing: 4) {
+                ForEach(visibleUngroupedHosts) { host in
+                    SidebarHostRow(
+                        host: host,
+                        isSelected: selectedHostID == host.id,
+                        dragPayload: SidebarDragPayload.host(host.id).rawValue,
+                        onDropPayloads: { items in
+                            handleDropPayloads(items, beforeHost: host)
+                        },
+                        onSelect: {
+                            selectedHostID = host.id
+                        },
+                        onOpen: {
+                            openHostInNewSession(host.id)
+                        },
+                        onEdit: {
+                            beginEditHost(host.id)
+                        },
+                        onCopyConnectionInfo: {
+                            copyConnectionInfo(host)
+                        },
+                        onCopyAddress: {
+                            copyToPasteboard(host.address)
+                        },
+                        onCopySSHCommand: {
+                            copyToPasteboard(HostConnectionClipboardBuilder.sshCommand(for: host))
+                        },
+                        onManageQuickCommands: {
+                            beginManageQuickCommands(for: host.id)
+                        },
+                        onDelete: {
+                            requestHostDeletion(host.id)
+                        }
+                    )
+                }
+            }
+            .padding(.bottom, 4)
+            .dropDestination(for: String.self) { items, _ in
+                handleDropPayloadsIntoUngrouped(items)
+            }
+        } else {
+            Text(tr("Drop here to keep this SSH connection ungrouped."))
+                .font(.system(size: 12))
+                .foregroundStyle(VisualStyle.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(VisualStyle.leftHoverBackground.opacity(0.35))
+                )
+                .dropDestination(for: String.self) { items, _ in
+                    handleDropPayloadsIntoUngrouped(items)
+                }
+                .padding(.bottom, 4)
         }
     }
 
@@ -611,6 +712,13 @@ struct ContentView: View {
             section: section,
             displayName: displayGroupName(section.name),
             selectedHostID: selectedHostID,
+            dragPayload: SidebarDragPayload.group(section.name).rawValue,
+            onDropPayloads: { items in
+                handleDropPayloads(items, intoGroup: section.name)
+            },
+            onDropBeforeHost: { items, host in
+                handleDropPayloads(items, beforeHost: host)
+            },
             isCollapsed: collapsedGroupNames.contains(section.name),
             onToggleCollapsed: {
                 toggleGroupCollapse(section.name)
@@ -1129,7 +1237,9 @@ struct ContentView: View {
     }
 
     private func beginCreateHostInPreferredGroup() {
-        let preferredGroup = selectedHost?.group ?? hostCatalog.groups.first ?? "New Group"
+        let preferredGroup = selectedHost?.group == HostCatalogStore.ungroupedGroupIdentifier
+            ? ""
+            : (selectedHost?.group ?? "")
         beginCreateHost(in: preferredGroup)
     }
 
@@ -1506,6 +1616,36 @@ struct ContentView: View {
     private func confirmHostDeletion(_ pending: PendingHostDeletion) {
         pendingHostDeletion = nil
         deleteHost(pending.id)
+    }
+
+    private func handleDropPayloads(_ items: [String], intoGroup groupName: String) -> Bool {
+        guard let payload = items.compactMap(SidebarDragPayload.init).first else { return false }
+        switch payload {
+        case .host(let hostID):
+            hostCatalog.moveHost(id: hostID, toGroup: groupName)
+            collapsedGroupNames.remove(groupName)
+            return true
+        case .group(let draggedGroup):
+            hostCatalog.moveGroup(named: draggedGroup, before: groupName)
+            return true
+        }
+    }
+
+    private func handleDropPayloads(_ items: [String], beforeHost host: RemoraCore.Host) -> Bool {
+        guard let payload = items.compactMap(SidebarDragPayload.init).first else { return false }
+        guard case .host(let hostID) = payload else { return false }
+        hostCatalog.moveHost(id: hostID, toGroup: host.group, before: host.id)
+        if host.group != HostCatalogStore.ungroupedGroupIdentifier {
+            collapsedGroupNames.remove(host.group)
+        }
+        return true
+    }
+
+    private func handleDropPayloadsIntoUngrouped(_ items: [String]) -> Bool {
+        guard let payload = items.compactMap(SidebarDragPayload.init).first else { return false }
+        guard case .host(let hostID) = payload else { return false }
+        hostCatalog.moveHost(id: hostID, toGroup: HostCatalogStore.ungroupedGroupIdentifier)
+        return true
     }
 
     private func beginRenameSession(_ tabID: UUID) {
@@ -2160,6 +2300,9 @@ private struct SidebarGroupSectionView: View {
     let section: HostGroupSection
     let displayName: String
     let selectedHostID: UUID?
+    let dragPayload: String
+    let onDropPayloads: ([String]) -> Bool
+    let onDropBeforeHost: ([String], RemoraCore.Host) -> Bool
     let isCollapsed: Bool
     let onToggleCollapsed: () -> Void
     let onAddThread: () -> Void
@@ -2212,6 +2355,7 @@ private struct SidebarGroupSectionView: View {
             }
             .padding(.horizontal, 4)
             .frame(height: 22)
+            .draggable(dragPayload)
             .contextMenu {
                 if canManageGroup {
                     Button(tr("Create connection")) {
@@ -2247,6 +2391,10 @@ private struct SidebarGroupSectionView: View {
                         SidebarHostRow(
                             host: host,
                             isSelected: selectedHostID == host.id,
+                            dragPayload: SidebarDragPayload.host(host.id).rawValue,
+                            onDropPayloads: { items in
+                                onDropBeforeHost(items, host)
+                            },
                             onSelect: {
                                 onSelectThread(host.id)
                             },
@@ -2275,6 +2423,9 @@ private struct SidebarGroupSectionView: View {
                     }
                 }
             }
+        }
+        .dropDestination(for: String.self) { items, _ in
+            onDropPayloads(items)
         }
     }
 }
@@ -2328,6 +2479,8 @@ private struct HostExportSheet: View {
 private struct SidebarHostRow: View {
     let host: RemoraCore.Host
     let isSelected: Bool
+    let dragPayload: String
+    let onDropPayloads: ([String]) -> Bool
     let onSelect: () -> Void
     let onOpen: () -> Void
     let onEdit: () -> Void
@@ -2348,6 +2501,10 @@ private struct SidebarHostRow: View {
             rowContent
         }
         .buttonStyle(.plain)
+        .draggable(dragPayload)
+        .dropDestination(for: String.self) { items, _ in
+            onDropPayloads(items)
+        }
         .accessibilityIdentifier("sidebar-host-row-\(host.name)")
         .animation(nil, value: isSelected)
         .contextMenu {
@@ -2514,7 +2671,7 @@ private struct SidebarHostEditorDraft {
     var password: String
     var savePassword: Bool
 
-    init(preferredGroup: String = "New Group") {
+    init(preferredGroup: String = "") {
         self.connectionName = ""
         self.hostAddress = "127.0.0.1"
         self.portText = "22"
@@ -2531,7 +2688,7 @@ private struct SidebarHostEditorDraft {
         self.hostAddress = host.address
         self.portText = "\(host.port)"
         self.usernameText = host.username
-        self.groupText = host.group
+        self.groupText = host.group == HostCatalogStore.ungroupedGroupIdentifier ? "" : host.group
         self.privateKeyPath = host.auth.keyReference ?? ""
         self.password = ""
         self.savePassword = host.auth.passwordReference != nil
@@ -2566,7 +2723,7 @@ private struct SidebarHostEditorDraft {
 
     var groupName: String {
         let trimmed = groupText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "New Group" : trimmed
+        return trimmed.isEmpty ? HostCatalogStore.ungroupedGroupIdentifier : trimmed
     }
 
     var port: Int? {

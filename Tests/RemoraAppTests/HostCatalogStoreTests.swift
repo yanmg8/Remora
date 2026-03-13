@@ -129,11 +129,7 @@ struct HostCatalogStoreTests {
 
         #expect(store.groups.contains(groupName) == false)
         #expect(store.host(id: host.id)?.group == HostCatalogStore.ungroupedGroupIdentifier)
-
-        let sections = store.groupSections(matching: "")
-        let ungrouped = sections.first(where: { $0.name == HostCatalogStore.ungroupedGroupIdentifier })
-        #expect(ungrouped?.isSystemSection == true)
-        #expect(ungrouped?.hosts.contains(where: { $0.id == host.id }) == true)
+        #expect(store.ungroupedHosts(matching: "").contains(where: { $0.id == host.id }))
     }
 
     @Test
@@ -154,7 +150,7 @@ struct HostCatalogStoreTests {
 
         #expect(store.groups.contains(groupName) == false)
         #expect(store.host(id: host.id) == nil)
-        #expect(store.groupSections(matching: "").contains(where: { $0.name == HostCatalogStore.ungroupedGroupIdentifier }) == false)
+        #expect(store.ungroupedHosts(matching: "").contains(where: { $0.id == host.id }) == false)
     }
 
     @Test
@@ -212,9 +208,59 @@ struct HostCatalogStoreTests {
         #expect(updated != nil)
         #expect(updated?.name == "prod-api-2")
         #expect(updated?.port == 22)
-        #expect(updated?.group == "New Group")
+        #expect(updated?.group == HostCatalogStore.ungroupedGroupIdentifier)
         #expect(updated?.auth.method == .agent)
-        #expect(store.groups.contains("New Group"))
+        #expect(store.groups.contains("New Group") == false)
+    }
+
+    @Test
+    func moveHostCanReorderAcrossUngroupedAndGroups() {
+        let store = HostCatalogStore()
+        let alpha = store.addGroup(named: "Alpha")
+        let beta = store.addGroup(named: "Beta")
+
+        let ungrouped = store.addHost(
+            Host(name: "ungrouped", address: "10.0.0.1", username: "root", group: "", auth: HostAuth(method: .agent))
+        )
+        let alphaFirst = store.addHost(
+            Host(name: "alpha-1", address: "10.0.0.2", username: "root", group: alpha, auth: HostAuth(method: .agent))
+        )
+        let alphaSecond = store.addHost(
+            Host(name: "alpha-2", address: "10.0.0.3", username: "root", group: alpha, auth: HostAuth(method: .agent))
+        )
+        let betaOnly = store.addHost(
+            Host(name: "beta-1", address: "10.0.0.4", username: "root", group: beta, auth: HostAuth(method: .agent))
+        )
+
+        store.moveHost(id: alphaSecond.id, toGroup: HostCatalogStore.ungroupedGroupIdentifier, before: ungrouped.id)
+        #expect(store.ungroupedHosts(matching: "").map(\.id) == [alphaSecond.id, ungrouped.id])
+
+        store.moveHost(id: ungrouped.id, toGroup: beta, before: betaOnly.id)
+        let betaHosts = store.groupSections(matching: "")
+            .first(where: { $0.name == beta })?
+            .hosts
+            .map(\.id)
+        #expect(betaHosts == [ungrouped.id, betaOnly.id])
+
+        let alphaHosts = store.groupSections(matching: "")
+            .first(where: { $0.name == alpha })?
+            .hosts
+            .map(\.id)
+        #expect(alphaHosts == [alphaFirst.id])
+    }
+
+    @Test
+    func moveGroupCanReorderTopLevelGroups() {
+        let store = HostCatalogStore()
+        _ = store.addGroup(named: "Alpha")
+        _ = store.addGroup(named: "Beta")
+        _ = store.addGroup(named: "Gamma")
+
+        store.moveGroup(named: "Gamma", before: "Beta")
+        #expect(store.groups == ["Alpha", "Gamma", "Beta"])
+
+        store.moveGroup(named: "Alpha", before: nil)
+        #expect(store.groups == ["Gamma", "Beta", "Alpha"])
     }
 
     @Test
