@@ -7,6 +7,18 @@ description: Remora 版本更新历史
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-03-13
+
+### 更改
+
+- 终端底层实现已从自研 parser、buffer、renderer、input 栈切换为基于 SwiftTerm 的集成方案。
+- `Remora.xcodeproj` 现已和 SwiftTerm 迁移保持一致，Xcode 会正确解析并链接 Swift package 依赖。
+
+### 修复
+
+- 终端 pane 现在重新保留稳定的 10pt 内容呼吸区，不再让终端内容紧贴 pane 边框。
+- Xcode 构建不再引用已删除的旧终端源码文件，terminal 迁移后的工程路径恢复可用。
+
 ## [v0.10.7] - 2026-03-13
 
 ### 新增

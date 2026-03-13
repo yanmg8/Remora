@@ -6,6 +6,7 @@ enum VisualStyle {
     static let panelSpacing: CGFloat = 12
     static let cardRadius: CGFloat = 14
     static let smallRadius: CGFloat = 10
+    static let terminalContentInset: CGFloat = 10
 
     static let leftSidebarBackground = Color(nsColor: .controlBackgroundColor)
     static let leftInteractiveBackground = Color(nsColor: .selectedContentBackgroundColor).opacity(0.2)

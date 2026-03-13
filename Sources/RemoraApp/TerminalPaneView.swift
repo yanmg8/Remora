@@ -130,14 +130,18 @@ struct TerminalPaneView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
 
-            TerminalViewRepresentable(pane: pane, runtime: runtime, onFocus: onSelect)
-                .background(VisualStyle.terminalBackground)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        onSelect()
-                    }
-                )
+            ZStack {
+                VisualStyle.terminalBackground
+
+                TerminalViewRepresentable(pane: pane, runtime: runtime, onFocus: onSelect)
+                    .padding(VisualStyle.terminalContentInset)
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            onSelect()
+                        }
+                    )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(VisualStyle.rightPanelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

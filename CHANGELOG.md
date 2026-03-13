@@ -6,6 +6,18 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [v0.11.0] - 2026-03-13
+
+### Changed
+
+- Replaced the custom terminal parser, buffer, renderer, and input stack with a SwiftTerm-based terminal integration.
+- `Remora.xcodeproj` now matches the SwiftTerm migration and resolves Swift package dependencies correctly in Xcode.
+
+### Fixed
+
+- Terminal panes now keep a consistent 10pt breathing space around the terminal content instead of rendering flush to the pane border.
+- Xcode builds no longer reference deleted custom terminal source files after the terminal-stack migration.
+
 ## [v0.10.7] - 2026-03-13
 
 ### Added
