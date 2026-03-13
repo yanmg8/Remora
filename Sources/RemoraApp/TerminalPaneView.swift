@@ -6,7 +6,9 @@ struct TerminalPaneView: View {
     @ObservedObject private var runtime: TerminalRuntime
     var quickCommands: [HostQuickCommand]
     var isFocused: Bool
+    var canClose: Bool
     var onSelect: () -> Void
+    var onClose: () -> Void
     var onRunQuickCommand: (HostQuickCommand) -> Void
     var onManageQuickCommands: () -> Void
 
@@ -25,7 +27,9 @@ struct TerminalPaneView: View {
         pane: TerminalPaneModel,
         quickCommands: [HostQuickCommand] = [],
         isFocused: Bool,
+        canClose: Bool = false,
         onSelect: @escaping () -> Void,
+        onClose: @escaping () -> Void = {},
         onRunQuickCommand: @escaping (HostQuickCommand) -> Void = { _ in },
         onManageQuickCommands: @escaping () -> Void = {}
     ) {
@@ -33,7 +37,9 @@ struct TerminalPaneView: View {
         self._runtime = ObservedObject(wrappedValue: pane.runtime)
         self.quickCommands = quickCommands
         self.isFocused = isFocused
+        self.canClose = canClose
         self.onSelect = onSelect
+        self.onClose = onClose
         self.onRunQuickCommand = onRunQuickCommand
         self.onManageQuickCommands = onManageQuickCommands
     }
@@ -100,6 +106,19 @@ struct TerminalPaneView: View {
                     .accessibilityIdentifier("terminal-reconnect")
                 }
 
+                if canClose {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .help(tr("Close Pane"))
+                    .accessibilityIdentifier("terminal-close-pane")
+                }
+
                 Image(systemName: isFocused ? "cursorarrow.motionlines" : "cursorarrow")
                     .font(.caption)
                     .foregroundStyle(VisualStyle.textSecondary)
@@ -111,7 +130,7 @@ struct TerminalPaneView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
 
-            TerminalViewRepresentable(runtime: runtime, onFocus: onSelect)
+            TerminalViewRepresentable(pane: pane, runtime: runtime, onFocus: onSelect)
                 .background(VisualStyle.terminalBackground)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

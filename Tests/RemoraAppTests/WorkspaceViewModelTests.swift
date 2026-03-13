@@ -1,11 +1,38 @@
+import Foundation
 import Testing
+import RemoraCore
 @testable import RemoraApp
 
 @MainActor
 struct WorkspaceViewModelTests {
+    private func waitUntil(
+        timeout: TimeInterval,
+        interval: TimeInterval = 0.02,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+        }
+        return condition()
+    }
+
+    private func makeWorkspace() -> WorkspaceViewModel {
+        WorkspaceViewModel(
+            paneFactory: {
+                let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+                let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager)
+                return TerminalPaneModel(runtime: runtime)
+            }
+        )
+    }
+
     @Test
     func startsWithoutDefaultSessionTab() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         #expect(workspace.tabs.isEmpty)
         #expect(workspace.activeTabID == nil)
@@ -14,7 +41,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func createAndCloseTab() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         #expect(workspace.tabs.count == 0)
 
@@ -32,7 +59,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func splitActiveTabCreatesSecondPane() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
         workspace.createTab(connectLocalShell: false)
         guard let tab = workspace.tabs.first else {
             Issue.record("Expected tab before split.")
@@ -48,7 +75,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func customTabTitleUsesSuffixToAvoidDuplicates() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(title: "prod-api")
         workspace.createTab(title: "prod-api")
@@ -62,7 +89,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func defaultLocalTabsUseLocalTitleWithSequence() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(connectLocalShell: false)
         workspace.createTab(connectLocalShell: false)
@@ -74,7 +101,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func createTabCanSkipLocalAutoConnect() async {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(title: "ssh-target", connectLocalShell: false)
         guard let activePane = workspace.activePane else {
@@ -88,7 +115,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func closeTabCanRemoveLastTab() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
         workspace.createTab(connectLocalShell: false)
         guard let firstTabID = workspace.tabs.first?.id else {
             Issue.record("Expected tab for close-last test.")
@@ -103,7 +130,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func closeAllInactiveTabsKeepsActiveTab() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
@@ -126,7 +153,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func closeTabsLeftAndRightUseReferenceTab() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
@@ -152,7 +179,7 @@ struct WorkspaceViewModelTests {
 
     @Test
     func closeAllTabsRemovesEverything() {
-        let workspace = WorkspaceViewModel()
+        let workspace = makeWorkspace()
 
         workspace.createTab(title: "Session 1", connectLocalShell: false)
         workspace.createTab(title: "Session 2", connectLocalShell: false)
@@ -163,5 +190,105 @@ struct WorkspaceViewModelTests {
         #expect(workspace.tabs.isEmpty)
         #expect(workspace.activeTabID == nil)
         #expect(workspace.activePane == nil)
+    }
+
+    @Test
+    func splitActiveTabReconnectsCurrentSSHInNewPane() async {
+        let workspace = makeWorkspace()
+        let host = Host(
+            name: "prod-api",
+            address: "47.100.100.215",
+            username: "root",
+            group: "Production",
+            auth: HostAuth(method: .agent)
+        )
+
+        workspace.createTab(connectLocalShell: false)
+        guard let originalPane = workspace.activePane,
+              let tab = workspace.activeTab
+        else {
+            Issue.record("Expected active pane before SSH split.")
+            return
+        }
+        let originalTerminalView = originalPane.terminalView
+
+        workspace.connectActivePane(host: host, template: nil)
+        let firstConnected = await waitUntil(timeout: 2.0) {
+            originalPane.runtime.connectedSSHHost?.id == host.id
+                && originalPane.runtime.connectionState.contains("Connected (SSH)")
+        }
+        #expect(firstConnected, "Expected original pane to connect before splitting.")
+        guard firstConnected else { return }
+
+        workspace.splitActiveTab(orientation: .horizontal)
+
+        #expect(tab.panes.count == 2)
+        guard let splitPane = tab.panes.last else {
+            Issue.record("Expected split pane after splitting.")
+            return
+        }
+        #expect(originalPane.terminalView === originalTerminalView)
+        #expect(splitPane.id != originalPane.id)
+        #expect(workspace.activePane?.id == splitPane.id)
+
+        let secondConnected = await waitUntil(timeout: 2.0) {
+            splitPane.runtime.connectedSSHHost?.id == host.id
+                && splitPane.runtime.connectionState.contains("Connected (SSH)")
+        }
+        #expect(secondConnected, "Expected split pane to reconnect using the current SSH host.")
+        #expect(originalPane.runtime.connectedSSHHost?.id == host.id)
+
+        tab.panes.forEach { $0.runtime.disconnect() }
+    }
+
+    @Test
+    func closePaneRemovesSplitPaneAndKeepsRemainingPaneActive() async {
+        let workspace = makeWorkspace()
+        let host = Host(
+            name: "prod-api",
+            address: "47.100.100.215",
+            username: "root",
+            group: "Production",
+            auth: HostAuth(method: .agent)
+        )
+
+        workspace.createTab(connectLocalShell: false)
+        guard let originalPane = workspace.activePane,
+              let tab = workspace.activeTab
+        else {
+            Issue.record("Expected active pane before close-pane test.")
+            return
+        }
+        let originalTerminalView = originalPane.terminalView
+
+        workspace.connectActivePane(host: host, template: nil)
+        let firstConnected = await waitUntil(timeout: 2.0) {
+            originalPane.runtime.connectedSSHHost?.id == host.id
+        }
+        #expect(firstConnected)
+        guard firstConnected else { return }
+
+        workspace.splitActiveTab(orientation: .vertical)
+        guard let splitPane = tab.panes.last else {
+            Issue.record("Expected split pane before closing.")
+            return
+        }
+
+        let secondConnected = await waitUntil(timeout: 2.0) {
+            splitPane.runtime.connectedSSHHost?.id == host.id
+        }
+        #expect(secondConnected)
+        guard secondConnected else { return }
+
+        workspace.closePane(splitPane.id, in: tab.id)
+
+        #expect(tab.panes.count == 1)
+        #expect(tab.panes.first?.id == originalPane.id)
+        #expect(tab.panes.first?.terminalView === originalTerminalView)
+        #expect(workspace.activePaneByTab[tab.id] == originalPane.id)
+        #expect(workspace.activePane?.id == originalPane.id)
+        #expect(originalPane.runtime.connectedSSHHost?.id == host.id)
+
+        originalPane.runtime.disconnect()
     }
 }

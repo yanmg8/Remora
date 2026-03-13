@@ -24,6 +24,12 @@ private struct PendingHostDeletion: Identifiable, Equatable {
     let address: String
 }
 
+private struct PendingGroupDeletion: Identifiable, Equatable {
+    let id: String
+    let hostCount: Int
+    var deleteHosts: Bool
+}
+
 @MainActor
 struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
@@ -56,6 +62,7 @@ struct ContentView: View {
     @State private var isConnectionInfoPasswordWarningPresented = false
     @State private var pendingConnectionInfoPasswordCopyHost: RemoraCore.Host?
     @State private var pendingHostDeletion: PendingHostDeletion?
+    @State private var pendingGroupDeletion: PendingGroupDeletion?
     @State private var isExportingHosts = false
     @State private var isImportingHosts = false
     @State private var isImportSourceSheetPresented = false
@@ -158,6 +165,17 @@ struct ContentView: View {
 
     private var visibleGroupSections: [HostGroupSection] {
         hostCatalog.groupSections(matching: hostSearchQuery)
+    }
+
+    private var groupDeletionSheetBinding: Binding<Bool> {
+        Binding(
+            get: { pendingGroupDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingGroupDeletion = nil
+                }
+            }
+        )
     }
 
     private var activeRuntimeSFTPStatePublisher: AnyPublisher<ActiveRuntimeSFTPState, Never> {
@@ -288,6 +306,175 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
+        sidebarContent
+            .background(VisualStyle.leftSidebarBackground)
+            .overlay(alignment: .trailing) {
+                Rectangle()
+                    .fill(VisualStyle.borderSoft)
+                    .frame(width: 1)
+            }
+            .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
+            .alert(exportAlertTitle, isPresented: $isExportResultAlertPresented) {
+                Button(tr("OK"), role: .cancel) {}
+            } message: {
+                Text(exportAlertMessage)
+            }
+            .alert(tr("Save password in Keychain?"), isPresented: $isPasswordSaveConsentAlertPresented) {
+                Button(tr("Cancel"), role: .cancel) {}
+                Button(tr("Save to Keychain")) {
+                    hasAcknowledgedPasswordSaveConsent = true
+                    hostEditorDraft.savePassword = true
+                }
+            } message: {
+                Text(tr("Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them."))
+            }
+            .alert(tr("Include saved passwords in export?"), isPresented: $isPasswordExportWarningPresented) {
+                Button(tr("Cancel"), role: .cancel) {}
+                Button(tr("Export with Passwords"), role: .destructive) {
+                    startExport(with: exportDraft)
+                }
+            } message: {
+                Text(tr("Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored."))
+            }
+            .alert(tr("Copy saved SSH password?"), isPresented: $isConnectionInfoPasswordWarningPresented) {
+                Button(tr("Cancel"), role: .cancel) {
+                    pendingConnectionInfoPasswordCopyHost = nil
+                }
+                Button(tr("Continue Once")) {
+                    applyConnectionInfoPasswordCopyChoice(.continueOnce)
+                }
+                Button(tr("Don't Remind Again Today")) {
+                    applyConnectionInfoPasswordCopyChoice(.dontRemindAgainToday)
+                }
+                Button(tr("Don't Remind Again")) {
+                    applyConnectionInfoPasswordCopyChoice(.dontRemindAgainEver)
+                }
+            } message: {
+                Text(tr("This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it."))
+            }
+            .alert(tr("Delete SSH connection?"), isPresented: isHostDeletionConfirmationPresented, presenting: pendingHostDeletion) { pending in
+                Button(tr("Cancel"), role: .cancel) {
+                    pendingHostDeletion = nil
+                }
+                Button(tr("Delete"), role: .destructive) {
+                    confirmHostDeletion(pending)
+                }
+            } message: { pending in
+                Text(
+                    String(
+                        format: tr("This will permanently remove \"%@\" (%@) from the SSH list."),
+                        pending.name,
+                        pending.address
+                    )
+                )
+            }
+            .sheet(isPresented: $isGroupEditorSheetPresented) {
+                SidebarGroupEditorSheet(
+                    mode: groupEditorMode,
+                    value: $groupEditorDraft,
+                    onCancel: {
+                        isGroupEditorSheetPresented = false
+                    },
+                    onConfirm: {
+                        commitGroupEditor()
+                    }
+                )
+            }
+            .sheet(isPresented: groupDeletionSheetBinding) {
+                if let pending = pendingGroupDeletion {
+                    SidebarGroupDeletionSheet(
+                        groupName: displayGroupName(pending.id),
+                        hostCount: pending.hostCount,
+                        deleteHosts: Binding(
+                            get: { pendingGroupDeletion?.deleteHosts ?? false },
+                            set: { newValue in
+                                pendingGroupDeletion?.deleteHosts = newValue
+                            }
+                        ),
+                        onCancel: {
+                            self.pendingGroupDeletion = nil
+                        },
+                        onConfirm: {
+                            guard let pendingGroupDeletion else { return }
+                            confirmGroupDeletion(pendingGroupDeletion)
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $isExportSheetPresented) {
+                HostExportSheet(
+                    draft: $exportDraft,
+                    isExporting: isExportingHosts,
+                    onCancel: {
+                        isExportSheetPresented = false
+                    },
+                    onConfirm: {
+                        isExportSheetPresented = false
+                        if exportDraft.includeSavedPasswords {
+                            isPasswordExportWarningPresented = true
+                        } else {
+                            startExport(with: exportDraft)
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $isHostEditorSheetPresented) {
+                SidebarHostEditorSheet(
+                    mode: hostEditorMode,
+                    draft: $hostEditorDraft,
+                    testState: hostEditorTestState,
+                    onCancel: {
+                        isHostEditorSheetPresented = false
+                    },
+                    onPasswordSaveChange: handlePasswordSaveToggleChange,
+                    onTestConnection: {
+                        testHostConnection()
+                    },
+                    onConfirm: {
+                        Task {
+                            await commitHostEditor()
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $isRenameSessionSheetPresented) {
+                SidebarRenameSheet(
+                    title: tr("Rename Session"),
+                    fieldTitle: tr("Session title"),
+                    value: $renameSessionDraft,
+                    onCancel: {
+                        isRenameSessionSheetPresented = false
+                    },
+                    onConfirm: {
+                        commitRenameSession()
+                    }
+                )
+            }
+            .sheet(isPresented: quickCommandEditorBinding) {
+                quickCommandManagerSheet
+            }
+            .sheet(isPresented: quickPathEditorBinding) {
+                quickPathManagerSheet
+            }
+            .sheet(isPresented: $isImportSourceSheetPresented) {
+                importSourceSheet
+            }
+            .sheet(isPresented: $isImportProgressSheetPresented) {
+                importProgressSheet
+                    .interactiveDismissDisabled(isImportingHosts)
+            }
+    }
+
+    private var sidebarContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sidebarHeader
+            sidebarGroupsList
+            Spacer(minLength: 8)
+            sidebarFooter
+        }
+    }
+
+    private var sidebarHeader: some View {
         VStack(alignment: .leading, spacing: 0) {
             SidebarActionRowButton(
                 title: tr("New SSH Connection"),
@@ -349,238 +536,62 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
+        }
+    }
 
-            ScrollView {
-                if hostCatalog.isLoading {
-                    VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text(tr("Loading SSH connections..."))
-                            .font(.system(size: 12))
-                            .foregroundStyle(VisualStyle.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 180)
-                    .accessibilityIdentifier("sidebar-hosts-loading")
+    private var sidebarGroupsList: some View {
+        ScrollView {
+            if hostCatalog.isLoading {
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(tr("Loading SSH connections..."))
+                        .font(.system(size: 12))
+                        .foregroundStyle(VisualStyle.textSecondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 180)
+                .accessibilityIdentifier("sidebar-hosts-loading")
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
+            } else if hostCatalog.hosts.isEmpty {
+                sidebarEmptyState
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
-                } else if hostCatalog.hosts.isEmpty {
-                    sidebarEmptyState
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 8)
-                } else {
-                    LazyVStack(spacing: 6) {
-                        ForEach(visibleGroupSections) { section in
-                            SidebarGroupSectionView(
-                                section: section,
-                                selectedHostID: selectedHostID,
-                                isCollapsed: collapsedGroupNames.contains(section.name),
-                                onToggleCollapsed: {
-                                    toggleGroupCollapse(section.name)
-                                },
-                                onAddThread: {
-                                    beginCreateHost(in: section.name)
-                                },
-                                onEditGroup: {
-                                    beginEditGroup(section.name)
-                                },
-                                onExportGroup: {
-                                    beginExportGroup(section.name)
-                                },
-                                onDeleteGroup: {
-                                    deleteGroup(section.name)
-                                },
-                                onSelectThread: { hostID in
-                                    selectedHostID = hostID
-                                },
-                                onOpenThread: { hostID in
-                                    openHostInNewSession(hostID)
-                                },
-                                onEditThread: { hostID in
-                                    beginEditHost(hostID)
-                                },
-                                onCopyConnectionInfo: { host in
-                                    copyConnectionInfo(host)
-                                },
-                                onCopyAddress: { host in
-                                    copyToPasteboard(host.address)
-                                },
-                                onCopySSHCommand: { host in
-                                    copyToPasteboard(HostConnectionClipboardBuilder.sshCommand(for: host))
-                                },
-                                onManageQuickCommands: { hostID in
-                                    beginManageQuickCommands(for: hostID)
-                                },
-                                onDeleteThread: { hostID in
-                                    requestHostDeletion(hostID)
-                                }
-                            )
-                        }
+            } else {
+                LazyVStack(spacing: 6) {
+                    ForEach(visibleGroupSections) { section in
+                        sidebarGroupSection(section)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             }
+        }
+    }
 
-            Spacer(minLength: 8)
+    private var sidebarFooter: some View {
+        HStack(spacing: 6) {
+            SidebarActionRowButton(
+                title: tr("Settings"),
+                systemImage: "gearshape"
+            ) {
+                openWindow(id: "settings")
+            }
+            .accessibilityIdentifier("sidebar-settings")
 
-            HStack(spacing: 6) {
-                SidebarActionRowButton(
-                    title: tr("Settings"),
-                    systemImage: "gearshape"
-                ) {
-                    openWindow(id: "settings")
+            SidebarMenuIconButton(systemImage: "questionmark.circle") {
+                Button(tr("View on GitHub")) {
+                    openURL(AppLinks.repositoryURL)
                 }
-                .accessibilityIdentifier("sidebar-settings")
-
-                SidebarMenuIconButton(systemImage: "questionmark.circle") {
-                    Button(tr("View on GitHub")) {
-                        openURL(AppLinks.repositoryURL)
-                    }
-                    Button(tr("Report an issue")) {
-                        openURL(AppLinks.issuesURL)
-                    }
+                Button(tr("Report an issue")) {
+                    openURL(AppLinks.issuesURL)
                 }
-                .help(tr("Help & Community"))
-                .accessibilityIdentifier("sidebar-help-community")
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 10)
+            .help(tr("Help & Community"))
+            .accessibilityIdentifier("sidebar-help-community")
         }
-        .background(VisualStyle.leftSidebarBackground)
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(VisualStyle.borderSoft)
-                .frame(width: 1)
-        }
-        .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
-        .alert(exportAlertTitle, isPresented: $isExportResultAlertPresented) {
-            Button(tr("OK"), role: .cancel) {}
-        } message: {
-            Text(exportAlertMessage)
-        }
-        .alert(tr("Save password in Keychain?"), isPresented: $isPasswordSaveConsentAlertPresented) {
-            Button(tr("Cancel"), role: .cancel) {}
-            Button(tr("Save to Keychain")) {
-                hasAcknowledgedPasswordSaveConsent = true
-                hostEditorDraft.savePassword = true
-            }
-        } message: {
-            Text(tr("Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them."))
-        }
-        .alert(tr("Include saved passwords in export?"), isPresented: $isPasswordExportWarningPresented) {
-            Button(tr("Cancel"), role: .cancel) {}
-            Button(tr("Export with Passwords"), role: .destructive) {
-                startExport(with: exportDraft)
-            }
-        } message: {
-            Text(tr("Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored."))
-        }
-        .alert(tr("Copy saved SSH password?"), isPresented: $isConnectionInfoPasswordWarningPresented) {
-            Button(tr("Cancel"), role: .cancel) {
-                pendingConnectionInfoPasswordCopyHost = nil
-            }
-            Button(tr("Continue Once")) {
-                applyConnectionInfoPasswordCopyChoice(.continueOnce)
-            }
-            Button(tr("Don't Remind Again Today")) {
-                applyConnectionInfoPasswordCopyChoice(.dontRemindAgainToday)
-            }
-            Button(tr("Don't Remind Again")) {
-                applyConnectionInfoPasswordCopyChoice(.dontRemindAgainEver)
-            }
-        } message: {
-            Text(tr("This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it."))
-        }
-        .alert(tr("Delete SSH connection?"), isPresented: isHostDeletionConfirmationPresented, presenting: pendingHostDeletion) { pending in
-            Button(tr("Cancel"), role: .cancel) {
-                pendingHostDeletion = nil
-            }
-            Button(tr("Delete"), role: .destructive) {
-                confirmHostDeletion(pending)
-            }
-        } message: { pending in
-            Text(
-                String(
-                    format: tr("This will permanently remove \"%@\" (%@) from the SSH list."),
-                    pending.name,
-                    pending.address
-                )
-            )
-        }
-        .sheet(isPresented: $isGroupEditorSheetPresented) {
-            SidebarGroupEditorSheet(
-                mode: groupEditorMode,
-                value: $groupEditorDraft,
-                onCancel: {
-                    isGroupEditorSheetPresented = false
-                },
-                onConfirm: {
-                    commitGroupEditor()
-                }
-            )
-        }
-        .sheet(isPresented: $isExportSheetPresented) {
-            HostExportSheet(
-                draft: $exportDraft,
-                isExporting: isExportingHosts,
-                onCancel: {
-                    isExportSheetPresented = false
-                },
-                onConfirm: {
-                    isExportSheetPresented = false
-                    if exportDraft.includeSavedPasswords {
-                        isPasswordExportWarningPresented = true
-                    } else {
-                        startExport(with: exportDraft)
-                    }
-                }
-            )
-        }
-        .sheet(isPresented: $isHostEditorSheetPresented) {
-            SidebarHostEditorSheet(
-                mode: hostEditorMode,
-                draft: $hostEditorDraft,
-                testState: hostEditorTestState,
-                onCancel: {
-                    isHostEditorSheetPresented = false
-                },
-                onPasswordSaveChange: handlePasswordSaveToggleChange,
-                onTestConnection: {
-                    testHostConnection()
-                },
-                onConfirm: {
-                    Task {
-                        await commitHostEditor()
-                    }
-                }
-            )
-        }
-        .sheet(isPresented: $isRenameSessionSheetPresented) {
-            SidebarRenameSheet(
-                title: tr("Rename Session"),
-                fieldTitle: tr("Session title"),
-                value: $renameSessionDraft,
-                onCancel: {
-                    isRenameSessionSheetPresented = false
-                },
-                onConfirm: {
-                    commitRenameSession()
-                }
-            )
-        }
-        .sheet(isPresented: quickCommandEditorBinding) {
-            quickCommandManagerSheet
-        }
-        .sheet(isPresented: quickPathEditorBinding) {
-            quickPathManagerSheet
-        }
-        .sheet(isPresented: $isImportSourceSheetPresented) {
-            importSourceSheet
-        }
-        .sheet(isPresented: $isImportProgressSheetPresented) {
-            importProgressSheet
-                .interactiveDismissDisabled(isImportingHosts)
-        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 10)
     }
 
     private var detailWorkspace: some View {
@@ -592,6 +603,55 @@ struct ContentView: View {
             }
         }
         .padding(VisualStyle.pagePadding)
+    }
+
+    @ViewBuilder
+    private func sidebarGroupSection(_ section: HostGroupSection) -> some View {
+        SidebarGroupSectionView(
+            section: section,
+            displayName: displayGroupName(section.name),
+            selectedHostID: selectedHostID,
+            isCollapsed: collapsedGroupNames.contains(section.name),
+            onToggleCollapsed: {
+                toggleGroupCollapse(section.name)
+            },
+            onAddThread: {
+                beginCreateHost(in: section.name)
+            },
+            onEditGroup: {
+                beginEditGroup(section.name)
+            },
+            onExportGroup: {
+                beginExportGroup(section.name)
+            },
+            onDeleteGroup: {
+                deleteGroup(section.name)
+            },
+            onSelectThread: { hostID in
+                selectedHostID = hostID
+            },
+            onOpenThread: { hostID in
+                openHostInNewSession(hostID)
+            },
+            onEditThread: { hostID in
+                beginEditHost(hostID)
+            },
+            onCopyConnectionInfo: { host in
+                copyConnectionInfo(host)
+            },
+            onCopyAddress: { host in
+                copyToPasteboard(host.address)
+            },
+            onCopySSHCommand: { host in
+                copyToPasteboard(HostConnectionClipboardBuilder.sshCommand(for: host))
+            },
+            onManageQuickCommands: { hostID in
+                beginManageQuickCommands(for: hostID)
+            },
+            onDeleteThread: { hostID in
+                requestHostDeletion(hostID)
+            }
+        )
     }
 
     private var shouldShowFileManager: Bool {
@@ -946,8 +1006,12 @@ struct ContentView: View {
             pane: pane,
             quickCommands: hostCatalog.quickCommands(for: hostID),
             isFocused: workspace.activePaneByTab[tabID] == pane.id,
+            canClose: (workspace.tab(id: tabID)?.panes.count ?? 0) > 1,
             onSelect: {
                 workspace.selectPane(pane.id, in: tabID)
+            },
+            onClose: {
+                workspace.closePane(pane.id, in: tabID)
             },
             onRunQuickCommand: { quickCommand in
                 runQuickCommand(quickCommand, in: pane.runtime)
@@ -1279,6 +1343,13 @@ struct ContentView: View {
         isExportSheetPresented = true
     }
 
+    private func displayGroupName(_ groupName: String) -> String {
+        if groupName == HostCatalogStore.ungroupedGroupIdentifier {
+            return tr("Ungrouped")
+        }
+        return groupName
+    }
+
     private func startExport(with draft: HostExportDraft) {
         let hosts = hostCatalog.hosts
         isExportingHosts = true
@@ -1396,8 +1467,19 @@ struct ContentView: View {
     }
 
     private func deleteGroup(_ groupName: String) {
-        hostCatalog.deleteGroup(named: groupName)
-        collapsedGroupNames.remove(groupName)
+        guard groupName != HostCatalogStore.ungroupedGroupIdentifier else { return }
+        let hostCount = hostCatalog.hosts.filter { $0.group == groupName }.count
+        pendingGroupDeletion = PendingGroupDeletion(
+            id: groupName,
+            hostCount: hostCount,
+            deleteHosts: false
+        )
+    }
+
+    private func confirmGroupDeletion(_ pending: PendingGroupDeletion) {
+        hostCatalog.deleteGroup(named: pending.id, deleteHosts: pending.deleteHosts)
+        pendingGroupDeletion = nil
+        collapsedGroupNames.remove(pending.id)
         if let selectedHostID, hostCatalog.host(id: selectedHostID) == nil {
             self.selectedHostID = nil
             selectedTemplateID = nil
@@ -2076,6 +2158,7 @@ private struct SidebarActionRowButton: View {
 
 private struct SidebarGroupSectionView: View {
     let section: HostGroupSection
+    let displayName: String
     let selectedHostID: UUID?
     let isCollapsed: Bool
     let onToggleCollapsed: () -> Void
@@ -2092,6 +2175,10 @@ private struct SidebarGroupSectionView: View {
     let onManageQuickCommands: (UUID) -> Void
     let onDeleteThread: (UUID) -> Void
 
+    private var canManageGroup: Bool {
+        !section.isSystemSection
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -2100,7 +2187,7 @@ private struct SidebarGroupSectionView: View {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(VisualStyle.textSecondary)
-                        Text(section.name)
+                        Text(displayName)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(VisualStyle.textSecondary)
                             .lineLimit(1)
@@ -2114,31 +2201,37 @@ private struct SidebarGroupSectionView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(VisualStyle.textTertiary)
 
-                SidebarIconButton(systemImage: "plus") {
-                    onAddThread()
-                }
-                SidebarIconButton(systemImage: "trash") {
-                    onDeleteGroup()
+                if canManageGroup {
+                    SidebarIconButton(systemImage: "plus") {
+                        onAddThread()
+                    }
+                    SidebarIconButton(systemImage: "trash") {
+                        onDeleteGroup()
+                    }
                 }
             }
             .padding(.horizontal, 4)
             .frame(height: 22)
             .contextMenu {
-                Button(tr("Create connection")) {
-                    onAddThread()
+                if canManageGroup {
+                    Button(tr("Create connection")) {
+                        onAddThread()
+                    }
                 }
                 Button(isCollapsed ? tr("Expand group") : tr("Collapse group")) {
                     onToggleCollapsed()
                 }
-                Button(tr("Edit group")) {
-                    onEditGroup()
-                }
-                Button(tr("Export group")) {
-                    onExportGroup()
-                }
-                Divider()
-                Button(tr("Delete group"), role: .destructive) {
-                    onDeleteGroup()
+                if canManageGroup {
+                    Button(tr("Edit group")) {
+                        onEditGroup()
+                    }
+                    Button(tr("Export group")) {
+                        onExportGroup()
+                    }
+                    Divider()
+                    Button(tr("Delete group"), role: .destructive) {
+                        onDeleteGroup()
+                    }
                 }
             }
 
@@ -2600,6 +2693,58 @@ private struct SidebarGroupEditorSheet: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+}
+
+private struct SidebarGroupDeletionSheet: View {
+    let groupName: String
+    let hostCount: Int
+    @Binding var deleteHosts: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(tr("Delete group"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(VisualStyle.textPrimary)
+
+            Text(
+                String(
+                    format: tr("Delete the group \"%@\"?"),
+                    groupName
+                )
+            )
+            .font(.system(size: 13))
+            .foregroundStyle(VisualStyle.textSecondary)
+
+            if hostCount > 0 {
+                Toggle(
+                    String(
+                        format: tr("Also delete %d SSH connection(s) in this group"),
+                        hostCount
+                    ),
+                    isOn: $deleteHosts
+                )
+                .toggleStyle(.checkbox)
+
+                Text(
+                    deleteHosts
+                    ? tr("If enabled, every SSH connection in this group will be deleted permanently.")
+                    : tr("If disabled, SSH connections in this group will be moved to Ungrouped.")
+                )
+                .font(.system(size: 12))
+                .foregroundStyle(VisualStyle.textSecondary)
+            }
+
+            HStack {
+                Spacer()
+                Button(tr("Cancel"), action: onCancel)
+                Button(tr("Delete"), role: .destructive, action: onConfirm)
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
     }
 }
 

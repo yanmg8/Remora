@@ -112,6 +112,68 @@ struct HostCatalogStoreTests {
     }
 
     @Test
+    func deletingGroupCanKeepHostsInUngroupedSection() {
+        let store = HostCatalogStore()
+        let groupName = store.addGroup(named: "Production")
+        let host = store.addHost(
+            Host(
+                name: "prod-api",
+                address: "10.0.0.10",
+                username: "deploy",
+                group: groupName,
+                auth: HostAuth(method: .agent)
+            )
+        )
+
+        store.deleteGroup(named: groupName, deleteHosts: false)
+
+        #expect(store.groups.contains(groupName) == false)
+        #expect(store.host(id: host.id)?.group == HostCatalogStore.ungroupedGroupIdentifier)
+
+        let sections = store.groupSections(matching: "")
+        let ungrouped = sections.first(where: { $0.name == HostCatalogStore.ungroupedGroupIdentifier })
+        #expect(ungrouped?.isSystemSection == true)
+        #expect(ungrouped?.hosts.contains(where: { $0.id == host.id }) == true)
+    }
+
+    @Test
+    func deletingGroupCanAlsoDeleteContainedHosts() {
+        let store = HostCatalogStore()
+        let groupName = store.addGroup(named: "Production")
+        let host = store.addHost(
+            Host(
+                name: "prod-api",
+                address: "10.0.0.10",
+                username: "deploy",
+                group: groupName,
+                auth: HostAuth(method: .agent)
+            )
+        )
+
+        store.deleteGroup(named: groupName, deleteHosts: true)
+
+        #expect(store.groups.contains(groupName) == false)
+        #expect(store.host(id: host.id) == nil)
+        #expect(store.groupSections(matching: "").contains(where: { $0.name == HostCatalogStore.ungroupedGroupIdentifier }) == false)
+    }
+
+    @Test
+    func internalUngroupedIdentifierCannotBeManagedAsUserGroup() {
+        let store = HostCatalogStore()
+
+        let created = store.addGroup(named: HostCatalogStore.ungroupedGroupIdentifier)
+        #expect(created == "New Group")
+        #expect(store.groups.contains(HostCatalogStore.ungroupedGroupIdentifier) == false)
+
+        let renamed = store.renameGroup(from: "New Group", to: HostCatalogStore.ungroupedGroupIdentifier)
+        #expect(renamed == "New Group")
+        #expect(store.groups.contains(HostCatalogStore.ungroupedGroupIdentifier) == false)
+
+        store.deleteGroup(named: HostCatalogStore.ungroupedGroupIdentifier, deleteHosts: true)
+        #expect(store.groups.contains(HostCatalogStore.ungroupedGroupIdentifier) == false)
+    }
+
+    @Test
     func supportsDetailedHostCreateAndEdit() {
         let store = HostCatalogStore()
         _ = store.addHost(

@@ -29,6 +29,7 @@ struct HostSessionTemplate: Identifiable, Equatable, Hashable, Codable {
 struct HostGroupSection: Identifiable, Equatable {
     let name: String
     let hosts: [RemoraCore.Host]
+    let isSystemSection: Bool
 
     var id: String { name }
 }
@@ -41,6 +42,8 @@ struct HostImportSummary: Equatable {
 
 @MainActor
 final class HostCatalogStore: ObservableObject {
+    static let ungroupedGroupIdentifier = "__UNGROUPED__"
+
     @Published private(set) var hosts: [RemoraCore.Host] {
         didSet { persistSnapshotIfNeeded() }
     }
@@ -223,8 +226,7 @@ final class HostCatalogStore: ObservableObject {
     func groupSections(matching query: String) -> [HostGroupSection] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let filteredHosts = filter(hosts, query: query)
-
-        return groups.compactMap { groupName in
+        var sections = groups.compactMap { groupName in
             let sectionHosts = filteredHosts
                 .filter { $0.group == groupName }
                 .sorted { lhs, rhs in
@@ -232,15 +234,32 @@ final class HostCatalogStore: ObservableObject {
                 }
 
             if q.isEmpty {
-                return HostGroupSection(name: groupName, hosts: sectionHosts)
+                return HostGroupSection(name: groupName, hosts: sectionHosts, isSystemSection: false)
             }
 
             let groupMatches = groupName.lowercased().contains(q)
             if groupMatches || !sectionHosts.isEmpty {
-                return HostGroupSection(name: groupName, hosts: sectionHosts)
+                return HostGroupSection(name: groupName, hosts: sectionHosts, isSystemSection: false)
             }
             return nil
         }
+
+        let ungroupedHosts = filteredHosts
+            .filter { $0.group == Self.ungroupedGroupIdentifier }
+            .sorted { lhs, rhs in
+                lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        if !ungroupedHosts.isEmpty {
+            sections.append(
+                HostGroupSection(
+                    name: Self.ungroupedGroupIdentifier,
+                    hosts: ungroupedHosts,
+                    isSystemSection: true
+                )
+            )
+        }
+
+        return sections
     }
 
     @discardableResult
@@ -253,6 +272,7 @@ final class HostCatalogStore: ObservableObject {
 
     @discardableResult
     func renameGroup(from oldName: String, to requestedName: String) -> String? {
+        guard oldName != Self.ungroupedGroupIdentifier else { return nil }
         guard let groupIndex = groups.firstIndex(of: oldName) else { return nil }
         let normalized = normalizedGroupName(requestedName)
         guard !normalized.isEmpty else { return nil }
@@ -273,11 +293,18 @@ final class HostCatalogStore: ObservableObject {
         return finalName
     }
 
-    func deleteGroup(named groupName: String) {
+    func deleteGroup(named groupName: String, deleteHosts: Bool = true) {
+        guard groupName != Self.ungroupedGroupIdentifier else { return }
         let removedHostIDs = Set(hosts.filter { $0.group == groupName }.map(\.id))
-        hosts.removeAll { $0.group == groupName }
-        templates.removeAll { removedHostIDs.contains($0.hostID) }
-        recentHostIDs.removeAll { removedHostIDs.contains($0) }
+        if deleteHosts {
+            hosts.removeAll { $0.group == groupName }
+            templates.removeAll { removedHostIDs.contains($0.hostID) }
+            recentHostIDs.removeAll { removedHostIDs.contains($0) }
+        } else {
+            for idx in hosts.indices where hosts[idx].group == groupName {
+                hosts[idx].group = Self.ungroupedGroupIdentifier
+            }
+        }
         groups.removeAll { $0 == groupName }
     }
 
@@ -430,7 +457,7 @@ final class HostCatalogStore: ObservableObject {
 
         for host in hosts {
             let groupName = host.group.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !groupName.isEmpty else { continue }
+            guard !groupName.isEmpty, groupName != ungroupedGroupIdentifier else { continue }
             if !seen.contains(groupName) {
                 seen.insert(groupName)
                 ordered.append(groupName)
@@ -517,6 +544,9 @@ final class HostCatalogStore: ObservableObject {
 
     private func normalizedGroupName(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == Self.ungroupedGroupIdentifier {
+            return "New Group"
+        }
         return trimmed.isEmpty ? "New Group" : trimmed
     }
 
@@ -570,7 +600,12 @@ final class HostCatalogStore: ObservableObject {
         normalized.address = trimmedAddress.isEmpty ? "127.0.0.1" : trimmedAddress
         normalized.username = trimmedUser.isEmpty ? "root" : trimmedUser
         normalized.port = (1...65_535).contains(normalized.port) ? normalized.port : 22
-        normalized.group = ensureGroupExists(normalized.group)
+        let trimmedGroup = normalized.group.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedGroup == Self.ungroupedGroupIdentifier {
+            normalized.group = Self.ungroupedGroupIdentifier
+        } else {
+            normalized.group = ensureGroupExists(trimmedGroup)
+        }
 
         let keyRef = normalized.auth.keyReference?.trimmingCharacters(in: .whitespacesAndNewlines)
         let passwordRef = normalized.auth.passwordReference?.trimmingCharacters(in: .whitespacesAndNewlines)

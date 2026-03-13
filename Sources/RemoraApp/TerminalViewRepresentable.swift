@@ -3,11 +3,12 @@ import RemoraTerminal
 
 @MainActor
 struct TerminalViewRepresentable: NSViewRepresentable {
+    let pane: TerminalPaneModel
     @ObservedObject var runtime: TerminalRuntime
     var onFocus: () -> Void = {}
 
     func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(rows: 30, columns: 120)
+        let view = pane.terminalView
         applyTerminalSettings(to: view)
         view.onFocus = onFocus
         view.onResize = { columns, rows in

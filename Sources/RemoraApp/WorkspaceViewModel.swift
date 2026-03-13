@@ -1,5 +1,6 @@
 import Foundation
 import RemoraCore
+import RemoraTerminal
 
 enum PaneSplitOrientation: String, CaseIterable, Identifiable {
     case horizontal = "Horizontal"
@@ -12,10 +13,16 @@ enum PaneSplitOrientation: String, CaseIterable, Identifiable {
 final class TerminalPaneModel: ObservableObject, Identifiable {
     let id: UUID
     let runtime: TerminalRuntime
+    let terminalView: TerminalView
 
-    init(id: UUID = UUID(), runtime: TerminalRuntime = TerminalPaneModel.defaultRuntime()) {
+    init(
+        id: UUID = UUID(),
+        runtime: TerminalRuntime = TerminalPaneModel.defaultRuntime(),
+        terminalView: TerminalView = TerminalPaneModel.defaultTerminalView()
+    ) {
         self.id = id
         self.runtime = runtime
+        self.terminalView = terminalView
     }
 
     private static func defaultRuntime() -> TerminalRuntime {
@@ -24,6 +31,10 @@ final class TerminalPaneModel: ObservableObject, Identifiable {
             return TerminalRuntime(localSessionManager: mockManager, sshSessionManager: mockManager)
         }
         return TerminalRuntime()
+    }
+
+    private static func defaultTerminalView() -> TerminalView {
+        TerminalView(rows: 30, columns: 120)
     }
 }
 
@@ -52,11 +63,13 @@ final class WorkspaceViewModel: ObservableObject {
     @Published var tabs: [TerminalTabModel]
     @Published var activeTabID: UUID?
     @Published var activePaneByTab: [UUID: UUID]
+    private let paneFactory: () -> TerminalPaneModel
 
-    init() {
+    init(paneFactory: @escaping () -> TerminalPaneModel = { TerminalPaneModel() }) {
         self.tabs = []
         self.activeTabID = nil
         self.activePaneByTab = [:]
+        self.paneFactory = paneFactory
         applyPaneVisibility()
     }
 
@@ -81,7 +94,7 @@ final class WorkspaceViewModel: ObservableObject {
     }
 
     func createTab(title preferredTitle: String? = nil, connectLocalShell: Bool = true) {
-        let pane = TerminalPaneModel()
+        let pane = makePane()
         let baseTitle: String = {
             if let preferredTitle {
                 let trimmed = preferredTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -150,13 +163,29 @@ final class WorkspaceViewModel: ObservableObject {
     }
 
     func splitActiveTab(orientation: PaneSplitOrientation) {
-        guard let tab = activeTab else { return }
+        guard let tab = activeTab, let sourcePane = activePane else { return }
         guard tab.panes.count == 1 else { return }
 
         tab.splitOrientation = orientation
-        let pane = TerminalPaneModel()
+        let pane = makePane()
         tab.panes.append(pane)
         activePaneByTab[tab.id] = pane.id
+        duplicateConnectionIfNeeded(from: sourcePane, to: pane)
+        applyPaneVisibility()
+    }
+
+    func closePane(_ paneID: UUID, in tabID: UUID) {
+        guard let tab = tab(id: tabID) else { return }
+        guard tab.panes.count > 1 else { return }
+        guard let paneIndex = tab.panes.firstIndex(where: { $0.id == paneID }) else { return }
+
+        let closingPane = tab.panes.remove(at: paneIndex)
+        closingPane.runtime.disconnect()
+
+        if activePaneByTab[tabID] == paneID {
+            activePaneByTab[tabID] = tab.panes.first?.id
+        }
+
         applyPaneVisibility()
     }
 
@@ -217,6 +246,20 @@ final class WorkspaceViewModel: ObservableObject {
             index += 1
         }
         return "\(base)(\(index))"
+    }
+
+    private func makePane() -> TerminalPaneModel {
+        paneFactory()
+    }
+
+    private func duplicateConnectionIfNeeded(from sourcePane: TerminalPaneModel, to targetPane: TerminalPaneModel) {
+        if let host = sourcePane.runtime.reconnectableSSHHost {
+            targetPane.runtime.connectSSH(host: host)
+            return
+        }
+        if sourcePane.runtime.connectionMode == .local {
+            targetPane.runtime.connectLocalShell()
+        }
     }
 
     private func closeTabs(withIDs tabIDs: Set<UUID>) {

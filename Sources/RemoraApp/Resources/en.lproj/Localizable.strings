@@ -212,6 +212,7 @@
 "Delete connection" = "Delete connection";
 "Delete SSH connection?" = "Delete SSH connection?";
 "Delete group" = "Delete group";
+"Delete the group \"%@\"?" = "Delete the group \"%@\"?";
 "Directory" = "Directory";
 "Disconnect Session" = "Disconnect Session";
 "Disconnected" = "Disconnected";
@@ -235,6 +236,8 @@
 "Export as JSON" = "Export as JSON";
 "Export with Passwords" = "Export with Passwords";
 "Export group" = "Export group";
+"If disabled, SSH connections in this group will be moved to Ungrouped." = "If disabled, SSH connections in this group will be moved to Ungrouped.";
+"If enabled, every SSH connection in this group will be deleted permanently." = "If enabled, every SSH connection in this group will be deleted permanently.";
 "Exporting..." = "Exporting...";
 "Failed" = "Failed";
 "File Properties" = "File Properties";
@@ -271,6 +274,7 @@
 "Invalid Session State" = "Invalid Session State";
 "No importable SSH hosts were found in the selected file." = "No importable SSH hosts were found in the selected file.";
 "Loading SSH connections..." = "Loading SSH connections...";
+"Also delete %d SSH connection(s) in this group" = "Also delete %d SSH connection(s) in this group";
 "MEM" = "MEM";
 "Managed by local SSH agent" = "Managed by local SSH agent";
 "New File Here" = "New File Here";
@@ -310,6 +314,7 @@
 "Connection hopping settings were not imported." = "Connection hopping settings were not imported.";
 "Quick commands were not imported." = "Quick commands were not imported.";
 "Reject" = "Reject";
+"Close Pane" = "Close Pane";
 "Reconnect SSH" = "Reconnect SSH";
 "Rename Session" = "Rename Session";
 "Resize failed" = "Resize failed";
@@ -334,6 +339,7 @@
 "Transferring" = "Transferring";
 "Trust" = "Trust";
 "Trust SSH Host Key?" = "Trust SSH Host Key?";
+"Ungrouped" = "Ungrouped";
 "Unsaved changes" = "Unsaved changes";
 "Unsupported import format. Please select a Remora JSON/CSV export file." = "Unsupported import format. Please select a Remora JSON/CSV export file.";
 "Username" = "Username";

@@ -209,6 +209,7 @@
 "Delete connection" = "删除连接";
 "Delete SSH connection?" = "删除 SSH 连接？";
 "Delete group" = "删除分组";
+"Delete the group \"%@\"?" = "要删除分组“%@”吗？";
 "Directory" = "目录";
 "Disconnect Session" = "断开会话";
 "Disconnected" = "未连接";
@@ -232,6 +233,8 @@
 "Export as JSON" = "导出为 JSON";
 "Export with Passwords" = "导出并包含密码";
 "Export group" = "导出分组";
+"If disabled, SSH connections in this group will be moved to Ungrouped." = "如果不勾选，分组内的 SSH 连接会被移动到未分组。";
+"If enabled, every SSH connection in this group will be deleted permanently." = "如果勾选，分组内的所有 SSH 连接都会被永久删除。";
 "Exporting..." = "导出中...";
 "Failed" = "失败";
 "File Properties" = "文件属性";
@@ -268,6 +271,7 @@
 "Invalid Session State" = "无效的会话状态";
 "No importable SSH hosts were found in the selected file." = "所选文件中没有可导入的 SSH 主机。";
 "Loading SSH connections..." = "正在加载 SSH 连接...";
+"Also delete %d SSH connection(s) in this group" = "同时删除该分组中的 %d 个 SSH 连接";
 "MEM" = "内存";
 "Managed by local SSH agent" = "由本地 SSH Agent 管理";
 "New File Here" = "在此新建文件";
@@ -307,6 +311,7 @@
 "Connection hopping settings were not imported." = "连接跳板设置尚未导入。";
 "Quick commands were not imported." = "快捷命令尚未导入。";
 "Reject" = "拒绝";
+"Close Pane" = "关闭分屏";
 "Reconnect SSH" = "重连 SSH";
 "Rename Session" = "重命名会话";
 "Resize failed" = "调整大小失败";
@@ -331,6 +336,7 @@
 "Transferring" = "传输中";
 "Trust" = "信任";
 "Trust SSH Host Key?" = "信任 SSH 主机密钥？";
+"Ungrouped" = "未分组";
 "Unsaved changes" = "未保存的更改";
 "Unsupported import format. Please select a Remora JSON/CSV export file." = "不支持的导入格式。请选择 Remora 导出的 JSON/CSV 文件。";
 "Username" = "用户名";
