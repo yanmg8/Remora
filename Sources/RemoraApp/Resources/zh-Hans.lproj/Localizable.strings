@@ -337,6 +337,7 @@
 "Transferring" = "传输中";
 "Trust" = "信任";
 "Trust SSH Host Key?" = "信任 SSH 主机密钥？";
+"To edit this file, right-click it and choose Edit." = "要编辑这个文件，请右键并选择“编辑”。";
 "Ungrouped" = "未分组";
 "Unsaved changes" = "未保存的更改";
 "Unsupported import format. Please select a Remora JSON/CSV export file." = "不支持的导入格式。请选择 Remora 导出的 JSON/CSV 文件。";

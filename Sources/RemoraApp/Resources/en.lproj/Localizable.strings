@@ -156,6 +156,7 @@
 "Back" = "Back";
 "Forward" = "Forward";
 "Go to Root" = "Go to Root";
+"To edit this file, right-click it and choose Edit." = "To edit this file, right-click it and choose Edit.";
 
 "Server Status" = "Server Status";
 "No Server Selected" = "No Server Selected";

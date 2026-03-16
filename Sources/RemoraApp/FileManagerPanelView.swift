@@ -1123,6 +1123,16 @@ struct FileManagerPanelView: View {
             return
         }
 
+        if !entry.isDirectory,
+           lastTappedRemotePath == entry.path,
+           now.timeIntervalSince(lastRemoteTapAt) < 0.32
+        {
+            showOperationToast(tr("To edit this file, right-click it and choose Edit."))
+            lastTappedRemotePath = nil
+            lastRemoteTapAt = .distantPast
+            return
+        }
+
         lastTappedRemotePath = entry.path
         lastRemoteTapAt = now
     }
