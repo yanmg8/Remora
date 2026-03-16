@@ -148,6 +148,40 @@ public actor MockSFTPClient: SFTPClientProtocol {
         progress?(.init(bytesTransferred: total, totalBytes: total))
     }
 
+    public func executeRemoteShellCommand(_ command: String, timeout: TimeInterval?) async throws -> String {
+        _ = timeout
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tailRange = trimmed.range(of: "tail -n ") else {
+            throw SFTPClientError.unsupportedOperation("remote-shell-command")
+        }
+
+        let suffix = trimmed[tailRange.upperBound...]
+        guard let spaceIndex = suffix.firstIndex(of: " ") else {
+            throw SFTPClientError.unsupportedOperation("remote-shell-command")
+        }
+
+        let lineCountText = suffix[..<spaceIndex]
+        guard let lineCount = Int(lineCountText), lineCount > 0 else {
+            throw SFTPClientError.unsupportedOperation("remote-shell-command")
+        }
+
+        guard let pathMarkerRange = trimmed.range(of: " ", options: .backwards) else {
+            throw SFTPClientError.unsupportedOperation("remote-shell-command")
+        }
+
+        let rawPath = String(trimmed[pathMarkerRange.upperBound...])
+        let normalizedPath = normalize(unquoteShellArgument(rawPath))
+        guard let file = files[normalizedPath] else {
+            throw SFTPClientError.notFound(normalizedPath)
+        }
+
+        let content = String(decoding: file.data, as: UTF8.self)
+        let normalizedNewlines = content.replacingOccurrences(of: "\r\n", with: "\n")
+        let lines = normalizedNewlines.split(separator: "\n", omittingEmptySubsequences: false)
+        let tailLines = lines.suffix(lineCount)
+        return tailLines.joined(separator: "\n")
+    }
+
     public func upload(data: Data, to path: String) async throws {
         try await upload(data: data, to: path, progress: nil)
     }
@@ -416,6 +450,15 @@ public actor MockSFTPClient: SFTPClientProtocol {
             return true
         }
         return directories.keys.contains(where: { $0.hasPrefix(prefix) })
+    }
+
+    private func unquoteShellArgument(_ value: String) -> String {
+        guard value.hasPrefix("'"), value.hasSuffix("'"), value.count >= 2 else {
+            return value
+        }
+
+        let inner = String(value.dropFirst().dropLast())
+        return inner.replacingOccurrences(of: "'\\''", with: "'")
     }
 
     private func ensureParentDirectories(for path: String) {

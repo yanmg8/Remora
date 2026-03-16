@@ -66,6 +66,7 @@ struct FileManagerPanelView: View {
     @State private var renameTargetPath: String?
     @State private var renameDraft = ""
     @State private var editorTarget: RemoteEditorTarget?
+    @State private var logViewerTargetPath: String?
     @State private var propertiesTargetPath: String?
     @State private var isUploadPanelPresented = false
     @State private var uploadTargetDirectory = "/"
@@ -322,6 +323,20 @@ struct FileManagerPanelView: View {
                     ),
                     fileTransfer: viewModel
                 )
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { logViewerTargetPath != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        logViewerTargetPath = nil
+                    }
+                }
+            )
+        ) {
+            if let logViewerTargetPath {
+                RemoteLogViewerSheet(path: logViewerTargetPath, fileTransfer: viewModel)
             }
         }
         .sheet(
@@ -1021,6 +1036,10 @@ struct FileManagerPanelView: View {
         Divider()
 
         if !entry.isDirectory {
+            Button(tr("View Log")) {
+                beginViewLog(entry)
+            }
+
             Button(tr("Edit")) {
                 beginEdit(entry)
             }
@@ -1179,6 +1198,11 @@ struct FileManagerPanelView: View {
             size: entry.size,
             modifiedAt: entry.modifiedAt
         )
+    }
+
+    private func beginViewLog(_ entry: RemoteFileEntry) {
+        guard !entry.isDirectory else { return }
+        logViewerTargetPath = entry.path
     }
 
     private func presentLargeFileEditPrompt(for entry: RemoteFileEntry) {

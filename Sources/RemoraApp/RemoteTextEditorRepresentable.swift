@@ -4,6 +4,7 @@ import SwiftUI
 struct RemoteTextEditorRepresentable: NSViewRepresentable {
     @Binding var text: String
     var isEditable: Bool
+    var autoScrollToBottom: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -63,7 +64,13 @@ struct RemoteTextEditorRepresentable: NSViewRepresentable {
         } else if context.coordinator.lastSyncedText != text {
             let selectedRange = textView.selectedRange()
             textView.string = text
-            textView.setSelectedRange(selectedRange)
+            if autoScrollToBottom {
+                let endRange = NSRange(location: textView.string.utf16.count, length: 0)
+                textView.setSelectedRange(endRange)
+                textView.scrollRangeToVisible(endRange)
+            } else {
+                textView.setSelectedRange(selectedRange)
+            }
             context.coordinator.lastSyncedText = text
         }
 

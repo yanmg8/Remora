@@ -420,6 +420,22 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func logTailReturnsOnlyRequestedTrailingLines() async throws {
+        let client = MockSFTPClient()
+        try await client.upload(
+            data: Data("line-1\nline-2\nline-3\nline-4\nline-5".utf8),
+            to: "/logs/app.log"
+        )
+        let vm = FileTransferViewModel(
+            sftpClient: client,
+            remoteDirectoryPath: "/logs"
+        )
+
+        let tail = try await vm.loadRemoteLogTail(path: "/logs/app.log", lineCount: 3)
+        #expect(tail == "line-3\nline-4\nline-5")
+    }
+
+    @Test
     func largeTextDocumentIsRejectedBeforeDownloadToProtectMemory() async throws {
         let largeClient = LargeTextFileGuardSFTPClient()
         let vm = FileTransferViewModel(

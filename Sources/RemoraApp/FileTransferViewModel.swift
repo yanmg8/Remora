@@ -136,6 +136,8 @@ struct LocalFileEntry: Identifiable, Hashable {
 @MainActor
 final class FileTransferViewModel: ObservableObject {
     static let maxInlineEditableTextDocumentBytes = 2 * 1024 * 1024
+    static let defaultRemoteLogTailLineCount = 399
+    static let maxRemoteLogTailLineCount = 5000
 
     private struct CachedRemoteDirectory {
         var entries: [RemoteFileEntry]
@@ -701,6 +703,16 @@ final class FileTransferViewModel: ObservableObject {
         )
     }
 
+    func loadRemoteLogTail(
+        path: String,
+        lineCount: Int = FileTransferViewModel.defaultRemoteLogTailLineCount
+    ) async throws -> String {
+        let normalizedPath = normalizeRemoteDirectoryPath(path)
+        let clampedLineCount = min(max(lineCount, 1), Self.maxRemoteLogTailLineCount)
+        let command = "LC_ALL=C tail -n \(clampedLineCount) \(Self.quoteShellArgument(normalizedPath))"
+        return try await sftpClient.executeRemoteShellCommand(command, timeout: 15)
+    }
+
     func saveTextDocument(
         path: String,
         text: String,
@@ -1240,5 +1252,10 @@ final class FileTransferViewModel: ObservableObject {
 
             throw SFTPClientError.unsupportedOperation("edit-binary-file")
         }.value
+    }
+
+    private static func quoteShellArgument(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "'", with: "'\\''")
+        return "'\(escaped)'"
     }
 }

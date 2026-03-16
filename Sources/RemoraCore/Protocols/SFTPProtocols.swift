@@ -22,6 +22,7 @@ public protocol SFTPClientProtocol: Sendable {
     func download(path: String) async throws -> Data
     func download(path: String, progress: TransferProgressHandler?) async throws -> Data
     func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws
+    func executeRemoteShellCommand(_ command: String, timeout: TimeInterval?) async throws -> String
     func upload(data: Data, to path: String) async throws
     func upload(data: Data, to path: String, progress: TransferProgressHandler?) async throws
     func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws
@@ -47,6 +48,12 @@ public extension SFTPClientProtocol {
         progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
         try await upload(data: data, to: path)
         progress?(.init(bytesTransferred: totalBytes, totalBytes: totalBytes))
+    }
+
+    func executeRemoteShellCommand(_ command: String, timeout: TimeInterval? = nil) async throws -> String {
+        _ = command
+        _ = timeout
+        throw SFTPClientError.unsupportedOperation("remote-shell-command")
     }
 
     func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {

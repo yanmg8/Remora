@@ -20,6 +20,12 @@ public actor DisconnectedSFTPClient: SFTPClientProtocol {
         throw SSHError.notConnected
     }
 
+    public func executeRemoteShellCommand(_ command: String, timeout: TimeInterval?) async throws -> String {
+        _ = command
+        _ = timeout
+        throw SSHError.notConnected
+    }
+
     public func upload(data: Data, to path: String) async throws {
         _ = data
         _ = path
