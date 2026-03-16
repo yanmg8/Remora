@@ -319,7 +319,7 @@
 "Follow" = "跟随";
 "Lines" = "行数";
 "Apply" = "应用";
-"View Log" = "查看日志";
+"Live View" = "实时查看";
 "Path copied to clipboard." = "路径已复制到剪贴板。";
 "Reveal Downloaded File" = "在访达中显示已下载文件";
 "Reveal in Finder" = "在访达中显示";

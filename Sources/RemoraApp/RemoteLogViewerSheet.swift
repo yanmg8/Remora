@@ -19,7 +19,7 @@ struct RemoteLogViewerSheet: View {
         VStack(spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tr("View Log"))
+                    Text(tr("Live View"))
                         .font(.headline)
                     HStack(spacing: 6) {
                         Text(viewModel.path)

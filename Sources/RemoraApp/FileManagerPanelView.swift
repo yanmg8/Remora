@@ -1036,7 +1036,7 @@ struct FileManagerPanelView: View {
         Divider()
 
         if !entry.isDirectory {
-            Button(tr("View Log")) {
+            Button(tr("Live View")) {
                 beginViewLog(entry)
             }
 
