@@ -5,9 +5,11 @@ struct TerminalPaneView: View {
     @ObservedObject var pane: TerminalPaneModel
     @ObservedObject private var runtime: TerminalRuntime
     var quickCommands: [HostQuickCommand]
+    var isContentVisible: Bool
     var isFocused: Bool
     var canClose: Bool
     var onSelect: () -> Void
+    var onToggleCollapse: () -> Void
     var onClose: () -> Void
     var onRunQuickCommand: (HostQuickCommand) -> Void
     var onManageQuickCommands: () -> Void
@@ -26,9 +28,11 @@ struct TerminalPaneView: View {
     init(
         pane: TerminalPaneModel,
         quickCommands: [HostQuickCommand] = [],
+        isContentVisible: Bool = true,
         isFocused: Bool,
         canClose: Bool = false,
         onSelect: @escaping () -> Void,
+        onToggleCollapse: @escaping () -> Void = {},
         onClose: @escaping () -> Void = {},
         onRunQuickCommand: @escaping (HostQuickCommand) -> Void = { _ in },
         onManageQuickCommands: @escaping () -> Void = {}
@@ -36,9 +40,11 @@ struct TerminalPaneView: View {
         self.pane = pane
         self._runtime = ObservedObject(wrappedValue: pane.runtime)
         self.quickCommands = quickCommands
+        self.isContentVisible = isContentVisible
         self.isFocused = isFocused
         self.canClose = canClose
         self.onSelect = onSelect
+        self.onToggleCollapse = onToggleCollapse
         self.onClose = onClose
         self.onRunQuickCommand = onRunQuickCommand
         self.onManageQuickCommands = onManageQuickCommands
@@ -47,6 +53,17 @@ struct TerminalPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
+                Button {
+                    onToggleCollapse()
+                } label: {
+                    Image(systemName: isContentVisible ? "chevron.down" : "chevron.right")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(VisualStyle.textSecondary)
+                .help(isContentVisible ? tr("Collapse Terminal") : tr("Expand Terminal"))
+                .accessibilityIdentifier("terminal-collapse-toggle")
+
                 Circle()
                     .fill(statusColor)
                     .frame(width: 8, height: 8)
@@ -130,18 +147,21 @@ struct TerminalPaneView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
 
-            ZStack {
-                VisualStyle.terminalBackground
+            if isContentVisible {
+                ZStack {
+                    VisualStyle.terminalBackground
 
-                TerminalViewRepresentable(pane: pane, runtime: runtime, onFocus: onSelect)
-                    .padding(VisualStyle.terminalContentInset)
-                    .simultaneousGesture(
-                        TapGesture().onEnded {
-                            onSelect()
-                        }
-                    )
+                    TerminalViewRepresentable(pane: pane, runtime: runtime, onFocus: onSelect)
+                        .padding(VisualStyle.terminalContentInset)
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                onSelect()
+                            }
+                        )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(VisualStyle.rightPanelBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -153,6 +173,7 @@ struct TerminalPaneView: View {
         .contentShape(Rectangle())
         .animation(.spring(response: 0.24, dampingFraction: 0.85), value: isFocused)
         .animation(.easeInOut(duration: 0.18), value: runtime.connectionState)
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isContentVisible)
         .alert(tr("Trust SSH Host Key?"), isPresented: hostKeyPromptBinding) {
             Button(tr("Reject"), role: .destructive) {
                 runtime.respondToHostKeyPrompt(accept: false)

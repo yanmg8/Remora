@@ -30,6 +30,59 @@ private struct PendingGroupDeletion: Identifiable, Equatable {
     var deleteHosts: Bool
 }
 
+struct BottomPanelVisibilityState: Equatable {
+    var terminal: Bool
+    var fileManager: Bool
+
+    mutating func normalize(fileManagerAvailable: Bool) {
+        guard fileManagerAvailable else {
+            terminal = true
+            fileManager = false
+            return
+        }
+
+        if !terminal && !fileManager {
+            terminal = true
+        }
+    }
+
+    mutating func toggleTerminal(fileManagerAvailable: Bool) {
+        guard fileManagerAvailable else {
+            normalize(fileManagerAvailable: false)
+            return
+        }
+
+        if terminal {
+            terminal = false
+            if !fileManager {
+                fileManager = true
+            }
+        } else {
+            terminal = true
+        }
+
+        normalize(fileManagerAvailable: fileManagerAvailable)
+    }
+
+    mutating func toggleFileManager(fileManagerAvailable: Bool) {
+        guard fileManagerAvailable else {
+            normalize(fileManagerAvailable: false)
+            return
+        }
+
+        if fileManager {
+            fileManager = false
+            if !terminal {
+                terminal = true
+            }
+        } else {
+            fileManager = true
+        }
+
+        normalize(fileManagerAvailable: fileManagerAvailable)
+    }
+}
+
 private enum SidebarDragPayload: Equatable {
     case host(UUID)
     case group(String)
@@ -80,7 +133,7 @@ struct ContentView: View {
     @State private var selectedHostID: UUID?
     @State private var selectedTemplateID: UUID?
     @State private var splitVisibility: NavigationSplitViewVisibility = .all
-    @State private var isFilePanelVisible = false
+    @State private var bottomPanelVisibility = BottomPanelVisibilityState(terminal: true, fileManager: false)
     @State private var collapsedGroupNames: Set<String> = []
     @State private var isGroupEditorSheetPresented = false
     @State private var groupEditorMode: SidebarGroupEditorMode = .create
@@ -336,7 +389,7 @@ struct ContentView: View {
 
         return syncedContent
             .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
-            .animation(.spring(response: 0.32, dampingFraction: 0.84), value: isFilePanelVisible)
+            .animation(.spring(response: 0.32, dampingFraction: 0.84), value: bottomPanelVisibility)
     }
 
     private var backgroundGradient: some View {
@@ -766,6 +819,20 @@ struct ContentView: View {
         workspace.activePane?.runtime.connectionMode == .ssh
     }
 
+    private var normalizedBottomPanelVisibility: BottomPanelVisibilityState {
+        var state = bottomPanelVisibility
+        state.normalize(fileManagerAvailable: shouldShowFileManager)
+        return state
+    }
+
+    private var isTerminalPanelVisible: Bool {
+        normalizedBottomPanelVisibility.terminal
+    }
+
+    private var isFileManagerPanelVisible: Bool {
+        normalizedBottomPanelVisibility.fileManager
+    }
+
     private var sessionContainer: some View {
         VStack(spacing: 0) {
             if !workspace.tabs.isEmpty {
@@ -1034,11 +1101,11 @@ struct ContentView: View {
         VStack(spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) {
-                    isFilePanelVisible.toggle()
+                    bottomPanelVisibility.toggleFileManager(fileManagerAvailable: shouldShowFileManager)
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: isFilePanelVisible ? "chevron.down" : "chevron.right")
+                    Image(systemName: isFileManagerPanelVisible ? "chevron.down" : "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(VisualStyle.textSecondary)
                     Label(tr("File Manager"), systemImage: "folder")
@@ -1050,8 +1117,9 @@ struct ContentView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("file-manager-disclosure-toggle")
 
-            if isFilePanelVisible {
+            if isFileManagerPanelVisible {
                 Divider()
                     .overlay(VisualStyle.borderSoft)
                     .padding(.top, 2)
@@ -1113,10 +1181,16 @@ struct ContentView: View {
         return TerminalPaneView(
             pane: pane,
             quickCommands: hostCatalog.quickCommands(for: hostID),
+            isContentVisible: isTerminalPanelVisible,
             isFocused: workspace.activePaneByTab[tabID] == pane.id,
             canClose: (workspace.tab(id: tabID)?.panes.count ?? 0) > 1,
             onSelect: {
                 workspace.selectPane(pane.id, in: tabID)
+            },
+            onToggleCollapse: {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    bottomPanelVisibility.toggleTerminal(fileManagerAvailable: shouldShowFileManager)
+                }
             },
             onClose: {
                 workspace.closePane(pane.id, in: tabID)
@@ -1234,6 +1308,10 @@ struct ContentView: View {
 
     private func toggleSSHSidebarVisibility() {
         splitVisibility = splitVisibility == .detailOnly ? .all : .detailOnly
+    }
+
+    private func normalizeBottomPanelVisibility() {
+        bottomPanelVisibility.normalize(fileManagerAvailable: shouldShowFileManager)
     }
 
     private func beginCreateHostInPreferredGroup() {
