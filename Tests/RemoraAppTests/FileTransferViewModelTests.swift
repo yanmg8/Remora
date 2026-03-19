@@ -510,6 +510,76 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func compressRemoteEntriesUploadsArchiveBackToCurrentDirectory() async throws {
+        let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
+
+        try await vm.compressRemoteEntries(
+            paths: ["/logs"],
+            archiveName: "logs-backup.zip",
+            format: .zip
+        )
+
+        let attributes = try await vm.loadRemoteAttributes(path: "/logs-backup.zip")
+        #expect(attributes.isDirectory == false)
+        #expect(attributes.size > 0)
+    }
+
+    @Test
+    func extractRemoteArchiveUploadsExpandedContentToDestinationDirectory() async throws {
+        let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
+
+        try await vm.compressRemoteEntries(
+            paths: ["/logs"],
+            archiveName: "logs-backup.zip",
+            format: .zip
+        )
+        try await vm.extractRemoteArchive(
+            path: "/logs-backup.zip",
+            into: "/restored"
+        )
+
+        let restoredFile = try await vm.loadRemoteAttributes(path: "/restored/logs/app.log")
+        #expect(restoredFile.isDirectory == false)
+        #expect(restoredFile.size > 0)
+    }
+
+    @Test
+    func extractRemoteArchiveCreatesMissingDestinationDirectory() async throws {
+        let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
+
+        try await vm.compressRemoteEntries(
+            paths: ["/logs"],
+            archiveName: "logs-backup.zip",
+            format: .zip
+        )
+        try await vm.extractRemoteArchive(
+            path: "/logs-backup.zip",
+            into: "/new/archive-output"
+        )
+
+        let restoredFile = try await vm.loadRemoteAttributes(path: "/new/archive-output/logs/app.log")
+        #expect(restoredFile.isDirectory == false)
+        #expect(restoredFile.size > 0)
+    }
+
+    @Test
+    func archiveProgressStateClearsAfterCompressionCompletes() async throws {
+        let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
+
+        #expect(vm.archiveOperationProgress == nil)
+        #expect(vm.archiveOperationStatusText == nil)
+
+        try await vm.compressRemoteEntries(
+            paths: ["/logs"],
+            archiveName: "logs-backup.zip",
+            format: .zip
+        )
+
+        #expect(vm.archiveOperationProgress == nil)
+        #expect(vm.archiveOperationStatusText == nil)
+    }
+
+    @Test
     func bindSFTPClientSwitchesRemoteSourceAndResetsTransientState() async throws {
         let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
         await vm.refreshRemoteEntries()
