@@ -3,6 +3,14 @@ import SwiftUI
 import RemoraCore
 
 struct FileManagerPanelView: View {
+    static func parentDirectoryPath(for path: String) -> String? {
+        let normalizedPath = NSString(string: path).standardizingPath
+        guard normalizedPath != "/" else { return nil }
+
+        let parentPath = (normalizedPath as NSString).deletingLastPathComponent
+        return parentPath.isEmpty ? "/" : parentPath
+    }
+
     private struct OperationToast: Identifiable, Equatable {
         var id = UUID()
         var message: String
@@ -100,6 +108,10 @@ struct FileManagerPanelView: View {
 
     private var currentDestinationDirectoryForPaste: String {
         viewModel.remoteDirectoryPath
+    }
+
+    private var parentRemoteDirectoryPath: String? {
+        Self.parentDirectoryPath(for: viewModel.remoteDirectoryPath)
     }
 
     private struct TransferQueueSummary {
@@ -693,6 +705,15 @@ struct FileManagerPanelView: View {
             }
 
             toolbarIconButton(
+                "chevron.up",
+                accessibilityIdentifier: "file-manager-up",
+                helpText: tr("Go to Parent Directory"),
+                disabled: parentRemoteDirectoryPath == nil
+            ) {
+                navigateToParentDirectory()
+            }
+
+            toolbarIconButton(
                 "house",
                 accessibilityIdentifier: "file-manager-root",
                 helpText: tr("Go to Root"),
@@ -728,12 +749,13 @@ struct FileManagerPanelView: View {
                     onManageQuickPaths()
                 }
             } label: {
-                Image(systemName: "bookmark.circle")
-                    .font(.caption.weight(.semibold))
+                toolbarIconChrome(
+                    "bookmark.circle",
+                    disabled: false
+                )
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .foregroundStyle(VisualStyle.textSecondary)
             .help(tr("Open quick paths"))
             .accessibilityIdentifier("file-manager-quick-paths")
 
@@ -1109,6 +1131,27 @@ struct FileManagerPanelView: View {
     }
 
     @ViewBuilder
+    private func toolbarIconChrome(
+        _ systemImage: String,
+        disabled: Bool
+    ) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 13, weight: .semibold))
+            .frame(width: 14, height: 14)
+            .foregroundStyle(disabled ? VisualStyle.textTertiary : VisualStyle.textSecondary)
+            .frame(width: 30, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(disabled ? 0.72 : 1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor).opacity(disabled ? 0.35 : 0.7), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
     private func toolbarIconButton(
         _ systemImage: String,
         accessibilityIdentifier: String,
@@ -1117,13 +1160,12 @@ struct FileManagerPanelView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 14, height: 14)
+            toolbarIconChrome(
+                systemImage,
+                disabled: disabled
+            )
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .frame(width: 30, height: 28)
+        .buttonStyle(.plain)
         .help(helpText)
         .disabled(disabled)
         .accessibilityIdentifier(accessibilityIdentifier)
@@ -1177,6 +1219,13 @@ struct FileManagerPanelView: View {
 
     private func navigateToRoot() {
         viewModel.navigateRemote(to: "/")
+        selectedRemotePaths.removeAll()
+        selectionAnchorRemotePath = nil
+    }
+
+    private func navigateToParentDirectory() {
+        guard let parentRemoteDirectoryPath else { return }
+        viewModel.navigateRemote(to: parentRemoteDirectoryPath)
         selectedRemotePaths.removeAll()
         selectionAnchorRemotePath = nil
     }

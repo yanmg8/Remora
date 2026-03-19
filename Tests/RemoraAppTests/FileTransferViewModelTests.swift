@@ -620,6 +620,16 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func parentDirectoryPathReturnsNilForRoot() {
+        #expect(FileManagerPanelView.parentDirectoryPath(for: "/") == nil)
+    }
+
+    @Test
+    func parentDirectoryPathNormalizesTrailingSlashAndReturnsParent() {
+        #expect(FileManagerPanelView.parentDirectoryPath(for: "/var/log/nginx/") == "/var/log")
+    }
+
+    @Test
     func remoteLoadingStateTurnsOnDuringDirectoryFetch() async throws {
         let countingClient = CountingMockSFTPClient(listDelayMS: 220)
         let vm = FileTransferViewModel(sftpClient: countingClient, remoteDirectoryPath: "/")

@@ -273,8 +273,10 @@ struct RemoraUIAutomationTests {
         let requiredIdentifiers = [
             "file-manager-back",
             "file-manager-forward",
+            "file-manager-up",
             "file-manager-root",
             "file-manager-refresh",
+            "file-manager-quick-paths",
             "file-manager-path-field",
             "file-manager-go",
             "file-manager-download",
@@ -365,6 +367,67 @@ struct RemoraUIAutomationTests {
             self.stringAttribute(kAXValueAttribute as CFString, of: pathField) == originalPath
         })
         #expect(backToRoot, "Back should return to previous path.")
+    }
+
+    @Test
+    func fileManagerNavigatesToParentDirectory() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let expanded = expandFileManager(in: appElement)
+        #expect(expanded, "File Manager should expand.")
+        guard expanded else { return }
+
+        guard let pathField = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-path-field" }
+        ), let goButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-go" }
+        ) else {
+            Issue.record("Could not find file manager path controls.")
+            return
+        }
+
+        _ = AXUIElementSetAttributeValue(pathField, kAXValueAttribute as CFString, "/logs" as CFTypeRef)
+        _ = AXUIElementPerformAction(goButton, kAXPressAction as CFString)
+
+        let enteredLogs = waitUntil(timeout: 5, {
+            self.stringAttribute(kAXValueAttribute as CFString, of: pathField) == "/logs"
+        })
+        #expect(enteredLogs, "Go should navigate to /logs before testing parent-directory navigation.")
+        guard enteredLogs else { return }
+
+        guard let upButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "file-manager-up" }
+        ) else {
+            Issue.record("Could not find File Manager Up button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(upButton, kAXPressAction as CFString)
+
+        let backToParent = waitUntil(timeout: 5, {
+            self.stringAttribute(kAXValueAttribute as CFString, of: pathField) == "/"
+        })
+        #expect(backToParent, "Up should navigate to the parent directory.")
     }
 
     @Test
