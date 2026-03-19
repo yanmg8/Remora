@@ -78,6 +78,12 @@ struct FileManagerPanelView: View {
     @State private var logViewerTargetPath: String?
     @State private var propertiesTargetPath: String?
     @State private var permissionsEditorTargetPath: String?
+    @State private var compressSourcePaths: [String] = []
+    @State private var archiveNameDraft = ""
+    @State private var selectedArchiveFormat: ArchiveFormat = .zip
+    @State private var extractSourcePath: String?
+    @State private var extractDestinationPath = "/"
+    @State private var isArchiveOperationInFlight = false
     @State private var isUploadPanelPresented = false
     @State private var uploadTargetDirectory = "/"
     @State private var isCreateRemoteSheetPresented = false
@@ -386,6 +392,44 @@ struct FileManagerPanelView: View {
                     path: permissionsEditorTargetPath,
                     fileTransfer: viewModel,
                     initialAttributes: cachedRemoteAttributes(for: permissionsEditorTargetPath)
+                )
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { !compressSourcePaths.isEmpty },
+            set: { isPresented in
+                if !isPresented {
+                    compressSourcePaths = []
+                    archiveNameDraft = ""
+                }
+            }
+        )) {
+            RemoteCompressSheet(
+                sourcePaths: compressSourcePaths,
+                archiveName: $archiveNameDraft,
+                format: $selectedArchiveFormat,
+                isBusy: isArchiveOperationInFlight,
+                progress: viewModel.archiveOperationProgress,
+                statusText: viewModel.archiveOperationStatusText,
+                onConfirm: commitCompress
+            )
+        }
+        .sheet(isPresented: Binding(
+            get: { extractSourcePath != nil },
+            set: { isPresented in
+                if !isPresented {
+                    extractSourcePath = nil
+                }
+            }
+        )) {
+            if let extractSourcePath {
+                RemoteExtractSheet(
+                    archivePath: extractSourcePath,
+                    destinationPath: $extractDestinationPath,
+                    isBusy: isArchiveOperationInFlight,
+                    progress: viewModel.archiveOperationProgress,
+                    statusText: viewModel.archiveOperationStatusText,
+                    onConfirm: commitExtract
                 )
             }
         }
@@ -992,6 +1036,25 @@ struct FileManagerPanelView: View {
         Button(tr("Upload To Current Directory")) {
             presentUploadPanel(targetDirectory: viewModel.remoteDirectoryPath)
         }
+
+        if !selectedRemotePaths.isEmpty {
+            Divider()
+
+            Button(tr("Compress Selected")) {
+                beginCompress(paths: Array(selectedRemotePaths))
+            }
+
+            if selectedRemotePaths.count == 1,
+               let selectedPath = selectedRemotePaths.first,
+               let selectedEntry = viewModel.remoteEntries.first(where: { $0.path == selectedPath }),
+               !selectedEntry.isDirectory,
+               ArchiveFormat.extractFormat(for: selectedEntry.name) != nil
+            {
+                Button(tr("Extract To")) {
+                    beginExtract(path: selectedEntry.path, destinationDirectory: viewModel.remoteDirectoryPath)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -1087,6 +1150,10 @@ struct FileManagerPanelView: View {
             isMoveSheetPresented = true
         }
 
+        Button(tr("Compress")) {
+            beginCompress(paths: [entry.path])
+        }
+
         Divider()
 
         if !entry.isDirectory {
@@ -1109,6 +1176,12 @@ struct FileManagerPanelView: View {
 
         Button(tr("Properties")) {
             propertiesTargetPath = entry.path
+        }
+
+        if !entry.isDirectory, ArchiveFormat.extractFormat(for: entry.name) != nil {
+            Button(tr("Extract To")) {
+                beginExtract(path: entry.path, destinationDirectory: viewModel.remoteDirectoryPath)
+            }
         }
 
         Button(tr("Edit Permissions")) {
@@ -1325,6 +1398,77 @@ struct FileManagerPanelView: View {
         createRemoteTargetDirectory = directoryPath
         createRemoteNameDraft = kind.defaultName
         isCreateRemoteSheetPresented = true
+    }
+
+    private func beginCompress(paths: [String]) {
+        let normalized = Array(Set(paths.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }))
+        guard !normalized.isEmpty else { return }
+        compressSourcePaths = normalized
+        let baseName = normalized.count == 1
+            ? URL(fileURLWithPath: normalized[0]).lastPathComponent
+            : tr("Archive")
+        archiveNameDraft = ArchiveSupport.defaultArchiveName(for: baseName, format: selectedArchiveFormat)
+    }
+
+    private func commitCompress() {
+        let sourcePaths = compressSourcePaths
+        let archiveName = archiveNameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourcePaths.isEmpty, !archiveName.isEmpty else { return }
+        isArchiveOperationInFlight = true
+        Task {
+            defer {
+                Task { @MainActor in
+                    isArchiveOperationInFlight = false
+                }
+            }
+            do {
+                try await viewModel.compressRemoteEntries(
+                    paths: sourcePaths,
+                    archiveName: archiveName,
+                    format: selectedArchiveFormat,
+                    destinationDirectory: viewModel.remoteDirectoryPath
+                )
+                await MainActor.run {
+                    showOperationToast(tr("Archive created."))
+                    compressSourcePaths = []
+                    archiveNameDraft = ""
+                }
+            } catch {
+                await MainActor.run {
+                    showOperationToast(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func beginExtract(path: String, destinationDirectory: String) {
+        extractSourcePath = path
+        extractDestinationPath = destinationDirectory
+    }
+
+    private func commitExtract() {
+        guard let sourcePath = extractSourcePath else { return }
+        let destinationPath = extractDestinationPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !destinationPath.isEmpty else { return }
+        isArchiveOperationInFlight = true
+        Task {
+            defer {
+                Task { @MainActor in
+                    isArchiveOperationInFlight = false
+                }
+            }
+            do {
+                try await viewModel.extractRemoteArchive(path: sourcePath, into: destinationPath)
+                await MainActor.run {
+                    showOperationToast(tr("Archive extracted."))
+                    extractSourcePath = nil
+                }
+            } catch {
+                await MainActor.run {
+                    showOperationToast(error.localizedDescription)
+                }
+            }
+        }
     }
 
     private func commitCreateRemote() {
