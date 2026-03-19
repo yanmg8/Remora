@@ -770,10 +770,44 @@ final class FileTransferViewModel: ObservableObject {
         try await sftpClient.stat(path: normalizeRemoteDirectoryPath(path))
     }
 
-    func saveRemoteAttributes(path: String, attributes: RemoteFileAttributes) async throws {
-        try await sftpClient.setAttributes(path: normalizeRemoteDirectoryPath(path), attributes: attributes)
+    func saveRemoteAttributes(path: String, attributes: RemoteFileAttributes, recursively: Bool = false) async throws {
+        let normalizedPath = normalizeRemoteDirectoryPath(path)
+        if recursively {
+            try await saveRemoteAttributesRecursively(path: normalizedPath, template: attributes)
+        } else {
+            try await sftpClient.setAttributes(path: normalizedPath, attributes: attributes)
+        }
         invalidateRemoteDirectoryCache()
         await refreshRemoteEntries()
+    }
+
+    private func saveRemoteAttributesRecursively(path: String, template: RemoteFileAttributes) async throws {
+        let currentAttributes = try await sftpClient.stat(path: path)
+        let appliedAttributes = RemoteFileAttributes(
+            permissions: template.permissions,
+            owner: template.owner,
+            group: template.group,
+            size: currentAttributes.size,
+            modifiedAt: currentAttributes.modifiedAt,
+            isDirectory: currentAttributes.isDirectory
+        )
+        try await sftpClient.setAttributes(path: path, attributes: appliedAttributes)
+
+        guard currentAttributes.isDirectory else { return }
+        let children = try await sftpClient.list(path: path)
+        for child in children {
+            try await saveRemoteAttributesRecursively(
+                path: normalizeRemoteDirectoryPath(child.path),
+                template: RemoteFileAttributes(
+                    permissions: template.permissions,
+                    owner: template.owner,
+                    group: template.group,
+                    size: child.size,
+                    modifiedAt: child.modifiedAt,
+                    isDirectory: child.isDirectory
+                )
+            )
+        }
     }
 
     private func executeTransfer(itemID: UUID) async {

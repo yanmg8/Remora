@@ -77,6 +77,7 @@ struct FileManagerPanelView: View {
     @State private var editorTarget: RemoteEditorTarget?
     @State private var logViewerTargetPath: String?
     @State private var propertiesTargetPath: String?
+    @State private var permissionsEditorTargetPath: String?
     @State private var isUploadPanelPresented = false
     @State private var uploadTargetDirectory = "/"
     @State private var isCreateRemoteSheetPresented = false
@@ -367,6 +368,24 @@ struct FileManagerPanelView: View {
                     path: propertiesTargetPath,
                     fileTransfer: viewModel,
                     initialAttributes: cachedRemoteAttributes(for: propertiesTargetPath)
+                )
+            }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { permissionsEditorTargetPath != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        permissionsEditorTargetPath = nil
+                    }
+                }
+            )
+        ) {
+            if let permissionsEditorTargetPath {
+                RemotePermissionsEditorSheet(
+                    path: permissionsEditorTargetPath,
+                    fileTransfer: viewModel,
+                    initialAttributes: cachedRemoteAttributes(for: permissionsEditorTargetPath)
                 )
             }
         }
@@ -1090,6 +1109,10 @@ struct FileManagerPanelView: View {
 
         Button(tr("Properties")) {
             propertiesTargetPath = entry.path
+        }
+
+        Button(tr("Edit Permissions")) {
+            permissionsEditorTargetPath = entry.path
         }
 
         if entry.isDirectory {

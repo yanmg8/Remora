@@ -482,6 +482,34 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func recursiveRemoteAttributeSaveUpdatesNestedEntries() async throws {
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            remoteDirectoryPath: "/logs"
+        )
+
+        let attrs = RemoteFileAttributes(
+            permissions: 0o700,
+            owner: "ops",
+            group: "wheel",
+            size: 0,
+            modifiedAt: Date(),
+            isDirectory: true
+        )
+
+        try await vm.saveRemoteAttributes(path: "/logs", attributes: attrs, recursively: true)
+
+        let updatedDirectory = try await vm.loadRemoteAttributes(path: "/logs")
+        let updatedFile = try await vm.loadRemoteAttributes(path: "/logs/app.log")
+        #expect(updatedDirectory.permissions == 0o700)
+        #expect(updatedDirectory.owner == "ops")
+        #expect(updatedDirectory.group == "wheel")
+        #expect(updatedFile.permissions == 0o700)
+        #expect(updatedFile.owner == "ops")
+        #expect(updatedFile.group == "wheel")
+    }
+
+    @Test
     func bindSFTPClientSwitchesRemoteSourceAndResetsTransientState() async throws {
         let vm = FileTransferViewModel(sftpClient: MockSFTPClient(), remoteDirectoryPath: "/")
         await vm.refreshRemoteEntries()
