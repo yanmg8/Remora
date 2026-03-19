@@ -518,6 +518,18 @@ final class TerminalRuntime: ObservableObject {
             sendRightArrow(count: targetIndex)
         }
     }
+
+    func insertAssistantCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        replaceCurrentInputLine(with: trimmed)
+    }
+
+    func runAssistantCommand(_ command: String) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        enqueueInput(Data("\(trimmed)\n".utf8))
+    }
     
     func setBracketedPasteEnabled(_ enabled: Bool) {
         bracketedPasteEnabled = enabled
