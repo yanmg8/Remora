@@ -73,6 +73,151 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func terminalDisclosureRemainsVisibleWhenFileManagerCollapses() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSSHSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create an SSH session before validating terminal disclosure.")
+            return
+        }
+
+        guard waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { self.identifier(of: $0) == "terminal-collapse-toggle" }
+        ) != nil else {
+            Issue.record("Could not find terminal disclosure button.")
+            return
+        }
+
+        let expanded = expandFileManager(in: appElement)
+        #expect(expanded, "File Manager should expand before testing collapse fallback.")
+        guard expanded else { return }
+
+        guard let fileManagerButton = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                self.identifier(of: element) == "file-manager-disclosure-toggle"
+            }
+        ) else {
+            Issue.record("Could not find File Manager disclosure button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(fileManagerButton, kAXPressAction as CFString)
+
+        let fileManagerCollapsed = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "file-manager-refresh" }) == nil
+        }
+        #expect(fileManagerCollapsed, "File Manager should collapse.")
+
+        let terminalStillVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-view" }) != nil
+        }
+        #expect(terminalStillVisible, "Terminal should remain visible when File Manager collapses.")
+    }
+
+    @Test
+    func collapsingTerminalKeepsTabBarVisible() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSSHSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create an SSH session before collapsing terminal.")
+            return
+        }
+
+        guard let terminalButton = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { self.identifier(of: $0) == "terminal-collapse-toggle" }
+        ) else {
+            Issue.record("Could not find terminal collapse button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(terminalButton, kAXPressAction as CFString)
+
+        let terminalCollapsed = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-view" }) == nil
+        }
+        #expect(terminalCollapsed, "Terminal content should collapse.")
+
+        let tabBarStillVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "session-tab-add" }) != nil
+        }
+        #expect(tabBarStillVisible, "Collapsing terminal should not hide the tab bar.")
+    }
+
+    @Test
+    func terminalCollapseRowAcceptsClicksBeyondChevronIcon() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSSHSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create an SSH session before testing terminal header hit area.")
+            return
+        }
+
+        guard let collapseRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { self.identifier(of: $0) == "terminal-collapse-toggle" }
+        ), let rowFrame = frame(of: collapseRow) else {
+            Issue.record("Could not find terminal collapse row.")
+            return
+        }
+
+        click(point: CGPoint(x: rowFrame.maxX - 12, y: rowFrame.midY))
+
+        let terminalCollapsed = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-view" }) == nil
+        }
+        #expect(terminalCollapsed, "Clicking the terminal collapse row should collapse terminal content.")
+    }
+
+    @Test
     func fileManagerIsHiddenForLocalSession() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
