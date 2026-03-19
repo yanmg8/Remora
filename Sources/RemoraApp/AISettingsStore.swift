@@ -1,7 +1,7 @@
 import Foundation
 import RemoraCore
 
-final class AISettingsStore {
+final class AISettingsStore: @unchecked Sendable {
     static let apiKeyReference = "settings.ai.apiKey"
 
     private let defaults: UserDefaults

@@ -1,6 +1,6 @@
 import Foundation
 
-final class TerminalAIService {
+final class TerminalAIService: @unchecked Sendable {
     private let session: URLSession
     private let requestObserver: (@Sendable (URLRequest) -> Void)?
     private let decoder = JSONDecoder()
