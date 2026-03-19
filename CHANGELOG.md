@@ -6,6 +6,29 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [v0.12.0] - 2026-03-19
+
+### Added
+
+- Added a remote live log viewer with follow mode, adjustable line count, and inline refresh controls for SSH file-manager workflows.
+- Added quick download buttons directly inside the remote editor and live-view popups so opened files can be downloaded without returning to the file list.
+- Added a dedicated parent-directory navigation button to the file-manager toolbar, separate from history back/forward.
+- Added a dedicated visual permissions editor for remote files with owner/group/public rwx toggles, synchronized octal mode editing, editable owner/group fields, and optional recursive apply.
+
+### Changed
+
+- Terminal and file-manager bottom panels now support accordion-style visibility rules, while still allowing both panels to stay open together.
+- Collapsed terminal state now docks directly under the tab bar and lets the file-manager panel expand to fill the remaining space.
+- The terminal collapse control now lives in the SSH header row and supports full-row clicking instead of only the chevron hit target.
+- FTP table headers now sort when clicking anywhere in the full header cell instead of requiring precise label clicks.
+- Quick-path and file-manager toolbar controls now use a more consistent icon-button treatment.
+
+### Fixed
+
+- FTP refresh now reconnects the SSH session when the underlying connection has timed out or disconnected, instead of requiring users to switch back to the terminal reconnect button first.
+- Remote editor and live-view popups now expose copy-path/download actions more consistently, reducing extra navigation for common file operations.
+- The new permissions editor now ships with complete Chinese localization and follows the app's localization rules.
+
 ## [v0.11.1] - 2026-03-14
 
 ### Fixed
