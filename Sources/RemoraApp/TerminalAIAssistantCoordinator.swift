@@ -70,14 +70,14 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
 
     private let service: any TerminalAIResponding
     private let settingsStore: AISettingsStore
-    private let runtimeSnapshot: @Sendable () -> TerminalAIRuntimeSnapshot
+    private let runtimeSnapshot: () -> TerminalAIRuntimeSnapshot
     private var boundSessionID: UUID?
     private var messagesBySession: [UUID: [TerminalAIAssistantMessage]] = [:]
 
     init(
         service: any TerminalAIResponding = TerminalAIService(),
         settingsStore: AISettingsStore = AISettingsStore(),
-        runtimeSnapshot: @escaping @Sendable () -> TerminalAIRuntimeSnapshot = { .empty }
+        runtimeSnapshot: @escaping () -> TerminalAIRuntimeSnapshot = { .empty }
     ) {
         self.service = service
         self.settingsStore = settingsStore
