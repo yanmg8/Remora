@@ -34,6 +34,16 @@ struct BottomPanelVisibilityState: Equatable {
     var terminal: Bool
     var fileManager: Bool
 
+    func sessionShouldFillRemainingHeight(fileManagerAvailable: Bool) -> Bool {
+        let normalized = normalizedState(fileManagerAvailable: fileManagerAvailable)
+        return normalized.terminal
+    }
+
+    func fileManagerShouldFillRemainingHeight(fileManagerAvailable: Bool) -> Bool {
+        let normalized = normalizedState(fileManagerAvailable: fileManagerAvailable)
+        return normalized.fileManager && !normalized.terminal
+    }
+
     mutating func normalize(fileManagerAvailable: Bool) {
         guard fileManagerAvailable else {
             terminal = true
@@ -80,6 +90,12 @@ struct BottomPanelVisibilityState: Equatable {
         }
 
         normalize(fileManagerAvailable: fileManagerAvailable)
+    }
+
+    private func normalizedState(fileManagerAvailable: Bool) -> BottomPanelVisibilityState {
+        var state = self
+        state.normalize(fileManagerAvailable: fileManagerAvailable)
+        return state
     }
 }
 
@@ -751,7 +767,7 @@ struct ContentView: View {
     private var detailWorkspace: some View {
         VStack(spacing: VisualStyle.panelSpacing) {
             sessionContainer
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: sessionShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
             if !workspace.tabs.isEmpty, shouldShowFileManager {
                 fileManagerDisclosure
             }
@@ -833,6 +849,14 @@ struct ContentView: View {
         normalizedBottomPanelVisibility.fileManager
     }
 
+    private var sessionShouldFillRemainingHeight: Bool {
+        normalizedBottomPanelVisibility.sessionShouldFillRemainingHeight(fileManagerAvailable: shouldShowFileManager)
+    }
+
+    private var fileManagerShouldFillRemainingHeight: Bool {
+        normalizedBottomPanelVisibility.fileManagerShouldFillRemainingHeight(fileManagerAvailable: shouldShowFileManager)
+    }
+
     private var sessionContainer: some View {
         VStack(spacing: 0) {
             if !workspace.tabs.isEmpty {
@@ -856,9 +880,10 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: sessionShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
         }
         .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
+        .layoutPriority(sessionShouldFillRemainingHeight ? 1 : 0)
     }
 
     private var emptySessionPlaceholder: some View {
@@ -1142,13 +1167,16 @@ struct ContentView: View {
                         openSettingsAndFocusDownloadPath()
                     }
                 )
-                    .frame(minHeight: 280, maxHeight: 420, alignment: .top)
+                    .frame(minHeight: 280, maxHeight: fileManagerShouldFillRemainingHeight ? .infinity : 420, alignment: .top)
+                    .layoutPriority(fileManagerShouldFillRemainingHeight ? 1 : 0)
                     .padding(.top, 6)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
+        .frame(maxWidth: .infinity, maxHeight: fileManagerShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
+        .layoutPriority(fileManagerShouldFillRemainingHeight ? 1 : 0)
     }
 
     private var sidebarEmptyState: some View {

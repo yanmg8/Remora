@@ -51,4 +51,20 @@ struct BottomPanelVisibilityStateTests {
         #expect(state.terminal == true)
         #expect(state.fileManager == false)
     }
+
+    @Test
+    func collapsedTerminalLetsFileManagerTakeRemainingHeight() {
+        let state = BottomPanelVisibilityState(terminal: false, fileManager: true)
+
+        #expect(state.sessionShouldFillRemainingHeight(fileManagerAvailable: true) == false)
+        #expect(state.fileManagerShouldFillRemainingHeight(fileManagerAvailable: true) == true)
+    }
+
+    @Test
+    func visibleTerminalKeepsSessionAsPrimaryFlexibleRegion() {
+        let state = BottomPanelVisibilityState(terminal: true, fileManager: true)
+
+        #expect(state.sessionShouldFillRemainingHeight(fileManagerAvailable: true) == true)
+        #expect(state.fileManagerShouldFillRemainingHeight(fileManagerAvailable: true) == false)
+    }
 }
