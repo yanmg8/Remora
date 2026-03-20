@@ -154,14 +154,6 @@ struct TerminalAIAssistantView: View {
             Text(tr("Terminal AI"))
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(VisualStyle.textPrimary)
-
-            if let workingDirectory = runtime.workingDirectory, !workingDirectory.isEmpty {
-                Text(workingDirectory)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(VisualStyle.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -173,13 +165,14 @@ struct TerminalAIAssistantView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(VisualStyle.textSecondary)
 
-            HStack(spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
                 actionButton(title: tr("Explain Output"), prompt: "Explain the latest terminal output in plain language.")
                 actionButton(title: tr("Suggest Next Command"), prompt: "Suggest the safest next command for this terminal session.")
                 actionButton(
                     title: tr("Fix Last Error"),
                     prompt: coordinator.smartAssist?.prompt ?? "Explain the latest terminal error and suggest the safest next command."
                 )
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 12)
@@ -209,10 +202,9 @@ struct TerminalAIAssistantView: View {
             submit(prompt)
         }
         .buttonStyle(.bordered)
-        .controlSize(.mini)
+        .controlSize(.small)
         .lineLimit(1)
-        .minimumScaleFactor(0.82)
-        .frame(maxWidth: .infinity)
+        .fixedSize()
     }
 
     private var emptyState: some View {
