@@ -4,10 +4,10 @@
 
 <h1 align="center">Remora</h1>
 
-<p align="center"><strong>Hitch a ride to any shell.</strong></p>
+<p align="center"><strong>A lightweight, native macOS shell workspace with AI built in.</strong></p>
 
 <p align="center">
-  A native macOS SSH + SFTP workspace built with SwiftUI and a SwiftTerm-based terminal stack.
+  A native macOS SSH + SFTP + Terminal AI workspace built with SwiftUI, focused on lightweight workflows, native UX, and practical AI assistance inside the terminal.
 </p>
 
 > [!WARNING]
@@ -33,13 +33,15 @@
 Remora focuses on a practical split:
 
 - Native macOS UX for connection/session management.
-- A SwiftTerm-based terminal stack for VT rendering/input and TUI compatibility.
 - SSH + SFTP workflows in one place.
+- An AI assistant that fits into terminal work naturally for explanation, command suggestions, and troubleshooting instead of forcing a chat-first workflow.
+- A lightweight, mostly Swift-native architecture that keeps the app fast, direct, and easy to reason about.
 
 ## Features
 
 - Fantastic: Local-first SSH + SFTP workspace, ANSI/VT support for modern TUIs, xterm-style selection, quick commands/quick paths, drag-and-drop transfers.
 - Beautiful: Native macOS UI with clean split layout, light/dark/system themes, and distraction-free terminal focus.
+- AI-assisted: Built-in Terminal AI with provider → model configuration, custom endpoints, OpenAI / Claude compatible APIs, queued prompts, context compression, and command explanation/suggestion flows.
 - Fast: Swift 6 native architecture with a SwiftTerm-backed terminal stack and native macOS UI, tuned for practical TUI and scroll-heavy workflows.
 - Secure: Local-first credential strategy with saved passwords stored only in macOS Keychain, SSH host key verification via `StrictHostKeyChecking=ask`, and explicit opt-in before any plaintext password export or copy.
 - Simple: Lightweight app with a 99% Swift-native stack, keyboard-driven workflows, and practical defaults that work out of the box.
@@ -52,21 +54,42 @@ Remora focuses on a practical split:
 - Drag files onto directories or current path with visual upload target hints.
 - Get immediate operation feedback via toasts and retry failed transfer tasks.
 - Sync terminal directory with file manager navigation when needed.
+- Use Terminal AI from the side drawer to explain output, suggest the next command, repair common errors, and compress long conversations automatically.
 - Configure language, appearance, shortcuts, and metrics in settings.
 
 ## Screenshots
 
-### SSH Workspace
-
-![Remora SSH workspace](./docs/screenshots/PixPin_2026-03-04_22-45-28.png)
-
-### Terminal (TUI-friendly)
-
-![Remora terminal TUI](./docs/screenshots/PixPin_2026-03-04_22-45-57.png)
-
-### File Manager + Transfer Workflow
-
-![Remora file manager](./docs/screenshots/PixPin_2026-03-04_22-45-44.png)
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>SSH Workspace</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-28.png" alt="Remora SSH workspace" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Terminal (TUI-friendly)</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-57.png" alt="Remora terminal TUI" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>File Manager + Transfer Workflow</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-44.png" alt="Remora file manager" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Terminal AI Settings</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-20_11-27-18.png" alt="Remora Terminal AI settings" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Terminal AI Conversation</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-20_11-28-21.png" alt="Remora Terminal AI drawer" />
+    </td>
+    <td width="50%" valign="top">
+      &nbsp;
+    </td>
+  </tr>
+</table>
 
 ## Quick Start
 
@@ -171,6 +194,16 @@ Contributions are welcome.
 - Issues: [Report a bug / request a feature](https://github.com/wuuJiawei/Remora/issues)
 - Support: [`SUPPORT.md`](./SUPPORT.md)
 - X (updates): [@1Javeys](https://x.com/1Javeys)
+
+## Acknowledgements
+
+Remora was shaped by ideas, tooling, or implementation inspiration from the following projects and products:
+
+- [sst/opencode](https://github.com/sst/opencode)
+- [code-yeongyu/oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)
+- [migueldeicaza/SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+- [OpenAI](https://github.com/openai)
+- [Claude Code](https://github.com/anthropics/claude-code)
 
 ## Security
 

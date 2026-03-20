@@ -4,10 +4,10 @@
 
 <h1 align="center">Remora</h1>
 
-<p align="center"><strong>让你轻松连接任意 Shell。</strong></p>
+<p align="center"><strong>轻量、纯原生、AI 加持的 macOS Shell 工作台。</strong></p>
 
 <p align="center">
-  一个使用 SwiftUI 构建的原生 macOS SSH + SFTP 工作台，内置基于 SwiftTerm 的终端栈。
+  一个使用 SwiftUI 构建的原生 macOS SSH + SFTP + Terminal AI 工作台，聚焦轻量、纯原生和高频终端协作体验。
 </p>
 
 > [!WARNING]
@@ -33,13 +33,15 @@
 Remora 聚焦在一个实用组合：
 
 - 原生 macOS 体验的连接与会话管理。
-- 基于 SwiftTerm 的终端栈，用于 VT 渲染、输入与 TUI 兼容。
 - SSH 与 SFTP 在一个工作区内协同完成。
+- AI 助手自然嵌入终端流程，用来解释输出、建议命令、辅助排障，而不是强行把终端变成聊天应用。
+- 轻量、纯原生、尽量低心智负担：打开就能连，设置清晰，日常工作不需要围着复杂代理系统转。
 
 ## 功能特性
 
 - Fantastic：本地优先的 SSH + SFTP 工作区，支持现代 TUI 所需 ANSI/VT、xterm 风格选择、快捷命令/快捷路径、拖拽传输。
 - Beautiful：原生 macOS 视觉与交互，布局简洁，支持浅色/深色/跟随系统，终端专注无干扰。
+- AI-assisted：内置 Terminal AI，支持 provider → model 配置、自定义 endpoint、OpenAI / Claude 兼容接口、上下文压缩、排队提问、命令建议与解释。
 - Fast：Swift 6 原生实现 + SwiftTerm 终端栈 + 原生 macOS UI，面向高频 TUI 与滚动场景优化。
 - Secure：采用本地优先的凭据策略，保存密码仅写入 macOS Keychain，SSH 主机指纹通过 `StrictHostKeyChecking=ask` 显式确认，任何明文密码导出或复制都需要用户主动确认。
 - Simple：轻量设计，99% Swift-native 技术栈，默认配置即可开箱使用，并支持键盘快捷工作流。
@@ -52,21 +54,42 @@ Remora 聚焦在一个实用组合：
 - 拖拽上传到目录或当前路径，带目标高亮与提示。
 - 获取即时操作反馈（toast）并重试失败传输。
 - 需要时开启终端目录与文件管理目录同步。
+- 在终端侧边面板里使用 Terminal AI 解释输出、建议下一条命令、修复常见错误，并在长对话中自动压缩上下文。
 - 在设置中配置语言、外观、快捷键和指标采样。
 
 ## 截图
 
-### SSH 工作区
-
-![Remora SSH workspace](./docs/screenshots/PixPin_2026-03-04_22-45-28.png)
-
-### 终端（TUI 友好）
-
-![Remora terminal TUI](./docs/screenshots/PixPin_2026-03-04_22-45-57.png)
-
-### 文件管理 + 传输流程
-
-![Remora file manager](./docs/screenshots/PixPin_2026-03-04_22-45-44.png)
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>SSH 工作区</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-28.png" alt="Remora SSH workspace" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>终端（TUI 友好）</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-57.png" alt="Remora terminal TUI" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>文件管理 + 传输流程</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-04_22-45-44.png" alt="Remora file manager" />
+    </td>
+    <td width="50%" valign="top">
+      <strong>Terminal AI 设置</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-20_11-27-18.png" alt="Remora Terminal AI settings" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Terminal AI 对话</strong><br />
+      <img src="./docs/screenshots/PixPin_2026-03-20_11-28-21.png" alt="Remora Terminal AI drawer" />
+    </td>
+    <td width="50%" valign="top">
+      &nbsp;
+    </td>
+  </tr>
+</table>
 
 ## 快速开始
 
@@ -170,6 +193,16 @@ A: 到系统设置手动放行一次：
 - Issues: [提交 Bug / 功能建议](https://github.com/wuuJiawei/Remora/issues)
 - Support: [`SUPPORT.md`](./SUPPORT.md)
 - X（更新公告）: [@1Javeys](https://x.com/1Javeys)
+
+## 致谢
+
+Remora 在设计与实现过程中受到了以下项目和产品的启发或帮助：
+
+- [sst/opencode](https://github.com/sst/opencode)
+- [code-yeongyu/oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)
+- [migueldeicaza/SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+- [OpenAI](https://github.com/openai)
+- [Claude Code](https://github.com/anthropics/claude-code)
 
 ## 安全
 
