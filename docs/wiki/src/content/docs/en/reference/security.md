@@ -7,12 +7,13 @@ Remora uses a local-first security strategy to protect your credentials and conn
 
 ## Credential Storage
 
-### Keychain Storage
+### Local Config Storage
 
-Remora uses macOS Keychain to securely store passwords:
+Remora stores passwords and config in local JSON files under `~/.config/remora`:
 
-- Passwords encrypted in system Keychain
-- Asked to save on first connection
+- Saved passwords are written to the local config directory in plaintext
+- You are asked whether to save on first connection
+- Exporting or copying plaintext passwords still requires explicit user confirmation
 
 ### Exporting Credentials
 

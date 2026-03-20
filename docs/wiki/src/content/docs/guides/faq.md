@@ -5,7 +5,7 @@ description: 常见问题解答。
 
 ## 如何保存密码？
 
-Remora 使用 macOS Keychain 安全存储您的凭据。首次连接时，系统会询问是否保存密码到 Keychain。
+Remora 会将配置与已保存密码写入本机 `~/.config/remora` JSON 文件。首次连接时，应用会询问是否保存密码。
 
 ## 支持哪些 SSH 密钥格式？
 
