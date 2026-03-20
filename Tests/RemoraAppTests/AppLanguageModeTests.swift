@@ -22,16 +22,14 @@ struct AppLanguageModeTests {
     }
 
     @Test
-    func preferredLocaleFromDefaultsUsesStoredLanguageMode() throws {
-        let suiteName = "AppLanguageModeTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            Issue.record("Unable to create defaults suite")
-            return
-        }
-        defaults.set(AppLanguageMode.english.rawValue, forKey: AppSettings.languageModeKey)
+    func preferredLocaleFromPreferencesUsesStoredLanguageMode() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("app-language-mode-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
 
-        #expect(AppLanguageMode.preferredLocale(defaults: defaults).identifier == "en")
+        let preferences = AppPreferences(fileURL: root.appendingPathComponent("settings.json"))
+        preferences.set(AppLanguageMode.english.rawValue, for: \.languageModeRawValue)
 
-        defaults.removePersistentDomain(forName: suiteName)
+        #expect(AppLanguageMode.preferredLocale(preferences: preferences).identifier == "en")
     }
 }

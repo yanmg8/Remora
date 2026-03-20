@@ -15,15 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct RemoraAppMain: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var keyboardShortcutStore = AppKeyboardShortcutStore.shared
-    @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
-    @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
+    @StateObject private var appPreferences = AppPreferences.shared
 
     private var preferredScheme: ColorScheme? {
-        AppAppearanceMode.resolved(from: appearanceModeRawValue).colorScheme
+        AppAppearanceMode.resolved(from: appPreferences.value(for: \.appearanceModeRawValue)).colorScheme
     }
 
     private var preferredLocale: Locale {
-        AppLanguageMode.resolved(from: languageModeRawValue).locale ?? .autoupdatingCurrent
+        AppLanguageMode.resolved(from: appPreferences.value(for: \.languageModeRawValue)).locale ?? .autoupdatingCurrent
     }
 
     var body: some Scene {

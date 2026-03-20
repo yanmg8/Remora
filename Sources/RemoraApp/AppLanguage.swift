@@ -38,7 +38,7 @@ enum AppLanguageMode: String, CaseIterable, Identifiable {
         return mode.locale ?? .autoupdatingCurrent
     }
 
-    static func preferredLocale(defaults: UserDefaults = .standard) -> Locale {
-        preferredLocale(from: defaults.string(forKey: AppSettings.languageModeKey))
+    static func preferredLocale(preferences: AppPreferences = .shared) -> Locale {
+        preferredLocale(from: preferences.value(for: \.languageModeRawValue))
     }
 }
