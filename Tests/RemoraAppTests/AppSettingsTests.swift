@@ -3,6 +3,27 @@ import Testing
 @testable import RemoraApp
 
 struct AppSettingsTests {
+    @MainActor
+    @Test
+    func appPreferencesPersistToJsonFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remora-app-preferences-\(UUID().uuidString)", isDirectory: true)
+        let fileURL = root.appendingPathComponent("settings.json", isDirectory: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let preferences = AppPreferences(fileURL: fileURL)
+        preferences.set(AppAppearanceMode.dark.rawValue, for: \.appearanceModeRawValue)
+        preferences.set("sk-test-123", for: \.aiAPIKey)
+
+        let rawText = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(rawText.contains(AppAppearanceMode.dark.rawValue))
+        #expect(rawText.contains("sk-test-123"))
+
+        let reloaded = AppPreferences(fileURL: fileURL)
+        #expect(reloaded.value(for: \.appearanceModeRawValue) == AppAppearanceMode.dark.rawValue)
+        #expect(reloaded.value(for: \.aiAPIKey) == "sk-test-123")
+    }
+
     @Test
     func resolvedDownloadDirectoryUsesProvidedWritableDirectory() throws {
         let tempDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
