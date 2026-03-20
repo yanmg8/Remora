@@ -7,7 +7,7 @@
 <p align="center"><strong>轻量、纯原生、AI 加持的 macOS Shell 工作台。</strong></p>
 
 <p align="center">
-  一个使用 SwiftUI 构建的原生 macOS SSH + SFTP + Terminal AI 工作台，聚焦轻量、纯原生和高频终端协作体验。
+  一个使用 SwiftUI 构建的原生 macOS SSH + SFTP + AI 工作台，聚焦轻量、纯原生和高频终端体验。
 </p>
 
 > [!WARNING]
@@ -76,13 +76,13 @@ Remora 聚焦在一个实用组合：
       <img src="./docs/screenshots/PixPin_2026-03-04_22-45-44.png" alt="Remora file manager" />
     </td>
     <td width="50%" valign="top">
-      <strong>Terminal AI 设置</strong><br />
+      <strong>Terminal AI 对话</strong><br />
       <img src="./docs/screenshots/PixPin_2026-03-20_11-27-18.png" alt="Remora Terminal AI settings" />
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <strong>Terminal AI 对话</strong><br />
+      <strong>Terminal AI 设置</strong><br />
       <img src="./docs/screenshots/PixPin_2026-03-20_11-28-21.png" alt="Remora Terminal AI drawer" />
     </td>
     <td width="50%" valign="top">
@@ -198,9 +198,9 @@ A: 到系统设置手动放行一次：
 
 Remora 在设计与实现过程中受到了以下项目和产品的启发或帮助：
 
-- [sst/opencode](https://github.com/sst/opencode)
-- [code-yeongyu/oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)
-- [migueldeicaza/SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
+- [opencode](https://github.com/anomalyco/opencode)
+- [oh-my-opencode](https://github.com/code-yeongyu/oh-my-openagent)
+- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)
 - [OpenAI](https://github.com/openai)
 - [Claude Code](https://github.com/anthropics/claude-code)
 
