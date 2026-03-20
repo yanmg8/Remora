@@ -90,10 +90,11 @@ struct TerminalAIAssistantView: View {
             ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if coordinator.messages.isEmpty {
+                        let visibleMessages = coordinator.messages.filter { $0.kind != .summary }
+                        if visibleMessages.isEmpty {
                             emptyState
                         } else {
-                            ForEach(coordinator.messages) { message in
+                            ForEach(visibleMessages) { message in
                                 messageCard(message)
                             }
                         }

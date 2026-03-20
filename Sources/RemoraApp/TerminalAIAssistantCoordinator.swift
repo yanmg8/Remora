@@ -31,8 +31,15 @@ enum TerminalAIAssistantCoordinatorError: Error, Equatable {
     case missingAPIKey
 }
 
+enum TerminalAIAssistantMessageKind: Equatable {
+    case user
+    case assistant
+    case summary
+}
+
 struct TerminalAIAssistantMessage: Identifiable, Equatable {
     let id: UUID
+    let kind: TerminalAIAssistantMessageKind
     let prompt: String?
     let response: TerminalAIResponse?
     let streamedText: String?
@@ -42,6 +49,7 @@ struct TerminalAIAssistantMessage: Identifiable, Equatable {
 
     init(
         id: UUID = UUID(),
+        kind: TerminalAIAssistantMessageKind = .assistant,
         prompt: String? = nil,
         response: TerminalAIResponse? = nil,
         streamedText: String? = nil,
@@ -50,6 +58,7 @@ struct TerminalAIAssistantMessage: Identifiable, Equatable {
         createdAt: Date = .now
     ) {
         self.id = id
+        self.kind = kind
         self.prompt = prompt
         self.response = response
         self.streamedText = streamedText
@@ -137,9 +146,9 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
             throw TerminalAIAssistantCoordinatorError.missingAPIKey
         }
 
-        append(.init(prompt: trimmedPrompt), to: sessionID)
+        append(.init(kind: .user, prompt: trimmedPrompt), to: sessionID)
         let assistantMessageID = UUID()
-        append(.init(id: assistantMessageID, streamedText: "", isThinking: true), to: sessionID)
+        append(.init(id: assistantMessageID, kind: .assistant, streamedText: "", isThinking: true), to: sessionID)
         isResponding = true
 
         let snapshot = runtimeSnapshot()
@@ -170,7 +179,7 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
             replaceMessage(
                 id: assistantMessageID,
                 in: sessionID,
-                with: TerminalAIAssistantMessage(id: assistantMessageID, response: response)
+                with: TerminalAIAssistantMessage(id: assistantMessageID, kind: .assistant, response: response)
             )
         } catch {
             isResponding = false
@@ -246,18 +255,17 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
         let history = messagesBySession[sessionID, default: []]
         guard !history.isEmpty else { return nil }
 
-        let rendered = history.compactMap { message -> String? in
-            if let prompt = message.prompt {
-                return "User: \(prompt)"
-            }
-            if let response = message.response?.summary {
-                return "Assistant: \(response)"
-            }
-            if let streamedText = message.streamedText, !streamedText.isEmpty {
-                return "Assistant: \(streamedText)"
-            }
-            return nil
+        if let latestSummary = history.last(where: { $0.kind == .summary }) {
+            let recentMessages = history.filter { $0.kind != .summary }.suffix(4)
+            let recentRendered = recentMessages.compactMap(renderConversationLine).joined(separator: "\n")
+            let summaryText = latestSummary.response?.summary ?? latestSummary.streamedText ?? ""
+            return [
+                "Summary Turn:\n\(summaryText)",
+                recentRendered.isEmpty ? nil : "Recent turns:\n\(recentRendered)",
+            ].compactMap { $0 }.joined(separator: "\n\n")
         }
+
+        let rendered = history.compactMap(renderConversationLine)
 
         guard !rendered.isEmpty else { return nil }
         let joined = rendered.joined(separator: "\n")
@@ -265,10 +273,47 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
             return joined
         }
 
-        let recent = Array(rendered.suffix(2)).joined(separator: "\n")
-        let older = Array(rendered.dropLast(2)).joined(separator: " ")
-        let compactedOlder = older.prefix(max(60, conversationCharacterBudget / 3))
-        return "Compacted earlier conversation: \(compactedOlder)\nRecent turns:\n\(recent)"
+        let recentNonSummaryMessages = history.filter { $0.kind != .summary }.suffix(4)
+        let recentRendered = recentNonSummaryMessages.compactMap(renderConversationLine).joined(separator: "\n")
+        let olderRendered = Array(rendered.dropLast(min(4, rendered.count)))
+        let compactedOlder = summarizeConversationLines(olderRendered)
+        installSummaryTurn(compactedOlder, recentMessages: recentNonSummaryMessages, in: sessionID)
+        return "Summary Turn:\n\(compactedOlder)\n\nRecent turns:\n\(recentRendered)"
+    }
+
+    private func renderConversationLine(for message: TerminalAIAssistantMessage) -> String? {
+        if let prompt = message.prompt {
+            return "User: \(prompt)"
+        }
+        if let response = message.response?.summary {
+            return "Assistant: \(response)"
+        }
+        if let streamedText = message.streamedText, !streamedText.isEmpty {
+            return "Assistant: \(streamedText)"
+        }
+        return nil
+    }
+
+    private func summarizeConversationLines(_ lines: [String]) -> String {
+        let joined = lines.joined(separator: " ")
+        let compacted = joined.prefix(max(100, conversationCharacterBudget / 2))
+        return "Compacted earlier conversation: \(compacted)"
+    }
+
+    private func installSummaryTurn(_ summary: String, recentMessages: ArraySlice<TerminalAIAssistantMessage>, in sessionID: UUID) {
+        let existingSummaryID = messagesBySession[sessionID]?.last(where: { $0.kind == .summary })?.id
+        let summaryMessage = TerminalAIAssistantMessage(
+            id: existingSummaryID ?? UUID(),
+            kind: .summary,
+            response: TerminalAIResponse(summary: summary, commands: [], warnings: [])
+        )
+
+        var rebuilt = [summaryMessage]
+        rebuilt.append(contentsOf: recentMessages)
+        messagesBySession[sessionID] = rebuilt
+        if boundSessionID == sessionID {
+            messages = rebuilt
+        }
     }
 
     private func replaceMessage(id: UUID, in sessionID: UUID, with message: TerminalAIAssistantMessage) {
@@ -301,7 +346,7 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
             replaceMessage(
                 id: messageID,
                 in: sessionID,
-                with: TerminalAIAssistantMessage(id: messageID, streamedText: "", isThinking: false, isStreaming: false)
+                with: TerminalAIAssistantMessage(id: messageID, kind: .assistant, streamedText: "", isThinking: false, isStreaming: false)
             )
             return
         }
@@ -318,6 +363,7 @@ final class TerminalAIAssistantCoordinator: ObservableObject {
                 in: sessionID,
                 with: TerminalAIAssistantMessage(
                     id: messageID,
+                    kind: .assistant,
                     streamedText: streamed,
                     isThinking: false,
                     isStreaming: index < chunks.count - 1

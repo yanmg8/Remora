@@ -285,7 +285,9 @@ struct TerminalAIAssistantCoordinatorTests {
         try await coordinator.submit("latest question")
 
         let request = try #require(await service.lastContext)
+        #expect(coordinator.messages.contains(where: { $0.kind == .summary }))
         #expect(request.conversationContext?.contains("Compacted earlier conversation") == true)
+        #expect(request.conversationContext?.contains("Summary Turn") == true)
     }
 
     private func makeDependencies(suffix: String) throws -> (store: AISettingsStore, cleanup: () -> Void) {
