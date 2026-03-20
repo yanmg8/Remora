@@ -43,7 +43,7 @@ Remora focuses on a practical split:
 - Beautiful: Native macOS UI with clean split layout, light/dark/system themes, and distraction-free terminal focus.
 - AI-assisted: Built-in Terminal AI with provider → model configuration, custom endpoints, OpenAI / Claude compatible APIs, queued prompts, context compression, and command explanation/suggestion flows.
 - Fast: Swift 6 native architecture with a SwiftTerm-backed terminal stack and native macOS UI, tuned for practical TUI and scroll-heavy workflows.
-- Secure: Local-first credential strategy with saved passwords stored only in macOS Keychain, SSH host key verification via `StrictHostKeyChecking=ask`, and explicit opt-in before any plaintext password export or copy.
+- Secure: Local-first credential strategy with config and saved passwords stored in local JSON files under `~/.config/remora`, SSH host key verification via `StrictHostKeyChecking=ask`, and explicit opt-in before any plaintext password export or copy.
 - Simple: Lightweight app with a 99% Swift-native stack, keyboard-driven workflows, and practical defaults that work out of the box.
 
 ### What You Can Do Today

@@ -25,9 +25,9 @@ public. It is not a replacement for manual product validation on real hosts.
 - SSH and SFTP launch arguments explicitly use `StrictHostKeyChecking=ask`.
 - `HostKeyStoreTests` covers first-seen, trusted, and changed-key states.
 - `TerminalRuntimeTests` covers the user-facing host key confirmation message.
-- `CredentialStoreTests` covers Keychain-backed read/write/remove behavior, persistence
-  across instances, memory cache behavior, and the absence of a new plaintext
-  `credentials.json` file after writes.
+- `CredentialStoreTests` covers file-backed read/write/remove behavior, persistence
+  across instances, memory cache behavior, and plaintext `credentials.json`
+  storage under the local config directory.
 
 ## Licensing And Legal
 

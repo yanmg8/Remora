@@ -31,7 +31,7 @@ flowchart LR
 1. `RemoraApp` collects user intent from the SwiftUI workspace, settings, or file manager.
 2. View models and `TerminalRuntime` translate that intent into session and transfer
    actions.
-3. `RemoraCore` talks to the local shell, SSH, SFTP, Keychain, and host key trust helpers.
+3. `RemoraCore` talks to the local shell, SSH, SFTP, file-backed config/credential storage, and host key trust helpers.
 4. `RemoraTerminal` bridges PTY/SSH data into SwiftTerm and exposes the terminal view back to the app UI.
 
 ## Boundary Rules
