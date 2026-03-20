@@ -67,10 +67,16 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
 
         let stdoutHandle = FileHandle(fileDescriptor: stdoutFD, closeOnDealloc: true)
         let stderrHandle = FileHandle(fileDescriptor: stderrFD, closeOnDealloc: true)
+        let utf8Locale = preferredUTF8Locale(from: ProcessInfo.processInfo.environment)
 
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        proc.arguments = ["-i"]
+        if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+            proc.arguments = ["-q", "/dev/null", "/bin/zsh", "-i"]
+        } else {
+            proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            proc.arguments = ["-i"]
+        }
         proc.environment = mergedEnvironment(proc.environment)
         proc.standardInput = stdinHandle
         proc.standardOutput = stdoutHandle
@@ -111,6 +117,9 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
             self.masterHandle = masterHandle
             masterFileDescriptor = masterFD
         }
+
+        let bootstrapCommand = "export LANG=\(shellSingleQuoted(utf8Locale)) LC_ALL=\(shellSingleQuoted(utf8Locale)) LC_CTYPE=\(shellSingleQuoted(utf8Locale))\n"
+        try? masterHandle.write(contentsOf: Data(bootstrapCommand.utf8))
 
         onStateChange?(.running)
         onOutput?(Data("Connected to local zsh shell\r\nType commands and press Enter.\r\n".utf8))
@@ -260,9 +269,7 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
         let utf8Locale = preferredUTF8Locale(from: env)
         env["LANG"] = utf8Locale
         env["LC_CTYPE"] = utf8Locale
-        if let currentLCAll = env["LC_ALL"], !Self.isUTF8Locale(currentLCAll) {
-            env["LC_ALL"] = utf8Locale
-        }
+        env["LC_ALL"] = utf8Locale
         env["PROMPT_EOL_MARK"] = ""
         return env
     }
@@ -278,6 +285,10 @@ public final class LocalShellSession: SSHTransportSessionProtocol, @unchecked Se
 
     private static func isUTF8Locale(_ value: String) -> Bool {
         value.uppercased().contains("UTF-8") || value.uppercased().contains("UTF8")
+    }
+
+    private func shellSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private func createPseudoTerminal(initialSize: PTYSize) throws -> (master: Int32, slave: Int32) {
