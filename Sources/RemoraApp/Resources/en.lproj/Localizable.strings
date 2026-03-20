@@ -66,7 +66,7 @@
 "Claude Compatible" = "Claude Compatible";
 "Base URL" = "Base URL";
 "API Key" = "API Key";
-"Saved in Keychain" = "Saved in Keychain";
+"Saved in ~/.config/remora" = "Saved in ~/.config/remora";
 "Model" = "Model";
 "Suggested models depend on the current provider, but you can still type a custom model ID." = "Suggested models depend on the current provider, but you can still type a custom model ID.";
 "Assistant Behavior" = "Assistant Behavior";
@@ -415,11 +415,12 @@
 "SSH Agent" = "SSH Agent";
 "Save password" = "Save password";
 "Save password in Keychain" = "Save password in Keychain";
-"Save password in Keychain?" = "Save password in Keychain?";
-"Save to Keychain" = "Save to Keychain";
+"Save password in local config file?" = "Save password in local config file?";
+"Save to ~/.config/remora" = "Save to ~/.config/remora";
+"Save password in ~/.config/remora" = "Save password in ~/.config/remora";
 "Saved to" = "Saved to";
 "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored." = "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored.";
-"Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords only in your macOS Keychain for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
+"Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
 "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it." = "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it.";
 "Session pane count is not supported." = "Session pane count is not supported.";
 "Session title" = "Session title";
