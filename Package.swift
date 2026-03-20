@@ -16,10 +16,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "RemoraCore",
-            linkerSettings: [
-                .linkedFramework("Security"),
-            ]
+            name: "RemoraCore"
         ),
         .target(
             name: "RemoraTerminal",

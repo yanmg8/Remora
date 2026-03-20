@@ -7,11 +7,11 @@ struct CredentialStoreTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("remora-credential-store-tests-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root.appendingPathComponent(".remora/ssh", isDirectory: true)
+        return root.appendingPathComponent(".config/remora", isDirectory: true)
     }
 
     @Test
-    func setGetRemoveSecretWithoutPlaintextFile() async {
+    func setGetRemoveSecretWithPlaintextFile() async throws {
         let directory = makeCredentialDirectory()
         defer {
             let root = directory.deletingLastPathComponent().deletingLastPathComponent()
@@ -23,7 +23,11 @@ struct CredentialStoreTests {
         await store.setSecret("secret-value", for: "api-token")
         let value = await store.secret(for: "api-token")
         #expect(value == "secret-value")
-        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent("credentials.json").path))
+
+        let fileURL = directory.appendingPathComponent("credentials.json")
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+        let rawText = try String(contentsOf: fileURL, encoding: .utf8)
+        #expect(rawText.contains("secret-value"))
 
         await store.removeSecret(for: "api-token")
         let afterDelete = await store.secret(for: "api-token")
