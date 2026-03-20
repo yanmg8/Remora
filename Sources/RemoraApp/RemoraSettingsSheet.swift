@@ -60,26 +60,23 @@ struct RemoraSettingsSheet: View {
     @Environment(\.openURL) private var openURL
     private let aiSettingsStore = AISettingsStore()
 
-    @AppStorage(AppSettings.languageModeKey) private var languageModeRawValue = AppLanguageMode.system.rawValue
-    @AppStorage(AppSettings.appearanceModeKey) private var appearanceModeRawValue = AppAppearanceMode.system.rawValue
-    @AppStorage(AppSettings.downloadDirectoryPathKey) private var downloadDirectoryPath = AppSettings.defaultDownloadDirectoryURL().path
-    @AppStorage(AppSettings.aiEnabledKey) private var aiEnabled = AppSettings.defaultAIEnabled
-    @AppStorage(AppSettings.aiActiveProviderKey) private var aiProviderRawValue = AppSettings.defaultAIActiveProvider
-    @AppStorage(AppSettings.aiAPIFormatKey) private var aiAPIFormatRawValue = AppSettings.defaultAIAPIFormat
-    @AppStorage(AppSettings.aiBaseURLKey) private var aiBaseURL = AppSettings.defaultAIBaseURL
-    @AppStorage(AppSettings.aiModelKey) private var aiModel = AppSettings.defaultAIModel
-    @AppStorage(AppSettings.aiLanguageKey) private var aiLanguageRawValue = AppSettings.defaultAILanguage
-    @AppStorage(AppSettings.aiSmartAssistEnabledKey) private var aiSmartAssistEnabled = AppSettings.defaultAISmartAssistEnabled
-    @AppStorage(AppSettings.aiIncludeWorkingDirectoryKey) private var aiIncludeWorkingDirectory = AppSettings.defaultAIIncludeWorkingDirectory
-    @AppStorage(AppSettings.aiIncludeTranscriptKey) private var aiIncludeTranscript = AppSettings.defaultAIIncludeTranscript
-    @AppStorage(AppSettings.aiTerminalTranscriptLineCountKey) private var aiTranscriptLineCount = AppSettings.defaultAITerminalTranscriptLineCount
-    @AppStorage(AppSettings.aiRequireRunConfirmationKey) private var aiRequireRunConfirmation = AppSettings.defaultAIRequireRunConfirmation
-    @AppStorage(AppSettings.serverMetricsActiveRefreshSecondsKey)
-    private var serverMetricsActiveRefreshSeconds = AppSettings.defaultServerMetricsActiveRefreshSeconds
-    @AppStorage(AppSettings.serverMetricsInactiveRefreshSecondsKey)
-    private var serverMetricsInactiveRefreshSeconds = AppSettings.defaultServerMetricsInactiveRefreshSeconds
-    @AppStorage(AppSettings.serverMetricsMaxConcurrentFetchesKey)
-    private var serverMetricsMaxConcurrentFetches = AppSettings.defaultServerMetricsMaxConcurrentFetches
+    @RemoraStored(\.languageModeRawValue) private var languageModeRawValue: String
+    @RemoraStored(\.appearanceModeRawValue) private var appearanceModeRawValue: String
+    @RemoraStored(\.downloadDirectoryPath) private var downloadDirectoryPath: String
+    @RemoraStored(\.aiEnabled) private var aiEnabled: Bool
+    @RemoraStored(\.aiProviderRawValue) private var aiProviderRawValue: String
+    @RemoraStored(\.aiAPIFormatRawValue) private var aiAPIFormatRawValue: String
+    @RemoraStored(\.aiBaseURL) private var aiBaseURL: String
+    @RemoraStored(\.aiModel) private var aiModel: String
+    @RemoraStored(\.aiLanguageRawValue) private var aiLanguageRawValue: String
+    @RemoraStored(\.aiSmartAssistEnabled) private var aiSmartAssistEnabled: Bool
+    @RemoraStored(\.aiIncludeWorkingDirectory) private var aiIncludeWorkingDirectory: Bool
+    @RemoraStored(\.aiIncludeTranscript) private var aiIncludeTranscript: Bool
+    @RemoraStored(\.aiTranscriptLineCount) private var aiTranscriptLineCount: Int
+    @RemoraStored(\.aiRequireRunConfirmation) private var aiRequireRunConfirmation: Bool
+    @RemoraStored(\.serverMetricsActiveRefreshSeconds) private var serverMetricsActiveRefreshSeconds: Int
+    @RemoraStored(\.serverMetricsInactiveRefreshSeconds) private var serverMetricsInactiveRefreshSeconds: Int
+    @RemoraStored(\.serverMetricsMaxConcurrentFetches) private var serverMetricsMaxConcurrentFetches: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -360,7 +357,7 @@ struct RemoraSettingsSheet: View {
                             .font(.system(size: 12, design: .monospaced))
                             .accessibilityIdentifier("settings-ai-api-key")
 
-                        Text(aiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? tr("Not Set") : tr("Saved in Keychain"))
+                        Text(aiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? tr("Not Set") : tr("Saved in ~/.config/remora"))
                             .font(.system(size: 11))
                             .foregroundStyle(VisualStyle.textSecondary)
                     }

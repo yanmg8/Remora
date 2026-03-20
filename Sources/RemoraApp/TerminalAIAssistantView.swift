@@ -11,8 +11,8 @@ struct TerminalAIAssistantView: View {
     @State private var isNearBottom = true
     @State private var viewportBottomGlobal: CGFloat = 0
     @State private var bottomMarkerMaxY: CGFloat = 0
-    @AppStorage(AppSettings.aiRequireRunConfirmationKey)
-    private var aiRequireRunConfirmation = AppSettings.defaultAIRequireRunConfirmation
+    @RemoraStored(\.aiRequireRunConfirmation)
+    private var aiRequireRunConfirmation: Bool
 
     private let bottomAnchorID = "terminal-ai-bottom-anchor"
 

@@ -15,7 +15,7 @@ struct TerminalPaneView: View {
     var onClose: () -> Void
     var onRunQuickCommand: (HostQuickCommand) -> Void
     var onManageQuickCommands: () -> Void
-    @AppStorage(AppSettings.aiEnabledKey) private var aiEnabled = AppSettings.defaultAIEnabled
+    @RemoraStored(\.aiEnabled) private var aiEnabled: Bool
 
     private var hostKeyPromptBinding: Binding<Bool> {
         Binding(
