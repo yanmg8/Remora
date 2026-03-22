@@ -3,6 +3,7 @@ name: Package macOS App
 on:
   push:
     tags:
+      # ci-test tags exercise packaging without creating a GitHub Release.
       - "v*"
       - "ci-test-*"
 
