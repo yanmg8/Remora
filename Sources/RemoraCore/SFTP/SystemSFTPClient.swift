@@ -6,6 +6,11 @@ import Glibc
 #endif
 
 public actor SystemSFTPClient: SFTPClientProtocol {
+    private struct PrimaryLaunchAuthState {
+        let storedPassword: String?
+        let shouldUseConnectionReuse: Bool
+    }
+
     private struct ProcessResult {
         var status: Int32
         var stdout: Data
@@ -1411,14 +1416,26 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return password
     }
 
+    private func primaryLaunchAuthState() async -> PrimaryLaunchAuthState {
+        let storedPassword = await storedPasswordIfAvailable()
+        return PrimaryLaunchAuthState(
+            storedPassword: storedPassword,
+            shouldUseConnectionReuse: SSHConnectionReusePolicy.shouldUseConnectionReuse(
+                authMethod: host.auth.method,
+                hasStoredPassword: storedPassword != nil
+            )
+        )
+    }
+
     private func makePrimarySFTPLaunchConfiguration() async -> BatchLaunchConfiguration {
-        let hasStoredPassword = await storedPasswordIfAvailable() != nil
+        let authState = await primaryLaunchAuthState()
 
         if host.auth.method == .password,
            let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
                baseExecutable: "/usr/bin/sftp",
                baseArguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: false),
-               usesConnectionReuse: false
+               usesConnectionReuse: false,
+               storedPassword: authState.storedPassword
            )
         {
             return passwordLaunch
@@ -1426,21 +1443,19 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
         return makeSFTPLaunchConfiguration(
             batchMode: true,
-            useConnectionReuse: SSHConnectionReusePolicy.shouldUseConnectionReuse(
-                authMethod: host.auth.method,
-                hasStoredPassword: hasStoredPassword
-            )
+            useConnectionReuse: authState.shouldUseConnectionReuse
         )
     }
 
     private func makePrimarySSHLaunchConfiguration(command: String) async -> BatchLaunchConfiguration {
-        let hasStoredPassword = await storedPasswordIfAvailable() != nil
+        let authState = await primaryLaunchAuthState()
 
         if host.auth.method == .password,
            let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
                baseExecutable: "/usr/bin/ssh",
                baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command],
-               usesConnectionReuse: false
+               usesConnectionReuse: false,
+               storedPassword: authState.storedPassword
            )
         {
             return passwordLaunch
@@ -1449,10 +1464,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return makeSSHLaunchConfiguration(
             command: command,
             batchMode: true,
-            useConnectionReuse: SSHConnectionReusePolicy.shouldUseConnectionReuse(
-                authMethod: host.auth.method,
-                hasStoredPassword: hasStoredPassword
-            )
+            useConnectionReuse: authState.shouldUseConnectionReuse
         )
     }
 
@@ -1477,9 +1489,15 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private func makePasswordLaunchConfigurationIfAvailable(
         baseExecutable: String,
         baseArguments: [String],
-        usesConnectionReuse: Bool
+        usesConnectionReuse: Bool,
+        storedPassword: String? = nil
     ) async -> BatchLaunchConfiguration? {
-        guard let password = await storedPasswordIfAvailable() else {
+        let resolvedPassword = if let storedPassword {
+            storedPassword
+        } else {
+            await storedPasswordIfAvailable()
+        }
+        guard let password = resolvedPassword else {
             return nil
         }
 

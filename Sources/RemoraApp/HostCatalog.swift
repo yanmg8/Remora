@@ -44,6 +44,12 @@ struct HostImportSummary: Equatable {
 final class HostCatalogStore: ObservableObject {
     nonisolated static let ungroupedGroupIdentifier = "__UNGROUPED__"
 
+    private enum PersistenceBootstrapState {
+        case loading
+        case ready
+        case blockedAfterLoadFailure
+    }
+
     @Published private(set) var hosts: [RemoraCore.Host] {
         didSet { persistSnapshotIfNeeded() }
     }
@@ -61,6 +67,8 @@ final class HostCatalogStore: ObservableObject {
     private let persistenceStore: HostCatalogPersistenceStore
     private let persistenceEnabled: Bool
     private var suppressPersistence = false
+    private var persistenceBootstrapState: PersistenceBootstrapState
+    private var pendingBootstrapSnapshot: PersistedHostCatalog?
 
     init(
         persistenceStore: HostCatalogPersistenceStore = HostCatalogPersistenceStore(),
@@ -74,6 +82,7 @@ final class HostCatalogStore: ObservableObject {
         self.persistenceStore = persistenceStore
         self.persistenceEnabled = persistenceEnabled
         self.isLoading = persistenceEnabled
+        self.persistenceBootstrapState = persistenceEnabled ? .loading : .ready
 
         guard persistenceEnabled else { return }
         Task { [weak self] in
@@ -410,12 +419,19 @@ final class HostCatalogStore: ObservableObject {
     }
 
     private func loadPersistedCatalog() async {
-        defer { isLoading = false }
-
         do {
-            guard let snapshot = try await persistenceStore.load() else { return }
+            guard let snapshot = try await persistenceStore.load() else {
+                finishBootstrapPersistence(as: .ready, replayPendingSnapshot: true)
+                return
+            }
             apply(snapshot: snapshot)
+            finishBootstrapPersistence(as: .ready, replayPendingSnapshot: false)
         } catch {
+            let hadExistingFile = await persistenceStore.fileExists()
+            finishBootstrapPersistence(
+                as: hadExistingFile ? .blockedAfterLoadFailure : .ready,
+                replayPendingSnapshot: !hadExistingFile
+            )
             print("[HostCatalogStore] load failed: \(error.localizedDescription)")
         }
     }
@@ -447,6 +463,38 @@ final class HostCatalogStore: ObservableObject {
             recentHostIDs: recentHostIDs,
             groups: groups
         )
+        switch persistenceBootstrapState {
+        case .loading:
+            pendingBootstrapSnapshot = snapshot
+            return
+        case .blockedAfterLoadFailure:
+            print("[HostCatalogStore] persistence blocked after catalog load failure; refusing to overwrite existing connections.json")
+            return
+        case .ready:
+            break
+        }
+        Task {
+            do {
+                try await persistenceStore.save(snapshot)
+            } catch {
+                print("[HostCatalogStore] save failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func finishBootstrapPersistence(
+        as state: PersistenceBootstrapState,
+        replayPendingSnapshot: Bool
+    ) {
+        persistenceBootstrapState = state
+        isLoading = false
+
+        guard state == .ready, replayPendingSnapshot, let snapshot = pendingBootstrapSnapshot else {
+            pendingBootstrapSnapshot = nil
+            return
+        }
+
+        pendingBootstrapSnapshot = nil
         Task {
             do {
                 try await persistenceStore.save(snapshot)

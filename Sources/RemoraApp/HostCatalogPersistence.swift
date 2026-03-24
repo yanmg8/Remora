@@ -33,6 +33,10 @@ actor HostCatalogPersistenceStore {
         return try decoder.decode(PersistedHostCatalog.self, from: data)
     }
 
+    func fileExists() -> Bool {
+        FileManager.default.fileExists(atPath: storageFileURL.path)
+    }
+
     func save(_ snapshot: PersistedHostCatalog) async throws {
         try FileManager.default.createDirectory(
             at: storageFileURL.deletingLastPathComponent(),

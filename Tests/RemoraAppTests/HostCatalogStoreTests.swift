@@ -6,6 +6,31 @@ import RemoraCore
 @MainActor
 struct HostCatalogStoreTests {
     @Test
+    func malformedPersistedCatalogIsNotOverwrittenAfterLoadFailure() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remora-host-catalog-corrupt-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+
+        try FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        let fileURL = baseDirectory.appendingPathComponent("connections.json")
+        let originalData = Data("{not-valid-json".utf8)
+        try originalData.write(to: fileURL)
+
+        let store = HostCatalogStore(
+            persistenceStore: HostCatalogPersistenceStore(baseDirectoryURL: baseDirectory),
+            persistenceEnabled: true
+        )
+
+        #expect(await waitUntil(timeout: 1.0) { !store.isLoading })
+
+        _ = store.addGroup(named: "Ops")
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let reloaded = try Data(contentsOf: fileURL)
+        #expect(reloaded == originalData)
+    }
+
+    @Test
     func startsWithEmptyCatalogByDefault() {
         let store = HostCatalogStore()
         #expect(store.hosts.isEmpty)
@@ -451,4 +476,16 @@ struct HostCatalogStoreTests {
         #expect(store.hosts.contains(where: { $0.name == "new-imported-host" }))
         #expect(store.groups.contains("Imported"))
     }
+}
+
+@MainActor
+private func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return condition()
 }

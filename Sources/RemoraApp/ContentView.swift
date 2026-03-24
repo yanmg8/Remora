@@ -355,23 +355,33 @@ struct ContentView: View {
                 if let firstPane = workspace.activePane {
                     firstPane.runtime.connectLocalShell()
                 }
-                directorySyncBridge.bind(fileTransfer: fileTransfer, runtime: workspace.activePane?.runtime)
                 syncServerMetricsConfiguration()
-                syncFileManagerSFTPBinding()
-                syncServerMetricsTracking()
+                RuntimeConnectionSyncCoordinator.bindRuntimeDrivenServices(
+                    fileTransfer: fileTransfer,
+                    directorySyncBridge: directorySyncBridge,
+                    activeRuntime: workspace.activePane?.runtime,
+                    syncFileManagerBinding: syncFileManagerSFTPBinding,
+                    syncServerMetricsTracking: syncServerMetricsTracking
+                )
             }
             .onChange(of: selectedHostID) {
                 selectedTemplateID = availableTemplates.first?.id
             }
             .onChange(of: workspace.activeTabID) {
-                directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-                syncFileManagerSFTPBinding()
-                syncServerMetricsTracking()
+                RuntimeConnectionSyncCoordinator.attachActiveRuntime(
+                    workspace.activePane?.runtime,
+                    directorySyncBridge: directorySyncBridge,
+                    syncFileManagerBinding: syncFileManagerSFTPBinding,
+                    syncServerMetricsTracking: syncServerMetricsTracking
+                )
             }
             .onChange(of: workspace.activePaneByTab) {
-                directorySyncBridge.attachRuntime(workspace.activePane?.runtime)
-                syncFileManagerSFTPBinding()
-                syncServerMetricsTracking()
+                RuntimeConnectionSyncCoordinator.attachActiveRuntime(
+                    workspace.activePane?.runtime,
+                    directorySyncBridge: directorySyncBridge,
+                    syncFileManagerBinding: syncFileManagerSFTPBinding,
+                    syncServerMetricsTracking: syncServerMetricsTracking
+                )
             }
 
         let commandContent = lifecycleContent
@@ -395,11 +405,13 @@ struct ContentView: View {
 
         let syncedContent = commandContent
             .onReceive(activeRuntimeConnectionStatePublisher) { _ in
-                syncFileManagerSFTPBinding()
-                syncServerMetricsTracking()
+                RuntimeConnectionSyncCoordinator.syncRuntimeDrivenServices(
+                    syncFileManagerBinding: syncFileManagerSFTPBinding,
+                    syncServerMetricsTracking: syncServerMetricsTracking
+                )
             }
             .onReceive(serverMetricsTrackingTimer) { _ in
-                syncServerMetricsTracking()
+                RuntimeConnectionSyncCoordinator.syncMetricsTracking(syncServerMetricsTracking)
             }
             .onChange(of: hostCatalog.hosts) {
                 if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
