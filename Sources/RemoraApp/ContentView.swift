@@ -582,6 +582,7 @@ struct ContentView: View {
                 SidebarRenameSheet(
                     title: tr("Rename Session"),
                     fieldTitle: tr("Session title"),
+                    hintText: tr("Only this tab name changes. The saved SSH connection name stays the same."),
                     value: $renameSessionDraft,
                     onCancel: {
                         isRenameSessionSheetPresented = false
@@ -1066,6 +1067,7 @@ struct ContentView: View {
         let hasTabsOnRight = tabIndex.map { $0 + 1 < workspace.tabs.count } ?? false
         let canReconnectSSH = runtime?.reconnectableSSHHost != nil
         let canDisconnectSession = runtime != nil
+        let renameHint = tr("Only this tab name changes. The saved SSH connection name stays the same.")
         let canCloseInactiveTabs: Bool = {
             guard let activeTabID = workspace.activeTabID else { return false }
             return workspace.tabs.contains { $0.id != activeTabID }
@@ -1075,9 +1077,15 @@ struct ContentView: View {
             workspace.createTab()
         }
 
-        Button(tr("Rename Session")) {
+        Button {
             beginRenameSession(tab.id)
+        } label: {
+            SessionRenameMenuLabel(
+                title: tr("Rename Session"),
+                hint: renameHint
+            )
         }
+        .help(renameHint)
 
         Divider()
 
@@ -3180,6 +3188,7 @@ private struct SidebarHostEditorSheet: View {
 private struct SidebarRenameSheet: View {
     let title: String
     let fieldTitle: String
+    let hintText: String
     @Binding var value: String
     let onCancel: () -> Void
     let onConfirm: () -> Void
@@ -3192,6 +3201,11 @@ private struct SidebarRenameSheet: View {
 
             TextField(fieldTitle, text: $value)
                 .textFieldStyle(.roundedBorder)
+
+            Label(hintText, systemImage: "info.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(VisualStyle.textSecondary)
+                .labelStyle(.titleAndIcon)
 
             HStack {
                 Spacer()
@@ -3207,6 +3221,26 @@ private struct SidebarRenameSheet: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+}
+
+private struct SessionRenameMenuLabel: View {
+    let title: String
+    let hint: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+
+            Spacer(minLength: 12)
+
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(VisualStyle.textTertiary)
+                .help(hint)
+                .accessibilityLabel(hint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

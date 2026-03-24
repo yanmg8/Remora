@@ -399,6 +399,7 @@
 "Close Pane" = "关闭分屏";
 "Reconnect SSH" = "重连 SSH";
 "Rename Session" = "重命名会话";
+"Only this tab name changes. The saved SSH connection name stays the same." = "这里只会修改当前标签名称，不会改动已保存的 SSH 连接名称。";
 "Resize failed" = "调整大小失败";
 "Follow" = "跟随";
 "Lines" = "行数";
@@ -418,7 +419,7 @@
 "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora 会将已保存的密码以明文形式存放在 ~/.config/remora 中，并仅用于 SSH/SFTP 认证。除非你明确选择导出，否则这些密码不会被上传，也不会用于其他用途。";
 "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it." = "这会把已保存的 SSH 密码以明文形式放入 macOS 剪贴板。其他应用、剪贴板管理器或同步服务都可能读取到它。";
 "Session pane count is not supported." = "不支持该会话面板数量。";
-"Session title" = "会话标题";
+"Session title" = "会话标签标题";
 "Show password" = "显示密码";
 "Split Horizontal" = "水平分屏";
 "Split Vertical" = "垂直分屏";

@@ -408,6 +408,7 @@
 "Close Pane" = "Close Pane";
 "Reconnect SSH" = "Reconnect SSH";
 "Rename Session" = "Rename Session";
+"Only this tab name changes. The saved SSH connection name stays the same." = "Only this tab name changes. The saved SSH connection name stays the same.";
 "Resize failed" = "Resize failed";
 "Reveal Downloaded File" = "Reveal Downloaded File";
 "Reveal in Finder" = "Reveal in Finder";
@@ -422,7 +423,7 @@
 "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
 "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it." = "This will place the saved SSH password on the macOS clipboard in plaintext. Other apps, clipboard managers, or sync services may be able to read it.";
 "Session pane count is not supported." = "Session pane count is not supported.";
-"Session title" = "Session title";
+"Session title" = "Session tab title";
 "Show password" = "Show password";
 "Split Horizontal" = "Split Horizontal";
 "Split Vertical" = "Split Vertical";

@@ -2,6 +2,8 @@ import AppKit
 import ApplicationServices
 import Foundation
 import Testing
+import RemoraCore
+@testable import RemoraApp
 
 @Suite(.serialized)
 @MainActor
@@ -1218,6 +1220,19 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func renameSessionSheetClarifiesTabOnlyRenameInLightAndDarkModes() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        try assertRenameSessionHint(for: .light)
+        try assertRenameSessionHint(for: .dark)
+    }
+
+    @Test
     func fileManagerShowsRemoteEntriesOrErrorAfterSSHConnect() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -2125,11 +2140,16 @@ struct RemoraUIAutomationTests {
         }
     }
 
-    private func launchAppForUIAutomation() throws -> (process: Process, appElement: AXUIElement) {
+    private func launchAppForUIAutomation(homeDirectoryURL: URL? = nil) throws -> (process: Process, appElement: AXUIElement) {
         let appURL = try locateRemoraAppBinary()
         let process = Process()
         process.executableURL = appURL
         process.arguments = uiAutomationLaunchArguments
+        if let homeDirectoryURL {
+            process.environment = ProcessInfo.processInfo.environment.merging([
+                "HOME": homeDirectoryURL.path,
+            ]) { _, new in new }
+        }
         try process.run()
 
         guard waitUntil(timeout: 8, {
@@ -2156,6 +2176,82 @@ struct RemoraUIAutomationTests {
             "-AppleLocale", "en_US_POSIX",
             "-settings.language.mode", "english",
         ]
+    }
+
+    private func assertRenameSessionHint(for appearanceMode: AppAppearanceMode) throws {
+        let homeDirectoryURL = try makeUIAutomationHome(appearanceMode: appearanceMode)
+        defer { try? FileManager.default.removeItem(at: homeDirectoryURL) }
+
+        let launched = try launchAppForUIAutomation(homeDirectoryURL: homeDirectoryURL)
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        let connected = ensureSSHSessionAvailable(in: appElement, timeout: 8)
+        #expect(connected, "Expected SSH session to be available before checking rename hint in \(appearanceMode.rawValue) mode.")
+        guard connected else { return }
+
+        guard let sessionTab = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { element in
+                self.identifier(of: element) == "session-tab-prod-api"
+                    || (self.role(of: element) == kAXButtonRole as String && self.title(of: element) == "prod-api")
+            }
+        ) else {
+            Issue.record("Could not find prod-api session tab in \(appearanceMode.rawValue) mode.")
+            return
+        }
+
+        guard openContextMenu(for: sessionTab) else {
+            Issue.record("Could not open session tab context menu in \(appearanceMode.rawValue) mode.")
+            return
+        }
+
+        guard let renameItem = waitForMenuItem(named: "Rename Session", timeout: 5) else {
+            Issue.record("Could not find Rename Session menu item in \(appearanceMode.rawValue) mode.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(renameItem, kAXPressAction as CFString)
+
+        let fieldTitleVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.title(of: $0) == "Session tab title" }) != nil
+        }
+        #expect(fieldTitleVisible, "Rename sheet should show the session-tab-specific field title in \(appearanceMode.rawValue) mode.")
+
+        let hintVisible = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: {
+                self.title(of: $0) == "Only this tab name changes. The saved SSH connection name stays the same."
+            }) != nil
+        }
+        #expect(hintVisible, "Rename sheet should explain that SSH connection names stay unchanged in \(appearanceMode.rawValue) mode.")
+    }
+
+    private func makeUIAutomationHome(appearanceMode: AppAppearanceMode) throws -> URL {
+        let fileManager = FileManager.default
+        let homeDirectoryURL = fileManager.temporaryDirectory
+            .appendingPathComponent("remora-ui-\(appearanceMode.rawValue)-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: homeDirectoryURL, withIntermediateDirectories: true)
+
+        let configRoot = RemoraConfigPaths.rootDirectoryURL(
+            fileManager: fileManager,
+            homeDirectoryURL: homeDirectoryURL
+        )
+        try fileManager.createDirectory(at: configRoot, withIntermediateDirectories: true)
+
+        var snapshot = AppPreferencesSnapshot.defaultValue(fileManager: fileManager)
+        snapshot.appearanceModeRawValue = appearanceMode.rawValue
+        snapshot.languageModeRawValue = AppLanguageMode.english.rawValue
+
+        let settingsURL = configRoot.appendingPathComponent(RemoraConfigFile.settings.rawValue, isDirectory: false)
+        let data = try JSONEncoder().encode(snapshot)
+        try data.write(to: settingsURL)
+        return homeDirectoryURL
     }
 
     private func expandFileManager(in appElement: AXUIElement) -> Bool {
