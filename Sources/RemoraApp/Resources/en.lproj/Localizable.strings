@@ -225,7 +225,6 @@
 "Disk Read" = "Disk Read";
 "Disk Write" = "Disk Write";
 "Network and disk IO values are cumulative since server boot." = "Network and disk IO values are cumulative since server boot.";
-"Refreshing metrics…" = "Refreshing metrics…";
 "Loading server metrics…" = "Loading server metrics…";
 "No metrics yet." = "No metrics yet.";
 

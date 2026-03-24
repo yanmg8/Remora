@@ -221,7 +221,6 @@
 "Disk Read" = "磁盘读取";
 "Disk Write" = "磁盘写入";
 "Network and disk IO values are cumulative since server boot." = "网络与磁盘 IO 为服务器启动以来的累计值。";
-"Refreshing metrics…" = "正在刷新指标…";
 "Loading server metrics…" = "正在加载服务器指标…";
 "No metrics yet." = "暂无指标数据。";
 

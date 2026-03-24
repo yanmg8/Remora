@@ -185,12 +185,6 @@ private struct ServerStatusWindowView: View {
                 }
                 .animation(.easeInOut(duration: 0.16), value: isExtendedMetricsExpanded)
 
-                if state.isLoading {
-                    Text(tr("Refreshing metrics…"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(VisualStyle.textSecondary)
-                }
-
                 if let errorMessage = state.errorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
                         .font(.system(size: 12))
