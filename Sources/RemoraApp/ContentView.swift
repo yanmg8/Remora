@@ -180,7 +180,6 @@ struct ContentView: View {
     @State private var hostEditorMode: SidebarHostEditorMode = .create
     @State private var hostEditorDraft = SidebarHostEditorDraft()
     @State private var hostEditorTestState: HostConnectionTestState = .idle
-    @State private var isPasswordSaveConsentAlertPresented = false
     @State private var isExportSheetPresented = false
     @State private var exportDraft = HostExportDraft()
     @State private var isPasswordExportWarningPresented = false
@@ -215,8 +214,6 @@ struct ContentView: View {
     @State private var quickPathValidationMessage: String?
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
-    @RemoraStored(\.passwordSaveConsentAcknowledged)
-    private var hasAcknowledgedPasswordSaveConsent: Bool
     @RemoraStored(\.connectionInfoPasswordCopyMutedUntilEpoch)
     private var connectionInfoPasswordCopyMutedUntilEpoch: Double
     @RemoraStored(\.connectionInfoPasswordCopyMuteForever)
@@ -448,15 +445,6 @@ struct ContentView: View {
             } message: {
                 Text(exportAlertMessage)
             }
-            .alert(tr("Save password in local config file?"), isPresented: $isPasswordSaveConsentAlertPresented) {
-                Button(tr("Cancel"), role: .cancel) {}
-                Button(tr("Save to ~/.config/remora")) {
-                    hasAcknowledgedPasswordSaveConsent = true
-                    hostEditorDraft.savePassword = true
-                }
-            } message: {
-                Text(tr("Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them."))
-            }
             .alert(tr("Include saved passwords in export?"), isPresented: $isPasswordExportWarningPresented) {
                 Button(tr("Cancel"), role: .cancel) {}
                 Button(tr("Export with Passwords"), role: .destructive) {
@@ -555,7 +543,6 @@ struct ContentView: View {
                     onCancel: {
                         isHostEditorSheetPresented = false
                     },
-                    onPasswordSaveChange: handlePasswordSaveToggleChange,
                     onTestConnection: {
                         testHostConnection()
                     },
@@ -1461,29 +1448,25 @@ struct ContentView: View {
         host.username = hostEditorDraft.username
         host.group = hostEditorDraft.groupName
 
-        let credentialStore = CredentialStore()
         let oldPasswordReference = existingHost?.auth.passwordReference
         let newPasswordValue = hostEditorDraft.password.trimmingCharacters(in: .whitespacesAndNewlines)
-        var passwordReference: String?
-
-        if hostEditorDraft.authMethod == .password {
-            if hostEditorDraft.savePassword {
-                if !newPasswordValue.isEmpty {
-                    let key = oldPasswordReference ?? "host-password-\(hostID.uuidString)"
-                    await credentialStore.setSecret(newPasswordValue, for: key)
-                    passwordReference = key
-                } else {
-                    passwordReference = oldPasswordReference
+        let passwordReference = await HostPasswordStorage.persist(
+            authMethod: {
+                switch hostEditorDraft.authMethod {
+                case .agent:
+                    return .agent
+                case .privateKey:
+                    return .privateKey
+                case .password:
+                    return .password
                 }
-            } else {
-                if let oldPasswordReference {
-                    await credentialStore.removeSecret(for: oldPasswordReference)
-                }
-                passwordReference = nil
-            }
-        } else if let oldPasswordReference {
-            await credentialStore.removeSecret(for: oldPasswordReference)
-        }
+            }(),
+            savePassword: hostEditorDraft.savePassword,
+            newPasswordValue: newPasswordValue,
+            oldPasswordReference: oldPasswordReference,
+            hostID: hostID,
+            credentialStore: CredentialStore()
+        )
 
         switch hostEditorDraft.authMethod {
         case .agent:
@@ -1522,19 +1505,6 @@ struct ContentView: View {
             await MainActor.run {
                 hostEditorTestState = result
             }
-        }
-    }
-
-    private func handlePasswordSaveToggleChange(_ requestedEnabled: Bool) {
-        switch PasswordSaveConsentGate.decision(
-            currentlyEnabled: hostEditorDraft.savePassword,
-            requestedEnabled: requestedEnabled,
-            hasAcknowledgedWarning: hasAcknowledgedPasswordSaveConsent
-        ) {
-        case .apply(let value):
-            hostEditorDraft.savePassword = value
-        case .requireConsent:
-            isPasswordSaveConsentAlertPresented = true
         }
     }
 
@@ -3064,10 +3034,25 @@ private struct SidebarHostEditorSheet: View {
     @Binding var draft: SidebarHostEditorDraft
     let testState: HostConnectionTestState
     let onCancel: () -> Void
-    let onPasswordSaveChange: (Bool) -> Void
     let onTestConnection: () -> Void
     let onConfirm: () -> Void
     @State private var isPasswordVisible = false
+
+    init(
+        mode: SidebarHostEditorMode,
+        draft: Binding<SidebarHostEditorDraft>,
+        testState: HostConnectionTestState,
+        onCancel: @escaping () -> Void,
+        onTestConnection: @escaping () -> Void,
+        onConfirm: @escaping () -> Void
+    ) {
+        self.mode = mode
+        self._draft = draft
+        self.testState = testState
+        self.onCancel = onCancel
+        self.onTestConnection = onTestConnection
+        self.onConfirm = onConfirm
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3123,12 +3108,10 @@ private struct SidebarHostEditorSheet: View {
                     }
                     Toggle(
                         tr("Save password in ~/.config/remora"),
-                        isOn: Binding(
-                            get: { draft.savePassword },
-                            set: { onPasswordSaveChange($0) }
-                        )
+                        isOn: $draft.savePassword
                     )
                         .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("host-editor-save-password")
                 }
             }
             .textFieldStyle(.roundedBorder)

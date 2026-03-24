@@ -18,7 +18,6 @@ struct AppPreferencesSnapshot: Codable, Equatable {
     var aiTranscriptLineCount: Int
     var aiRequireRunConfirmation: Bool
     var aiAPIKey: String
-    var passwordSaveConsentAcknowledged: Bool
     var connectionInfoPasswordCopyMutedUntilEpoch: Double
     var connectionInfoPasswordCopyMuteForever: Bool
     var serverMetricsActiveRefreshSeconds: Int
@@ -42,7 +41,6 @@ struct AppPreferencesSnapshot: Codable, Equatable {
             aiTranscriptLineCount: AppSettings.defaultAITerminalTranscriptLineCount,
             aiRequireRunConfirmation: AppSettings.defaultAIRequireRunConfirmation,
             aiAPIKey: "",
-            passwordSaveConsentAcknowledged: false,
             connectionInfoPasswordCopyMutedUntilEpoch: 0,
             connectionInfoPasswordCopyMuteForever: false,
             serverMetricsActiveRefreshSeconds: AppSettings.defaultServerMetricsActiveRefreshSeconds,

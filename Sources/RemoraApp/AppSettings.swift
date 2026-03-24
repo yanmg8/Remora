@@ -16,7 +16,6 @@ enum AppSettings {
     static let aiIncludeTranscriptKey = "settings.ai.includeTranscript"
     static let aiTerminalTranscriptLineCountKey = "settings.ai.terminalTranscriptLineCount"
     static let aiRequireRunConfirmationKey = "settings.ai.requireRunConfirmation"
-    static let passwordSaveConsentAcknowledgedKey = "settings.credentials.passwordSaveConsentAcknowledged"
     static let connectionInfoPasswordCopyMuteUntilKey = "settings.credentials.connectionInfoPasswordCopyMuteUntil"
     static let connectionInfoPasswordCopyMuteForeverKey = "settings.credentials.connectionInfoPasswordCopyMuteForever"
     static let serverMetricsActiveRefreshSecondsKey = "settings.metrics.activeRefreshSeconds"

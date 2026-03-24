@@ -645,6 +645,63 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func newConnectionSavePasswordCheckboxTogglesImmediately() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard let newConnectionButton = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { identifier(of: $0) == "sidebar-new-ssh-connection" }
+        ) else {
+            Issue.record("Could not find new SSH connection button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(newConnectionButton, kAXPressAction as CFString)
+
+        guard waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { identifier(of: $0) == "host-editor-title" }
+        ) != nil else {
+            Issue.record("Could not find host editor sheet title.")
+            return
+        }
+
+        guard let checkbox = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { identifier(of: $0) == "host-editor-save-password" }
+        ), let checkboxFrame = frame(of: checkbox) else {
+            Issue.record("Could not find save-password checkbox.")
+            return
+        }
+
+        let initialValue = boolAttribute(kAXValueAttribute as CFString, of: checkbox)
+        click(point: CGPoint(x: checkboxFrame.midX, y: checkboxFrame.midY))
+
+        let toggled = waitUntil(timeout: 2) {
+            self.boolAttribute(kAXValueAttribute as CFString, of: checkbox) != initialValue
+        }
+
+        #expect(toggled, "Save-password checkbox in the new-connection sheet should toggle immediately when clicked.")
+    }
+
+    @Test
     func settingsButtonOpensSettingsWindowAndSwitchesTabs() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
