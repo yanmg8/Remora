@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public actor OpenSSHProcessClient: SSHTransportClientProtocol {
     private var connectedHost: Host?
@@ -34,16 +35,23 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     public var onStateChange: (@Sendable (ShellSessionState) -> Void)?
 
     private let host: Host
+    private let launchConfigurationOverride: LaunchConfiguration?
     private var pty: PTYSize
     private var process: Process?
-    private var stdinPipe: Pipe?
-    private var stdoutPipe: Pipe?
-    private var stderrPipe: Pipe?
+    private var masterHandle: FileHandle?
+    private var masterFileDescriptor: Int32?
     private let credentialStore = CredentialStore()
     private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
 
     public init(host: Host, pty: PTYSize) {
         self.host = host
+        self.launchConfigurationOverride = nil
+        self.pty = pty
+    }
+
+    init(host: Host, pty: PTYSize, launchConfigurationOverride: LaunchConfiguration?) {
+        self.host = host
+        self.launchConfigurationOverride = launchConfigurationOverride
         self.pty = pty
     }
 
@@ -61,21 +69,30 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             proc.environment = ProcessInfo.processInfo.environment.merging(launch.environment) { _, new in new }
         }
 
-        let inPipe = Pipe()
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-
-        proc.standardInput = inPipe
-        proc.standardOutput = outPipe
-        proc.standardError = errPipe
-
-        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            self?.onOutput?(data)
+        let descriptors = try createPseudoTerminal(initialSize: pty)
+        let masterFD = descriptors.master
+        let slaveFD = descriptors.slave
+        let masterHandle = FileHandle(fileDescriptor: masterFD, closeOnDealloc: true)
+        let stdinHandle = FileHandle(fileDescriptor: slaveFD, closeOnDealloc: true)
+        let stdoutFD = dup(slaveFD)
+        let stderrFD = dup(slaveFD)
+        guard stdoutFD >= 0, stderrFD >= 0 else {
+            let reason = "ssh shell setup failed: \(String(cString: strerror(errno)))"
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
+            try? stdinHandle.close()
+            if stdoutFD >= 0 { _ = Darwin.close(stdoutFD) }
+            if stderrFD >= 0 { _ = Darwin.close(stderrFD) }
+            throw SSHError.connectionFailed(reason)
         }
 
-        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        let stdoutHandle = FileHandle(fileDescriptor: stdoutFD, closeOnDealloc: true)
+        let stderrHandle = FileHandle(fileDescriptor: stderrFD, closeOnDealloc: true)
+        proc.standardInput = stdinHandle
+        proc.standardOutput = stdoutHandle
+        proc.standardError = stderrHandle
+
+        masterHandle.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
             self?.onOutput?(data)
@@ -98,6 +115,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         do {
             try proc.run()
         } catch {
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
             cleanupHandles()
             onStateChange?(.failed(error.localizedDescription))
             throw SSHError.connectionFailed(error.localizedDescription)
@@ -105,9 +124,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
 
         stateQueue.sync {
             process = proc
-            stdinPipe = inPipe
-            stdoutPipe = outPipe
-            stderrPipe = errPipe
+            self.masterHandle = masterHandle
+            masterFileDescriptor = masterFD
         }
 
         onStateChange?(.running)
@@ -119,6 +137,21 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
 
     public func resize(_ size: PTYSize) async throws {
         pty = size
+        let state = stateQueue.sync { (masterFileDescriptor, process?.processIdentifier) }
+        guard let masterFileDescriptor = state.0 else {
+            throw SSHError.notConnected
+        }
+
+        var windowSize = makeWindowSize(from: size)
+        let resizeResult = ioctl(masterFileDescriptor, TIOCSWINSZ, &windowSize)
+        guard resizeResult == 0 else {
+            let reason = String(cString: strerror(errno))
+            throw SSHError.connectionFailed("resize failed: \(reason)")
+        }
+
+        if let processIdentifier = state.1, processIdentifier > 0 {
+            _ = kill(pid_t(processIdentifier), SIGWINCH)
+        }
     }
 
     public func stop() async {
@@ -138,40 +171,57 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     }
 
     private func writeSync(_ data: Data) throws {
-        guard let stdinPipe = stateQueue.sync(execute: { stdinPipe }) else {
+        guard let masterHandle = stateQueue.sync(execute: { masterHandle }) else {
             throw SSHError.notConnected
         }
 
         do {
-            try stdinPipe.fileHandleForWriting.write(contentsOf: data)
+            try masterHandle.write(contentsOf: data)
         } catch {
             throw SSHError.connectionFailed("write failed: \(error.localizedDescription)")
         }
     }
 
     private func cleanupHandles() {
-        let handles = stateQueue.sync { () -> (Pipe?, Pipe?, Pipe?) in
-            let currentIn = stdinPipe
-            let currentOut = stdoutPipe
-            let currentErr = stderrPipe
-
-            stdinPipe = nil
-            stdoutPipe = nil
-            stderrPipe = nil
+        let currentHandle = stateQueue.sync { () -> FileHandle? in
+            let handle = masterHandle
+            masterHandle = nil
+            masterFileDescriptor = nil
             process = nil
 
-            return (currentIn, currentOut, currentErr)
+            return handle
         }
 
-        handles.1?.fileHandleForReading.readabilityHandler = nil
-        handles.2?.fileHandleForReading.readabilityHandler = nil
+        currentHandle?.readabilityHandler = nil
+        try? currentHandle?.close()
+    }
 
-        try? handles.0?.fileHandleForWriting.close()
-        try? handles.1?.fileHandleForReading.close()
-        try? handles.2?.fileHandleForReading.close()
+    private func createPseudoTerminal(initialSize: PTYSize) throws -> (master: Int32, slave: Int32) {
+        var master: Int32 = -1
+        var slave: Int32 = -1
+        var windowSize = makeWindowSize(from: initialSize)
+        let result = openpty(&master, &slave, nil, nil, &windowSize)
+        guard result == 0 else {
+            let reason = String(cString: strerror(errno))
+            throw SSHError.connectionFailed("openpty failed: \(reason)")
+        }
+        return (master: master, slave: slave)
+    }
+
+    private func makeWindowSize(from size: PTYSize) -> winsize {
+        winsize(
+            ws_row: UInt16(clamping: size.rows),
+            ws_col: UInt16(clamping: size.columns),
+            ws_xpixel: 0,
+            ws_ypixel: 0
+        )
     }
 
     private func makeLaunchConfiguration() async -> LaunchConfiguration {
+        if let launchConfigurationOverride {
+            return launchConfigurationOverride
+        }
+
         if host.auth.method == .password,
            let passwordReference = host.auth.passwordReference,
            !passwordReference.isEmpty,

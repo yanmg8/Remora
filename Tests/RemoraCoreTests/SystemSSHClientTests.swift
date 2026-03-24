@@ -103,4 +103,69 @@ struct SystemSSHClientTests {
         #expect(launch?.arguments.starts(with: ["-e"]) == true)
         #expect(launch?.environment["SSHPASS"] == "top-secret")
     }
+
+    @Test
+    func runningSessionReportsUpdatedPTYSizeAfterResize() async throws {
+        let host = Host(
+            name: "pty-test",
+            address: "example.com",
+            username: "ubuntu",
+            auth: HostAuth(method: .agent)
+        )
+        let output = OutputCollector()
+        let session = ProcessSSHShellSession(
+            host: host,
+            pty: .init(columns: 80, rows: 24),
+            launchConfigurationOverride: ProcessSSHShellSession.LaunchConfiguration(
+                executablePath: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "printf 'READY\\r\\n'; while IFS= read -r line; do if [ \"$line\" = size ]; then stty size; fi; done"
+                ],
+                environment: ["TERM": "xterm-256color"]
+            )
+        )
+        session.onOutput = { (data: Data) in
+            Task {
+                await output.append(String(decoding: data, as: UTF8.self))
+            }
+        }
+
+        try await session.start()
+        #expect(await waitUntil(timeout: 1) { await output.joined.contains("READY") })
+
+        try await session.write(Data("size\n".utf8))
+        #expect(
+            await waitUntil(timeout: 1) { await output.joined.contains("24 80") },
+            "Session should expose the initial PTY size to the child process."
+        )
+
+        try await session.resize(PTYSize(columns: 101, rows: 37))
+        try await session.write(Data("size\n".utf8))
+        #expect(
+            await waitUntil(timeout: 1) { await output.joined.contains("37 101") },
+            "Resizing the session should update the child PTY, otherwise shells redraw against stale dimensions."
+        )
+
+        await session.stop()
+    }
+}
+
+private actor OutputCollector {
+    private(set) var joined = ""
+
+    func append(_ chunk: String) {
+        joined += chunk
+    }
+}
+
+private func waitUntil(timeout: TimeInterval, condition: @escaping () async -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return await condition()
 }
