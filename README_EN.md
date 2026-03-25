@@ -15,12 +15,12 @@
 
 <p align="center">
   <a href="./README.md">简体中文</a> •
+  <a href="./CHANGELOG.md">Changelog</a> •
   <a href="#features">Features</a> •
   <a href="#screenshots">Screenshots</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#faq">FAQ</a> •
   <a href="#project-structure">Project Structure</a> •
-  <a href="#architecture">Architecture</a> •
   <a href="#testing">Testing</a> •
   <a href="#community">Community</a> •
   <a href="#contributing">Contributing</a>
@@ -175,11 +175,6 @@ A: Allow it once from macOS Settings:
 - `Tests/*`: core, terminal, and app tests.
 - `docs/`: checklists, screenshots, and operational notes.
 
-## Architecture
-
-See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the module diagram and the
-high-level flow between `RemoraCore`, `RemoraTerminal`, and `RemoraApp`.
-
 ## Contributing
 
 Contributions are welcome.
@@ -205,17 +200,15 @@ Remora was shaped by ideas, tooling, or implementation inspiration from the foll
 - [OpenAI](https://github.com/openai)
 - [Claude Code](https://github.com/anthropics/claude-code)
 
+Special thanks to the [2Libra](https://2libra.com/) and [V2EX](https://www.v2ex.com/) communities.
+
+Their early users shared a lot of valuable feedback and surfaced many issues, which helped the product improve and mature significantly.
+
+Thanks to everyone who took the time to try Remora, discuss it, suggest improvements, and point out problems.
+
 ## Security
 
 Please read [`SECURITY.md`](./SECURITY.md) for responsible disclosure.
-
-## Open Source Checklist
-
-See [`docs/OPEN_SOURCE_CHECKLIST.md`](./docs/OPEN_SOURCE_CHECKLIST.md) for the pre-public checklist.
-
-## Changelog
-
-See [`CHANGELOG.md`](./CHANGELOG.md) for release notes.
 
 ## License
 
