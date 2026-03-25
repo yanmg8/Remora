@@ -2401,6 +2401,9 @@ struct SidebarMenuIconButton<MenuContent: View>: View {
     @ViewBuilder let menuContent: () -> MenuContent
     @State private var isHovering = false
 
+    private let buttonWidth: CGFloat = 26
+    private let buttonHeight: CGFloat = 24
+
     var body: some View {
         Menu {
             menuContent()
@@ -2408,7 +2411,7 @@ struct SidebarMenuIconButton<MenuContent: View>: View {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(VisualStyle.textSecondary)
-                .frame(width: 26, height: 24)
+                .frame(width: buttonWidth, height: buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(isHovering ? VisualStyle.leftHoverBackground : Color.clear)
@@ -2416,6 +2419,8 @@ struct SidebarMenuIconButton<MenuContent: View>: View {
         }
         .menuIndicator(.hidden)
         .menuStyle(.borderlessButton)
+        .fixedSize()
+        .frame(width: buttonWidth, height: buttonHeight)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 isHovering = hovering
