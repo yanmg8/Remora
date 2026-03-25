@@ -83,7 +83,7 @@ struct SystemSSHClientTests {
     }
 
     @Test
-    func standardLaunchConfigurationBootstrapsRemoteShellIntegration() {
+    func standardLaunchConfigurationDoesNotRewriteRemoteShellStartup() {
         let host = Host(
             name: "ops",
             address: "example.com",
@@ -94,17 +94,22 @@ struct SystemSSHClientTests {
         let launch = ProcessSSHShellSession.makeStandardLaunchConfiguration(for: host)
         let joinedArguments = launch.arguments.joined(separator: " ")
 
-        #expect(joinedArguments.contains("REMORA_SHELL_INTEGRATION"))
-        #expect(joinedArguments.contains("OSC 7") == false)
-        #expect(joinedArguments.contains("PROMPT_COMMAND") || joinedArguments.contains("add-zsh-hook"))
+        #expect(joinedArguments.contains("REMORA_SHELL_INTEGRATION") == false)
+        #expect(joinedArguments.contains("PROMPT_COMMAND") == false)
+        #expect(joinedArguments.contains("add-zsh-hook") == false)
+        #expect(launch.arguments.last == "ubuntu@example.com")
     }
 
     @Test
-    func remoteShellIntegrationCommandDoesNotContainEmbeddedNulCharacters() {
-        let command = ProcessSSHShellSession.makeRemoteShellIntegrationCommand()
+    func remoteShellIntegrationInstallCommandConfiguresBashZshAndFishHooks() {
+        let command = OpenSSHRemoteShellIntegrationInstaller.installCommand
 
         #expect(command.unicodeScalars.contains("\0") == false)
-        #expect(command.contains("\u{001B}]7;file://"))
+        #expect(command.contains("shell-integration.bash"))
+        #expect(command.contains("shell-integration.zsh"))
+        #expect(command.contains("remora.fish"))
+        #expect(command.contains("# >>> Remora shell integration >>>"))
+        #expect(command.contains("\\033]7;file://"))
     }
 
     @Test

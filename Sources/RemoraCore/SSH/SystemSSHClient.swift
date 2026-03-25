@@ -248,15 +248,22 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         return Self.makeStandardLaunchConfiguration(for: host, useConnectionReuse: useConnectionReuse)
     }
 
-    static func makeSSHArguments(for host: Host, useConnectionReuse: Bool = true) -> [String] {
+    static func makeSSHArguments(
+        for host: Host,
+        useConnectionReuse: Bool = true,
+        allocateTTY: Bool = true,
+        remoteCommand: String? = nil
+    ) -> [String] {
         var args: [String] = [
-            "-tt",
             "-p", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
             "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
             "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
+        if allocateTTY {
+            args.insert("-tt", at: 0)
+        }
         if useConnectionReuse {
             args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
         }
@@ -275,60 +282,60 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         }
 
         args.append("\(host.username)@\(host.address)")
-        args.append(makeRemoteShellIntegrationCommand())
+        if let remoteCommand, !remoteCommand.isEmpty {
+            args.append(remoteCommand)
+        }
         return args
-    }
-
-    static func makeRemoteShellIntegrationCommand() -> String {
-        """
-        REMORA_SHELL_INTEGRATION=1; shell="${SHELL:-/bin/sh}";
-        case "$shell" in
-          */bash|bash)
-            tmp="${TMPDIR:-/tmp}/remora-bash-$$.rc"
-            cat >"$tmp" <<'REMORA_BASH_RC'
-        if [ -r ~/.bash_profile ]; then . ~/.bash_profile; elif [ -r ~/.profile ]; then . ~/.profile; fi
-        if [ -r ~/.bashrc ]; then . ~/.bashrc; fi
-        __remora_emit_cwd() { printf '\u{001B}]7;file://%s%s\u{001B}\\' "${HOSTNAME:-$(hostname 2>/dev/null || printf localhost)}" "$PWD"; }
-        PROMPT_COMMAND="__remora_emit_cwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-        __remora_emit_cwd
-        REMORA_BASH_RC
-            exec "$shell" --noprofile --rcfile "$tmp" -i
-            ;;
-          */zsh|zsh)
-            tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/remora-zsh.XXXXXX")" || exit 1
-            cat >"$tmpdir/.zshenv" <<'REMORA_ZSHENV'
-        if [ -r ~/.zshenv ]; then source ~/.zshenv; fi
-        REMORA_ZSHENV
-            cat >"$tmpdir/.zprofile" <<'REMORA_ZPROFILE'
-        if [ -r ~/.zprofile ]; then source ~/.zprofile; fi
-        REMORA_ZPROFILE
-            cat >"$tmpdir/.zshrc" <<'REMORA_ZSHRC'
-        if [ -r ~/.zshrc ]; then source ~/.zshrc; fi
-        function __remora_emit_cwd() { printf '\u{001B}]7;file://%s%s\u{001B}\\' "${HOST:-$(hostname 2>/dev/null || printf localhost)}" "$PWD"; }
-        autoload -Uz add-zsh-hook 2>/dev/null || true
-        if whence add-zsh-hook >/dev/null 2>&1; then
-          add-zsh-hook precmd __remora_emit_cwd
-        else
-          precmd_functions=(__remora_emit_cwd ${precmd_functions[@]})
-        fi
-        __remora_emit_cwd
-        REMORA_ZSHRC
-            cat >"$tmpdir/.zlogin" <<'REMORA_ZLOGIN'
-        if [ -r ~/.zlogin ]; then source ~/.zlogin; fi
-        REMORA_ZLOGIN
-            ZDOTDIR="$tmpdir" exec "$shell" -il
-            ;;
-          *)
-            exec "$shell" -il
-            ;;
-        esac
-        """
     }
 
     static func makeStandardLaunchConfiguration(for host: Host, useConnectionReuse: Bool = true) -> LaunchConfiguration {
         wrappedSSHLaunchConfiguration(
             sshArguments: makeSSHArguments(for: host, useConnectionReuse: useConnectionReuse),
-            environment: [:]
+            environment: [:],
+            wrapInScript: true
+        )
+    }
+
+    static func makeRemoteCommandLaunchConfiguration(
+        for host: Host,
+        command: String,
+        credentialStore: CredentialStore = CredentialStore()
+    ) async -> LaunchConfiguration? {
+        let storedPassword: String? = if host.auth.method == .password,
+                                         let passwordReference = host.auth.passwordReference,
+                                         !passwordReference.isEmpty,
+                                         let password = await credentialStore.secret(for: passwordReference),
+                                         !password.isEmpty {
+            password
+        } else {
+            nil
+        }
+        let hasStoredPassword = storedPassword != nil
+        let useConnectionReuse = SSHConnectionReusePolicy.shouldUseConnectionReuse(
+            authMethod: host.auth.method,
+            hasStoredPassword: hasStoredPassword
+        )
+
+        if host.auth.method == .password,
+           let password = storedPassword,
+           let launch = makePasswordLaunchConfiguration(
+                for: host,
+                password: password,
+                remoteCommand: command,
+                allocateTTY: false
+           ) {
+            return launch
+        }
+
+        return wrappedSSHLaunchConfiguration(
+            sshArguments: makeSSHArguments(
+                for: host,
+                useConnectionReuse: useConnectionReuse,
+                allocateTTY: false,
+                remoteCommand: command
+            ),
+            environment: [:],
+            wrapInScript: false
         )
     }
 
@@ -336,11 +343,19 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         for host: Host,
         password: String,
         sshpassPath: String? = defaultSSHPassPath(),
-        askPassScriptPath: String? = ensureAskPassScriptPath()
+        askPassScriptPath: String? = ensureAskPassScriptPath(),
+        remoteCommand: String? = nil,
+        allocateTTY: Bool = true
     ) -> LaunchConfiguration? {
         let wrapped = wrappedSSHLaunchConfiguration(
-            sshArguments: makeSSHArguments(for: host, useConnectionReuse: false),
-            environment: [:]
+            sshArguments: makeSSHArguments(
+                for: host,
+                useConnectionReuse: false,
+                allocateTTY: allocateTTY,
+                remoteCommand: remoteCommand
+            ),
+            environment: [:],
+            wrapInScript: allocateTTY
         )
 
         if let sshpassPath {
@@ -366,12 +381,13 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
 
     private static func wrappedSSHLaunchConfiguration(
         sshArguments: [String],
-        environment: [String: String]
+        environment: [String: String],
+        wrapInScript: Bool
     ) -> LaunchConfiguration {
         let sshPath = "/usr/bin/ssh"
         let environment = mergedTerminalEnvironment(environment)
 
-        if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
+        if wrapInScript, FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
             return LaunchConfiguration(
                 executablePath: "/usr/bin/script",
                 arguments: ["-q", "/dev/null", sshPath] + sshArguments,
