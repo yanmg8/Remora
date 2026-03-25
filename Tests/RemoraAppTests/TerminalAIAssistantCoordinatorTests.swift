@@ -157,6 +157,45 @@ struct TerminalAIAssistantCoordinatorTests {
     }
 
     @Test
+    func refreshSmartAssistStaysHiddenWhenAIIsDisabled() async throws {
+        let dependencies = try makeDependencies(suffix: "assist-disabled")
+        defer { dependencies.cleanup() }
+
+        dependencies.store.save(
+            AISettingsValue(
+                isEnabled: false,
+                provider: .openAI,
+                apiFormat: .openAICompatible,
+                baseURL: AIProviderOption.openAI.defaultBaseURL,
+                model: "gpt-5.4",
+                smartAssistEnabled: true,
+                includeWorkingDirectory: true,
+                includeTranscript: true,
+                terminalTranscriptLineCount: 120,
+                language: .system,
+                requireRunConfirmation: true
+            )
+        )
+
+        let coordinator = TerminalAIAssistantCoordinator(
+            service: MockTerminalAIResponder(response: .init(summary: "ok", commands: [], warnings: [])),
+            settingsStore: dependencies.store,
+            runtimeSnapshot: {
+                .init(
+                    sessionMode: "SSH",
+                    hostLabel: "box",
+                    workingDirectory: "/srv/app",
+                    transcript: "bash: whoamx: command not found"
+                )
+            }
+        )
+
+        coordinator.refreshSmartAssist()
+
+        #expect(coordinator.smartAssist == nil)
+    }
+
+    @Test
     func submitShowsThinkingPlaceholderBeforeAssistantResponseArrives() async throws {
         let dependencies = try makeDependencies(suffix: "thinking")
         defer { dependencies.cleanup() }

@@ -911,6 +911,127 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func terminalAISmartAssistAppearsAsDismissibleTopRightNotification() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let launched = try launchAppForUIAutomation()
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create a terminal session before testing smart assist notification.")
+            return
+        }
+
+        guard focusActiveTerminal(in: appElement) else {
+            Issue.record("Could not focus terminal before testing smart assist notification.")
+            return
+        }
+
+        typeText("whoamx\r")
+        let transcriptUpdated = waitUntil(timeout: 8) {
+            guard let transcript = activeTranscriptText(in: appElement) else { return false }
+            return transcript.contains("command not found: whoamx")
+        }
+        #expect(transcriptUpdated, "Terminal should render the failing command output before smart assist notification appears.")
+        guard transcriptUpdated else { return }
+
+        guard let notification = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "terminal-ai-smart-assist-notification" }
+        ) else {
+            Issue.record("Could not find the terminal smart assist notification.")
+            return
+        }
+
+        guard let terminal = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "terminal-view" }
+        ), let terminalFrame = frame(of: terminal), let notificationFrame = frame(of: notification) else {
+            Issue.record("Could not measure terminal or notification frames.")
+            return
+        }
+
+        #expect(notificationFrame.maxX <= terminalFrame.maxX + 24, "Smart assist notification should stay within the terminal's trailing edge.")
+        #expect(notificationFrame.minX >= terminalFrame.midX, "Smart assist notification should anchor on the right half of the terminal.")
+        #expect(notificationFrame.minY <= terminalFrame.minY + 80, "Smart assist notification should appear near the top of the terminal.")
+
+        guard let dismissButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "terminal-ai-smart-assist-dismiss" }
+        ) else {
+            Issue.record("Could not find the smart assist dismiss button.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(dismissButton, kAXPressAction as CFString)
+
+        let dismissed = waitUntil(timeout: 5) {
+            findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-ai-smart-assist-notification" }) == nil
+        }
+        #expect(dismissed, "Smart assist notification should be dismissible without affecting the terminal view.")
+        #expect(findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-view" }) != nil, "Terminal should remain visible after dismissing smart assist notification.")
+    }
+
+    @Test
+    func disabledTerminalAIDoesNotShowSmartAssistNotification() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        let homeDirectoryURL = try makeUIAutomationHome(appearanceMode: .system, aiEnabled: false)
+        defer { try? FileManager.default.removeItem(at: homeDirectoryURL) }
+
+        let launched = try launchAppForUIAutomation(homeDirectoryURL: homeDirectoryURL)
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard ensureSessionAvailable(in: appElement, timeout: 8) else {
+            Issue.record("Could not create a terminal session before testing disabled AI smart assist.")
+            return
+        }
+
+        guard focusActiveTerminal(in: appElement) else {
+            Issue.record("Could not focus terminal before testing disabled AI smart assist.")
+            return
+        }
+
+        typeText("whoamx\r")
+        let transcriptUpdated = waitUntil(timeout: 8) {
+            guard let transcript = activeTranscriptText(in: appElement) else { return false }
+            return transcript.contains("command not found: whoamx")
+        }
+        #expect(transcriptUpdated, "Terminal should still render command output when AI is disabled.")
+        guard transcriptUpdated else { return }
+
+        RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+
+        #expect(findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-ai-toggle" }) == nil, "Terminal AI toggle should stay hidden when AI is disabled in Settings.")
+        #expect(findElement(in: appElement, matching: { self.identifier(of: $0) == "terminal-ai-smart-assist-notification" }) == nil, "Smart assist notification should not appear when AI is disabled in Settings.")
+    }
+
+    @Test
     func menuShortcutsOpenNewConnectionAndSettings() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -2232,7 +2353,11 @@ struct RemoraUIAutomationTests {
         #expect(hintVisible, "Rename sheet should explain that SSH connection names stay unchanged in \(appearanceMode.rawValue) mode.")
     }
 
-    private func makeUIAutomationHome(appearanceMode: AppAppearanceMode) throws -> URL {
+    private func makeUIAutomationHome(
+        appearanceMode: AppAppearanceMode,
+        aiEnabled: Bool = true,
+        smartAssistEnabled: Bool = true
+    ) throws -> URL {
         let fileManager = FileManager.default
         let homeDirectoryURL = fileManager.temporaryDirectory
             .appendingPathComponent("remora-ui-\(appearanceMode.rawValue)-\(UUID().uuidString)", isDirectory: true)
@@ -2247,6 +2372,8 @@ struct RemoraUIAutomationTests {
         var snapshot = AppPreferencesSnapshot.defaultValue(fileManager: fileManager)
         snapshot.appearanceModeRawValue = appearanceMode.rawValue
         snapshot.languageModeRawValue = AppLanguageMode.english.rawValue
+        snapshot.aiEnabled = aiEnabled
+        snapshot.aiSmartAssistEnabled = smartAssistEnabled
 
         let settingsURL = configRoot.appendingPathComponent(RemoraConfigFile.settings.rawValue, isDirectory: false)
         let data = try JSONEncoder().encode(snapshot)

@@ -16,6 +16,7 @@ struct TerminalPaneView: View {
     var onRunQuickCommand: (HostQuickCommand) -> Void
     var onManageQuickCommands: () -> Void
     @RemoraStored(\.aiEnabled) private var aiEnabled: Bool
+    @State private var smartAssistNotificationState = TerminalSmartAssistNotificationState()
 
     private var hostKeyPromptBinding: Binding<Bool> {
         Binding(
@@ -170,12 +171,6 @@ struct TerminalPaneView: View {
             Divider()
                 .overlay(VisualStyle.borderSoft)
 
-            if aiEnabled, !pane.isAIAssistantVisible, let smartAssist = aiAssistant.smartAssist {
-                smartAssistBanner(smartAssist)
-                Divider()
-                    .overlay(VisualStyle.borderSoft)
-            }
-
             if isContentVisible {
                 HStack(spacing: 0) {
                     ZStack {
@@ -198,6 +193,14 @@ struct TerminalPaneView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    if let smartAssist = visibleSmartAssistNotification {
+                        smartAssistNotification(smartAssist)
+                            .padding(.top, 12)
+                            .padding(.trailing, 12)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -216,6 +219,7 @@ struct TerminalPaneView: View {
         .onAppear {
             aiAssistant.bind(to: pane.id)
             aiAssistant.refreshSmartAssist()
+            smartAssistNotificationState.sync(currentSmartAssist: aiAssistant.smartAssist, aiEnabled: aiEnabled)
         }
         .onChange(of: runtime.transcriptSnapshot) {
             aiAssistant.refreshSmartAssist()
@@ -224,7 +228,15 @@ struct TerminalPaneView: View {
             if !aiEnabled {
                 pane.isAIAssistantVisible = false
             }
+            smartAssistNotificationState.sync(currentSmartAssist: aiAssistant.smartAssist, aiEnabled: aiEnabled)
             aiAssistant.refreshSmartAssist()
+        }
+        .onChange(of: aiAssistant.smartAssist) {
+            smartAssistNotificationState.sync(currentSmartAssist: aiAssistant.smartAssist, aiEnabled: aiEnabled)
+        }
+        .onChange(of: pane.isAIAssistantVisible) {
+            guard pane.isAIAssistantVisible, let smartAssist = aiAssistant.smartAssist else { return }
+            smartAssistNotificationState.dismiss(smartAssist)
         }
         .alert(tr("Trust SSH Host Key?"), isPresented: hostKeyPromptBinding) {
             Button(tr("Reject"), role: .destructive) {
@@ -259,33 +271,71 @@ struct TerminalPaneView: View {
         return true
     }
 
-    private func smartAssistBanner(_ smartAssist: TerminalAISmartAssist) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(Color.accentColor)
+    private var visibleSmartAssistNotification: TerminalAISmartAssist? {
+        smartAssistNotificationState.visibleSmartAssist(
+            aiEnabled: aiEnabled,
+            isAIAssistantVisible: pane.isAIAssistantVisible,
+            smartAssist: aiAssistant.smartAssist
+        )
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Terminal AI noticed a likely shell issue."))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(VisualStyle.textPrimary)
-                Text(localizedSmartAssistTitle(smartAssist.kind))
-                    .font(.system(size: 11))
-                    .foregroundStyle(VisualStyle.textSecondary)
+    private func smartAssistNotification(_ smartAssist: TerminalAISmartAssist) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(tr("Terminal AI noticed a likely shell issue."))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(VisualStyle.textPrimary)
+                    Text(localizedSmartAssistTitle(smartAssist.kind))
+                        .font(.system(size: 11))
+                        .foregroundStyle(VisualStyle.textSecondary)
+                }
+
+                Spacer(minLength: 6)
+
+                Button {
+                    smartAssistNotificationState.dismiss(smartAssist)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(VisualStyle.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("Close"))
+                .accessibilityLabel(tr("Close"))
+                .accessibilityIdentifier("terminal-ai-smart-assist-dismiss")
             }
 
-            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
 
-            Button(tr("Explain")) {
-                pane.isAIAssistantVisible = true
-                Task { try? await aiAssistant.submit(smartAssist.prompt) }
+                Button(tr("Explain")) {
+                    smartAssistNotificationState.dismiss(smartAssist)
+                    pane.isAIAssistantVisible = true
+                    Task { try? await aiAssistant.submit(smartAssist.prompt) }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("terminal-ai-smart-assist-explain")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(VisualStyle.settingsSubtleBackground)
-        .accessibilityIdentifier("terminal-ai-smart-assist")
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(VisualStyle.overlayBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(VisualStyle.borderSoft, lineWidth: 1)
+        )
+        .shadow(color: VisualStyle.shadowColor, radius: 8, y: 3)
+        .accessibilityIdentifier("terminal-ai-smart-assist-notification")
     }
 
     private func localizedSmartAssistTitle(_ kind: TerminalAISmartAssistKind) -> String {
