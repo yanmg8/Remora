@@ -234,6 +234,12 @@
 "Remora is sampling the remote host for CPU, memory, traffic, and process details." = "Remora 正在采集远端主机的 CPU、内存、流量与进程详情。";
 "Metrics unavailable" = "指标不可用";
 "Hover again after the SSH session finishes its first sampling cycle." = "等待 SSH 会话完成首次采样后，再次悬停即可查看。";
+"Metrics will appear after the first sampling cycle." = "完成首次采样后，这里会显示监控数据。";
+"Resources" = "资源概览";
+"Network & Disk IO" = "网络与磁盘 IO";
+"Load 1m" = "1 分钟负载";
+"Load 5m" = "5 分钟负载";
+"Load 15m" = "15 分钟负载";
 "Available / Size" = "可用 / 总大小";
 "Last sample" = "最近采样";
 "RX/s" = "RX/s";

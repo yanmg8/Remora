@@ -238,6 +238,12 @@
 "Remora is sampling the remote host for CPU, memory, traffic, and process details." = "Remora is sampling the remote host for CPU, memory, traffic, and process details.";
 "Metrics unavailable" = "Metrics unavailable";
 "Hover again after the SSH session finishes its first sampling cycle." = "Hover again after the SSH session finishes its first sampling cycle.";
+"Metrics will appear after the first sampling cycle." = "Metrics will appear after the first sampling cycle.";
+"Resources" = "Resources";
+"Network & Disk IO" = "Network & Disk IO";
+"Load 1m" = "Load 1m";
+"Load 5m" = "Load 5m";
+"Load 15m" = "Load 15m";
 "Available / Size" = "Available / Size";
 "Last sample" = "Last sample";
 "RX/s" = "RX/s";
