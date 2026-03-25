@@ -458,15 +458,13 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     func enqueueDownload(remoteEntry: RemoteFileEntry) {
-        guard !remoteEntry.isDirectory else { return }
-
         let destinationURL = ensureWritableLocalDirectory().appendingPathComponent(remoteEntry.name)
         let item = TransferItem(
             direction: .download,
             name: remoteEntry.name,
             sourcePath: remoteEntry.path,
             destinationPath: destinationURL.path,
-            totalBytes: remoteEntry.size
+            totalBytes: remoteEntry.isDirectory ? nil : remoteEntry.size
         )
         transferQueue.append(item)
         Task {
@@ -476,7 +474,7 @@ final class FileTransferViewModel: ObservableObject {
 
     func enqueueDownload(paths: [String]) {
         let normalized = Set(paths.map(normalizeRemoteDirectoryPath))
-        for entry in remoteEntries where normalized.contains(normalizeRemoteDirectoryPath(entry.path)) && !entry.isDirectory {
+        for entry in remoteEntries where normalized.contains(normalizeRemoteDirectoryPath(entry.path)) {
             enqueueDownload(remoteEntry: entry)
         }
     }
@@ -484,10 +482,6 @@ final class FileTransferViewModel: ObservableObject {
     func enqueueDownload(path: String) async throws {
         let normalizedPath = normalizeRemoteDirectoryPath(path)
         let attributes = try await loadRemoteAttributes(path: normalizedPath)
-        guard !attributes.isDirectory else {
-            throw SFTPClientError.unsupportedOperation("download-directory")
-        }
-
         let entry = RemoteFileEntry(
             name: URL(fileURLWithPath: normalizedPath).lastPathComponent,
             path: normalizedPath,
@@ -495,7 +489,7 @@ final class FileTransferViewModel: ObservableObject {
             permissions: attributes.permissions,
             owner: attributes.owner,
             group: attributes.group,
-            isDirectory: false,
+            isDirectory: attributes.isDirectory,
             modifiedAt: attributes.modifiedAt
         )
         enqueueDownload(remoteEntry: entry)
@@ -926,20 +920,25 @@ final class FileTransferViewModel: ObservableObject {
 
             case .download:
                 let destinationURL = URL(fileURLWithPath: item.destinationPath)
-                try await sftpClient.download(
-                    path: item.sourcePath,
-                    to: destinationURL,
-                    progress: { [weak self] snapshot in
-                        Task { @MainActor in
-                            self?.updateTransferProgress(itemID: itemID, snapshot: snapshot)
+                let attributes = try await sftpClient.stat(path: item.sourcePath)
+                if attributes.isDirectory {
+                    try await materializeRemoteItem(at: item.sourcePath, to: destinationURL)
+                } else {
+                    try await sftpClient.download(
+                        path: item.sourcePath,
+                        to: destinationURL,
+                        progress: { [weak self] snapshot in
+                            Task { @MainActor in
+                                self?.updateTransferProgress(itemID: itemID, snapshot: snapshot)
+                            }
                         }
-                    }
-                )
+                    )
+                }
                 guard FileManager.default.fileExists(atPath: destinationURL.path) else {
                     throw NSError(
                         domain: "Remora.FileTransfer",
                         code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Download finished but local file is missing: \(destinationURL.path)"]
+                        userInfo: [NSLocalizedDescriptionKey: "Download finished but local path is missing: \(destinationURL.path)"]
                     )
                 }
             }

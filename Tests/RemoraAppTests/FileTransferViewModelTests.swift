@@ -113,6 +113,42 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func directoryDownloadPreservesNestedStructure() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-directory-download-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let vm = FileTransferViewModel(
+            sftpClient: MockSFTPClient(),
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+
+        await vm.refreshRemoteEntries()
+        guard let logsDirectory = vm.remoteEntries.first(where: { $0.path == "/logs" && $0.isDirectory }) else {
+            Issue.record("Remote logs directory not found.")
+            return
+        }
+
+        vm.enqueueDownload(remoteEntry: logsDirectory)
+        try await waitUntil(timeoutLoops: 60, intervalMS: 50) {
+            vm.transferQueue.contains(where: {
+                $0.direction == .download && $0.sourcePath == "/logs" && $0.status == .success
+            })
+        }
+
+        let downloadedLog = tempRoot
+            .appendingPathComponent("logs", isDirectory: true)
+            .appendingPathComponent("app.log")
+        #expect(FileManager.default.fileExists(atPath: downloadedLog.path))
+
+        let downloadedData = try Data(contentsOf: downloadedLog)
+        #expect(String(decoding: downloadedData, as: UTF8.self) == "service started")
+    }
+
+    @Test
     func moveAndDeleteRemoteEntries() async throws {
         let vm = FileTransferViewModel(
             sftpClient: MockSFTPClient(),
