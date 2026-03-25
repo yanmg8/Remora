@@ -20,9 +20,12 @@ struct SSHHostMetricsKey: Hashable, Sendable {
 struct ServerResourceMetricsSnapshot: Equatable, Sendable {
     let cpuFraction: Double?
     let memoryFraction: Double?
+    let swapFraction: Double?
     let diskFraction: Double?
     let memoryUsedBytes: Int64?
     let memoryTotalBytes: Int64?
+    let swapUsedBytes: Int64?
+    let swapTotalBytes: Int64?
     let diskUsedBytes: Int64?
     let diskTotalBytes: Int64?
     let processCount: Int64?
@@ -31,18 +34,36 @@ struct ServerResourceMetricsSnapshot: Equatable, Sendable {
     let diskReadBytes: Int64?
     let diskWriteBytes: Int64?
     let loadAverage1: Double?
+    let loadAverage5: Double?
+    let loadAverage15: Double?
     let uptimeSeconds: Int64?
+    let topProcesses: [ServerTopProcessMetric]
+    let filesystems: [ServerFilesystemMetric]
     let sampledAt: Date
+}
+
+struct ServerTopProcessMetric: Equatable, Sendable {
+    let memoryBytes: Int64?
+    let cpuPercent: Double?
+    let command: String
+}
+
+struct ServerFilesystemMetric: Equatable, Sendable {
+    let mountPath: String
+    let availableBytes: Int64?
+    let totalBytes: Int64?
 }
 
 struct ServerHostMetricsState: Equatable, Sendable {
     var snapshot: ServerResourceMetricsSnapshot?
+    var previousSnapshot: ServerResourceMetricsSnapshot?
     var isLoading: Bool
     var errorMessage: String?
     var lastAttemptAt: Date?
 
     static let idle = ServerHostMetricsState(
         snapshot: nil,
+        previousSnapshot: nil,
         isLoading: false,
         errorMessage: nil,
         lastAttemptAt: nil
@@ -70,11 +91,18 @@ actor RemoteServerMetricsProbe {
 
     mem_total_kb=-1
     mem_used_kb=-1
+    swap_total_kb=-1
+    swap_used_kb=-1
     if [ -r /proc/meminfo ]; then
       mem_total_kb=$(awk '/MemTotal:/ {print $2; exit}' /proc/meminfo)
       mem_available_kb=$(awk '/MemAvailable:/ {print $2; exit}' /proc/meminfo)
+      swap_total_kb=$(awk '/SwapTotal:/ {print $2; exit}' /proc/meminfo)
+      swap_free_kb=$(awk '/SwapFree:/ {print $2; exit}' /proc/meminfo)
       if [ -n "$mem_total_kb" ] && [ -n "$mem_available_kb" ]; then
         mem_used_kb=$((mem_total_kb-mem_available_kb))
+      fi
+      if [ -n "$swap_total_kb" ] && [ -n "$swap_free_kb" ]; then
+        swap_used_kb=$((swap_total_kb-swap_free_kb))
       fi
     fi
 
@@ -87,8 +115,15 @@ actor RemoteServerMetricsProbe {
     fi
 
     load1=-1
+    load5=-1
+    load15=-1
     if [ -r /proc/loadavg ]; then
-      load1=$(awk '{print $1; exit}' /proc/loadavg)
+      set -- $(awk '{print $1, $2, $3; exit}' /proc/loadavg)
+      if [ "$#" -ge 3 ]; then
+        load1=$1
+        load5=$2
+        load15=$3
+      fi
     fi
 
     uptime_s=-1
@@ -144,12 +179,36 @@ actor RemoteServerMetricsProbe {
       disk_write_bytes=$((disk_write_sectors * 512))
     fi
 
+    ps -eo rss=,pcpu=,comm= --sort=-rss 2>/dev/null \
+      | awk 'NR<=4 {
+          rss=$1
+          cpu=$2
+          cmd=$3
+          if (cmd == "") next
+          printf("proc_%d=%s|%s|%s\\n", NR-1, rss, cpu, cmd)
+        }'
+
+    df -Pk 2>/dev/null \
+      | awk 'NR>1 && count<4 {
+          mount=""
+          for (i=6; i<=NF; i++) {
+            mount = mount (i == 6 ? "" : " ") $i
+          }
+          if (mount == "") next
+          printf("fs_%d=%s|%s|%s\\n", count, mount, $4, $2)
+          count++
+        }'
+
     printf 'cpu_permille=%s\\n' "$cpu_permille"
     printf 'mem_total_kb=%s\\n' "$mem_total_kb"
     printf 'mem_used_kb=%s\\n' "$mem_used_kb"
+    printf 'swap_total_kb=%s\\n' "$swap_total_kb"
+    printf 'swap_used_kb=%s\\n' "$swap_used_kb"
     printf 'disk_total_kb=%s\\n' "$disk_total_kb"
     printf 'disk_used_kb=%s\\n' "$disk_used_kb"
     printf 'load1=%s\\n' "$load1"
+    printf 'load5=%s\\n' "$load5"
+    printf 'load15=%s\\n' "$load15"
     printf 'uptime_s=%s\\n' "$uptime_s"
     printf 'proc_count=%s\\n' "$proc_count"
     printf 'net_rx_bytes=%s\\n' "$net_rx_bytes"
@@ -216,34 +275,48 @@ actor RemoteServerMetricsProbe {
         let cpuPermille = parseNonNegativeInt("cpu_permille")
         let memoryTotalKB = parseNonNegativeInt("mem_total_kb")
         let memoryUsedKB = parseNonNegativeInt("mem_used_kb")
+        let swapTotalKB = parseNonNegativeInt("swap_total_kb")
+        let swapUsedKB = parseNonNegativeInt("swap_used_kb")
         let diskTotalKB = parseNonNegativeInt("disk_total_kb")
         let diskUsedKB = parseNonNegativeInt("disk_used_kb")
         let loadAverage1 = parseNonNegativeDouble("load1")
+        let loadAverage5 = parseNonNegativeDouble("load5")
+        let loadAverage15 = parseNonNegativeDouble("load15")
         let uptimeSeconds = parseNonNegativeInt("uptime_s")
         let processCount = parseNonNegativeInt("proc_count")
         let networkRXBytes = parseNonNegativeInt("net_rx_bytes")
         let networkTXBytes = parseNonNegativeInt("net_tx_bytes")
         let diskReadBytes = parseNonNegativeInt("disk_read_bytes")
         let diskWriteBytes = parseNonNegativeInt("disk_write_bytes")
+        let topProcesses = (0..<4).compactMap { parseTopProcess(values["proc_\($0)"]) }
+        let filesystems = (0..<4).compactMap { parseFilesystem(values["fs_\($0)"]) }
 
         let cpuFraction = cpuPermille.map { clampFraction(Double($0) / 1000) }
         let memoryFraction = fraction(used: memoryUsedKB, total: memoryTotalKB)
+        let swapFraction = fraction(used: swapUsedKB, total: swapTotalKB)
         let diskFraction = fraction(used: diskUsedKB, total: diskTotalKB)
         let memoryUsedBytes = memoryUsedKB.map { $0 * 1024 }
         let memoryTotalBytes = memoryTotalKB.map { $0 * 1024 }
+        let swapUsedBytes = swapUsedKB.map { $0 * 1024 }
+        let swapTotalBytes = swapTotalKB.map { $0 * 1024 }
         let diskUsedBytes = diskUsedKB.map { $0 * 1024 }
         let diskTotalBytes = diskTotalKB.map { $0 * 1024 }
 
         if cpuFraction == nil,
            memoryFraction == nil,
+           swapFraction == nil,
            diskFraction == nil,
            loadAverage1 == nil,
+           loadAverage5 == nil,
+           loadAverage15 == nil,
            uptimeSeconds == nil,
            processCount == nil,
            networkRXBytes == nil,
            networkTXBytes == nil,
            diskReadBytes == nil,
-           diskWriteBytes == nil
+           diskWriteBytes == nil,
+           topProcesses.isEmpty,
+           filesystems.isEmpty
         {
             return nil
         }
@@ -251,9 +324,12 @@ actor RemoteServerMetricsProbe {
         return ServerResourceMetricsSnapshot(
             cpuFraction: cpuFraction,
             memoryFraction: memoryFraction,
+            swapFraction: swapFraction,
             diskFraction: diskFraction,
             memoryUsedBytes: memoryUsedBytes,
             memoryTotalBytes: memoryTotalBytes,
+            swapUsedBytes: swapUsedBytes,
+            swapTotalBytes: swapTotalBytes,
             diskUsedBytes: diskUsedBytes,
             diskTotalBytes: diskTotalBytes,
             processCount: processCount,
@@ -262,9 +338,35 @@ actor RemoteServerMetricsProbe {
             diskReadBytes: diskReadBytes,
             diskWriteBytes: diskWriteBytes,
             loadAverage1: loadAverage1,
+            loadAverage5: loadAverage5,
+            loadAverage15: loadAverage15,
             uptimeSeconds: uptimeSeconds,
+            topProcesses: topProcesses,
+            filesystems: filesystems,
             sampledAt: sampledAt
         )
+    }
+
+    private static func parseTopProcess(_ raw: String?) -> ServerTopProcessMetric? {
+        guard let raw else { return nil }
+        let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        let command = String(parts[2]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return nil }
+        let memoryBytes = Int64(parts[0]).map { max(0, $0) * 1024 }
+        let cpuPercent = Double(parts[1]).map { max(0, $0) }
+        return ServerTopProcessMetric(memoryBytes: memoryBytes, cpuPercent: cpuPercent, command: command)
+    }
+
+    private static func parseFilesystem(_ raw: String?) -> ServerFilesystemMetric? {
+        guard let raw else { return nil }
+        let parts = raw.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        let mountPath = String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !mountPath.isEmpty else { return nil }
+        let availableBytes = Int64(parts[1]).map { max(0, $0) * 1024 }
+        let totalBytes = Int64(parts[2]).map { max(0, $0) * 1024 }
+        return ServerFilesystemMetric(mountPath: mountPath, availableBytes: availableBytes, totalBytes: totalBytes)
     }
 
     private static func fraction(used: Int64?, total: Int64?) -> Double? {
@@ -432,6 +534,7 @@ final class ServerMetricsCenter: ObservableObject {
         var nextState = states[key] ?? .idle
         nextState.isLoading = false
         if let snapshot {
+            nextState.previousSnapshot = nextState.snapshot
             nextState.snapshot = snapshot
             nextState.errorMessage = nil
         } else if let errorMessage {
