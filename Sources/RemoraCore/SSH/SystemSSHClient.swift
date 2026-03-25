@@ -36,22 +36,37 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
 
     private let host: Host
     private let launchConfigurationOverride: LaunchConfiguration?
+    private let compatibilityProfileStore: SSHCompatibilityProfileStore
     private var pty: PTYSize
     private var process: Process?
     private var masterHandle: FileHandle?
     private var masterFileDescriptor: Int32?
     private let credentialStore = CredentialStore()
     private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
+    private let compatibilityRetryWindow: TimeInterval = 3
+    private let compatibilityPersistenceDelay: Duration = .seconds(1)
+    private let failureProbeBufferLimit = 16 * 1024
+    private var activeCompatibilityProfile = SSHCompatibilityProfile()
+    private var recentFailureProbeBuffer = Data()
+    private var activeAttemptStartedAt: Date?
+    private var compatibilityPersistenceTask: Task<Void, Never>?
 
     public init(host: Host, pty: PTYSize) {
         self.host = host
         self.launchConfigurationOverride = nil
+        self.compatibilityProfileStore = .shared
         self.pty = pty
     }
 
-    init(host: Host, pty: PTYSize, launchConfigurationOverride: LaunchConfiguration?) {
+    init(
+        host: Host,
+        pty: PTYSize,
+        launchConfigurationOverride: LaunchConfiguration?,
+        compatibilityProfileStore: SSHCompatibilityProfileStore = .shared
+    ) {
         self.host = host
         self.launchConfigurationOverride = launchConfigurationOverride
+        self.compatibilityProfileStore = compatibilityProfileStore
         self.pty = pty
     }
 
@@ -61,13 +76,22 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             return
         }
 
+        let initialCompatibilityProfile = await compatibilityProfileStore.cachedProfile(for: host) ?? SSHCompatibilityProfile()
+        try await startProcess(using: initialCompatibilityProfile)
+    }
+
+    private func startProcess(using compatibilityProfile: SSHCompatibilityProfile) async throws {
+        compatibilityPersistenceTask?.cancel()
+
         let proc = Process()
-        let launch = await makeLaunchConfiguration()
+        let launch = await makeLaunchConfiguration(compatibilityProfile: compatibilityProfile)
         proc.executableURL = URL(fileURLWithPath: launch.executablePath)
         proc.arguments = launch.arguments
         if !launch.environment.isEmpty {
             proc.environment = ProcessInfo.processInfo.environment.merging(launch.environment) { _, new in new }
         }
+
+        let attemptStartedAt = Date()
 
         let descriptors = try createPseudoTerminal(initialSize: pty)
         let masterFD = descriptors.master
@@ -95,21 +119,22 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         masterHandle.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
+            self?.recordFailureProbeOutput(data)
             self?.onOutput?(data)
         }
 
         proc.terminationHandler = { [weak self] task in
-            self?.cleanupHandles()
             guard let self else { return }
-
-            if task.terminationStatus == 0 {
-                self.onStateChange?(.stopped)
-                return
+            let snapshot = self.terminationSnapshot()
+            self.cleanupHandles()
+            Task {
+                await self.handleProcessTermination(
+                    status: task.terminationStatus,
+                    output: snapshot.output,
+                    attemptStartedAt: snapshot.startedAt,
+                    compatibilityProfile: snapshot.profile
+                )
             }
-
-            let message = "ssh exited with status \(task.terminationStatus)"
-            self.onOutput?(Data((message + "\r\n").utf8))
-            self.onStateChange?(.failed(message))
         }
 
         do {
@@ -126,7 +151,15 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             process = proc
             self.masterHandle = masterHandle
             masterFileDescriptor = masterFD
+            activeCompatibilityProfile = compatibilityProfile
+            activeAttemptStartedAt = attemptStartedAt
+            recentFailureProbeBuffer.removeAll(keepingCapacity: true)
         }
+
+        scheduleCompatibilityProfilePersistence(
+            for: compatibilityProfile,
+            processIdentifier: proc.processIdentifier
+        )
 
         onStateChange?(.running)
     }
@@ -183,17 +216,106 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     }
 
     private func cleanupHandles() {
+        compatibilityPersistenceTask?.cancel()
+        compatibilityPersistenceTask = nil
         let currentHandle = stateQueue.sync { () -> FileHandle? in
             let handle = masterHandle
             masterHandle = nil
             masterFileDescriptor = nil
             process = nil
+            activeAttemptStartedAt = nil
 
             return handle
         }
 
         currentHandle?.readabilityHandler = nil
         try? currentHandle?.close()
+    }
+
+    private struct TerminationSnapshot {
+        var output: String
+        var startedAt: Date
+        var profile: SSHCompatibilityProfile
+    }
+
+    private func recordFailureProbeOutput(_ data: Data) {
+        stateQueue.sync {
+            recentFailureProbeBuffer.append(data)
+            if recentFailureProbeBuffer.count > failureProbeBufferLimit {
+                recentFailureProbeBuffer = recentFailureProbeBuffer.suffix(failureProbeBufferLimit)
+            }
+        }
+    }
+
+    private func terminationSnapshot() -> TerminationSnapshot {
+        stateQueue.sync {
+            TerminationSnapshot(
+                output: String(decoding: recentFailureProbeBuffer, as: UTF8.self),
+                startedAt: activeAttemptStartedAt ?? Date(),
+                profile: activeCompatibilityProfile
+            )
+        }
+    }
+
+    private func handleProcessTermination(
+        status: Int32,
+        output: String,
+        attemptStartedAt: Date,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async {
+        if status == 0 {
+            onStateChange?(.stopped)
+            return
+        }
+
+        let elapsed = Date().timeIntervalSince(attemptStartedAt)
+        if elapsed <= compatibilityRetryWindow,
+           let nextProfile = SSHCompatibilityPlanner.nextProfile(
+                afterFailureOutput: output,
+                currentProfile: compatibilityProfile,
+                authMethod: host.auth.method
+           ),
+           nextProfile != compatibilityProfile {
+            do {
+                try await startProcess(using: nextProfile)
+                return
+            } catch {
+                let message = error.localizedDescription
+                onOutput?(Data((message + "\r\n").utf8))
+                onStateChange?(.failed(message))
+                return
+            }
+        }
+
+        let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = trimmedOutput.isEmpty ? "ssh exited with status \(status)" : trimmedOutput
+        if trimmedOutput.isEmpty {
+            onOutput?(Data((message + "\r\n").utf8))
+        }
+        onStateChange?(.failed(message))
+    }
+
+    private func scheduleCompatibilityProfilePersistence(
+        for compatibilityProfile: SSHCompatibilityProfile,
+        processIdentifier: Int32
+    ) {
+        compatibilityPersistenceTask?.cancel()
+        let persistenceDelay = compatibilityPersistenceDelay
+        compatibilityPersistenceTask = Task { [weak self, persistenceDelay] in
+            try? await Task.sleep(for: persistenceDelay)
+            guard let self, !Task.isCancelled else { return }
+
+            let shouldPersist = self.stateQueue.sync {
+                self.process?.processIdentifier == processIdentifier && self.process?.isRunning == true
+            }
+            guard shouldPersist else { return }
+
+            await self.compatibilityProfileStore.recordSuccess(
+                profile: compatibilityProfile,
+                for: self.host,
+                fingerprint: nil
+            )
+        }
     }
 
     private func createPseudoTerminal(initialSize: PTYSize) throws -> (master: Int32, slave: Int32) {
@@ -217,7 +339,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         )
     }
 
-    private func makeLaunchConfiguration() async -> LaunchConfiguration {
+    private func makeLaunchConfiguration(
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async -> LaunchConfiguration {
         if let launchConfigurationOverride {
             return launchConfigurationOverride
         }
@@ -236,7 +360,11 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         if host.auth.method == .password,
            hasStoredPassword,
            let password = storedPassword,
-           let launch = Self.makePasswordLaunchConfiguration(for: host, password: password)
+           let launch = Self.makePasswordLaunchConfiguration(
+                for: host,
+                password: password,
+                compatibilityProfile: compatibilityProfile
+           )
         {
             return launch
         }
@@ -245,14 +373,19 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             authMethod: host.auth.method,
             hasStoredPassword: hasStoredPassword
         )
-        return Self.makeStandardLaunchConfiguration(for: host, useConnectionReuse: useConnectionReuse)
+        return Self.makeStandardLaunchConfiguration(
+            for: host,
+            useConnectionReuse: useConnectionReuse,
+            compatibilityProfile: compatibilityProfile
+        )
     }
 
     static func makeSSHArguments(
         for host: Host,
         useConnectionReuse: Bool = true,
         allocateTTY: Bool = true,
-        remoteCommand: String? = nil
+        remoteCommand: String? = nil,
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
     ) -> [String] {
         var args: [String] = [
             "-p", "\(host.port)",
@@ -267,6 +400,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         if useConnectionReuse {
             args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
         }
+        args.append(contentsOf: compatibilityProfile.additionalSSHOptions())
 
         switch host.auth.method {
         case .privateKey:
@@ -288,9 +422,17 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         return args
     }
 
-    static func makeStandardLaunchConfiguration(for host: Host, useConnectionReuse: Bool = true) -> LaunchConfiguration {
+    static func makeStandardLaunchConfiguration(
+        for host: Host,
+        useConnectionReuse: Bool = true,
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
+    ) -> LaunchConfiguration {
         wrappedSSHLaunchConfiguration(
-            sshArguments: makeSSHArguments(for: host, useConnectionReuse: useConnectionReuse),
+            sshArguments: makeSSHArguments(
+                for: host,
+                useConnectionReuse: useConnectionReuse,
+                compatibilityProfile: compatibilityProfile
+            ),
             environment: [:],
             wrapInScript: true
         )
@@ -299,7 +441,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     static func makeRemoteCommandLaunchConfiguration(
         for host: Host,
         command: String,
-        credentialStore: CredentialStore = CredentialStore()
+        credentialStore: CredentialStore = CredentialStore(),
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
     ) async -> LaunchConfiguration? {
         let storedPassword: String? = if host.auth.method == .password,
                                          let passwordReference = host.auth.passwordReference,
@@ -322,7 +465,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
                 for: host,
                 password: password,
                 remoteCommand: command,
-                allocateTTY: false
+                allocateTTY: false,
+                compatibilityProfile: compatibilityProfile
            ) {
             return launch
         }
@@ -332,7 +476,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
                 for: host,
                 useConnectionReuse: useConnectionReuse,
                 allocateTTY: false,
-                remoteCommand: command
+                remoteCommand: command,
+                compatibilityProfile: compatibilityProfile
             ),
             environment: [:],
             wrapInScript: false
@@ -345,14 +490,16 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         sshpassPath: String? = defaultSSHPassPath(),
         askPassScriptPath: String? = ensureAskPassScriptPath(),
         remoteCommand: String? = nil,
-        allocateTTY: Bool = true
+        allocateTTY: Bool = true,
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
     ) -> LaunchConfiguration? {
         let wrapped = wrappedSSHLaunchConfiguration(
             sshArguments: makeSSHArguments(
                 for: host,
                 useConnectionReuse: false,
                 allocateTTY: allocateTTY,
-                remoteCommand: remoteCommand
+                remoteCommand: remoteCommand,
+                compatibilityProfile: compatibilityProfile
             ),
             environment: [:],
             wrapInScript: allocateTTY

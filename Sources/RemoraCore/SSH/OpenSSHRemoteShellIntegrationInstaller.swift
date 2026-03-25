@@ -81,9 +81,11 @@ public actor OpenSSHRemoteShellIntegrationInstaller: RemoteShellIntegrationInsta
     public init() {}
 
     public func ensureInstalled(for host: Host) async throws {
+        let compatibilityProfile = await SSHCompatibilityProfileStore.shared.cachedProfile(for: host) ?? SSHCompatibilityProfile()
         guard let launch = await ProcessSSHShellSession.makeRemoteCommandLaunchConfiguration(
             for: host,
-            command: Self.installCommand
+            command: Self.installCommand,
+            compatibilityProfile: compatibilityProfile
         ) else {
             throw SSHError.connectionFailed("shell integration installer could not build launch configuration")
         }

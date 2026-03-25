@@ -36,6 +36,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     private let host: Host
     private let credentialStore = CredentialStore()
+    private let compatibilityProfileStore: SSHCompatibilityProfileStore
     private let directoryOperationTimeout: TimeInterval
     private let shellFallbackTimeout: TimeInterval
     private var prefersSSHStreamingDownload = false
@@ -56,6 +57,14 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
     public init(host: Host) {
         self.host = host
+        self.compatibilityProfileStore = .shared
+        self.directoryOperationTimeout = TimeInterval(min(10, max(5, host.policies.connectTimeoutSeconds)))
+        self.shellFallbackTimeout = TimeInterval(min(6, max(4, host.policies.connectTimeoutSeconds / 2)))
+    }
+
+    init(host: Host, compatibilityProfileStore: SSHCompatibilityProfileStore) {
+        self.host = host
+        self.compatibilityProfileStore = compatibilityProfileStore
         self.directoryOperationTimeout = TimeInterval(min(10, max(5, host.policies.connectTimeoutSeconds)))
         self.shellFallbackTimeout = TimeInterval(min(6, max(4, host.policies.connectTimeoutSeconds / 2)))
     }
@@ -354,7 +363,10 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     }
 
     public func streamRemoteShellCommand(_ command: String) async throws -> AsyncThrowingStream<String, Error> {
-        let launch = await makePrimarySSHLaunchConfiguration(command: command)
+        let launch = await makePrimarySSHLaunchConfiguration(
+            command: command,
+            compatibilityProfile: await compatibilityProfileStore.cachedProfile(for: host) ?? SSHCompatibilityProfile()
+        )
         return Self.makeStreamingProcess(
             executablePath: launch.executablePath,
             arguments: launch.arguments,
@@ -378,7 +390,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     static func makeSFTPArguments(
         for host: Host,
         batchMode: Bool = true,
-        useConnectionReuse: Bool = true
+        useConnectionReuse: Bool = true,
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
     ) -> [String] {
         var args: [String] = [
             "-q",
@@ -395,6 +408,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         if useConnectionReuse {
             args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
         }
+        args.append(contentsOf: compatibilityProfile.additionalSSHOptions())
 
         switch host.auth.method {
         case .privateKey:
@@ -416,7 +430,8 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     static func makeSSHArguments(
         for host: Host,
         batchMode: Bool = true,
-        useConnectionReuse: Bool = true
+        useConnectionReuse: Bool = true,
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
     ) -> [String] {
         var args: [String] = [
             "-p", "\(host.port)",
@@ -431,6 +446,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         if useConnectionReuse {
             args.append(contentsOf: SSHConnectionReuse.masterOptions(for: host))
         }
+        args.append(contentsOf: compatibilityProfile.additionalSSHOptions())
 
         switch host.auth.method {
         case .privateKey:
@@ -752,39 +768,41 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     }
 
     private func runSFTPBatchWithFallbacks(stdin: Data, timeout: TimeInterval? = nil) async throws -> ProcessResult {
-        let primary = await makePrimarySFTPLaunchConfiguration()
-        var result = try await runProcess(
-            executablePath: primary.executablePath,
-            arguments: primary.arguments,
-            environment: primary.environment,
-            stdin: stdin,
-            timeout: timeout,
-            logPhase: "sftp-primary",
-            host: host,
-            outputLogMode: .text,
-            inputLogMode: .text
-        )
-        if result.status == 0 {
-            return result
-        }
+        var profile = await compatibilityProfileStore.cachedProfile(for: host) ?? SSHCompatibilityProfile()
 
-        guard primary.usesConnectionReuse, shouldRetryWithoutConnectionReuse(result: result) else {
-            return result
-        }
+        while true {
+            let result = try await runSFTPAttempt(
+                stdin: stdin,
+                timeout: timeout,
+                compatibilityProfile: profile
+            )
+            if result.status == 0 {
+                await compatibilityProfileStore.recordSuccess(profile: profile, for: host, fingerprint: nil)
+                return result
+            }
 
-        let retry = makeSFTPLaunchConfiguration(batchMode: true, useConnectionReuse: false)
-        result = try await runProcess(
-            executablePath: retry.executablePath,
-            arguments: retry.arguments,
-            environment: retry.environment,
-            stdin: stdin,
-            timeout: timeout,
-            logPhase: "sftp-retry-no-reuse",
-            host: host,
-            outputLogMode: .text,
-            inputLogMode: .text
-        )
-        return result
+            let failureOutput = combinedFailureOutput(from: result)
+            guard let nextProfile = SSHCompatibilityPlanner.nextProfile(
+                afterFailureOutput: failureOutput,
+                currentProfile: profile,
+                authMethod: host.auth.method
+            ), nextProfile != profile else {
+                return result
+            }
+
+            Self.appendDiagnostics(
+                Self.formatDiagnosticsMessage(
+                    host: host,
+                    phase: "sftp-compatibility-retry",
+                    body: [
+                        "from=\(profile.additionalSSHOptions().joined(separator: " "))",
+                        "to=\(nextProfile.additionalSSHOptions().joined(separator: " "))",
+                        "reason=\(failureOutput)"
+                    ]
+                )
+            )
+            profile = nextProfile
+        }
     }
 
     private func downloadViaSFTP(path: String) async throws -> Data {
@@ -843,7 +861,104 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         inputLogMode: InputLogMode,
         stdoutFileURL: URL? = nil
     ) async throws -> ProcessResult {
-        let primary = await makePrimarySSHLaunchConfiguration(command: command)
+        var profile = await compatibilityProfileStore.cachedProfile(for: host) ?? SSHCompatibilityProfile()
+
+        while true {
+            let result = try await runSSHAttempt(
+                command: command,
+                stdin: stdin,
+                timeout: timeout,
+                outputLogMode: outputLogMode,
+                inputLogMode: inputLogMode,
+                stdoutFileURL: stdoutFileURL,
+                compatibilityProfile: profile
+            )
+            if result.status == 0 {
+                await compatibilityProfileStore.recordSuccess(profile: profile, for: host, fingerprint: nil)
+                return result
+            }
+
+            let failureOutput = combinedFailureOutput(from: result)
+            guard let nextProfile = SSHCompatibilityPlanner.nextProfile(
+                afterFailureOutput: failureOutput,
+                currentProfile: profile,
+                authMethod: host.auth.method
+            ), nextProfile != profile else {
+                return result
+            }
+
+            Self.appendDiagnostics(
+                Self.formatDiagnosticsMessage(
+                    host: host,
+                    phase: "ssh-compatibility-retry",
+                    body: [
+                        "from=\(profile.additionalSSHOptions().joined(separator: " "))",
+                        "to=\(nextProfile.additionalSSHOptions().joined(separator: " "))",
+                        "reason=\(failureOutput)"
+                    ]
+                )
+            )
+            profile = nextProfile
+        }
+    }
+
+    private func runSFTPAttempt(
+        stdin: Data,
+        timeout: TimeInterval?,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async throws -> ProcessResult {
+        let primary = await makePrimarySFTPLaunchConfiguration(compatibilityProfile: compatibilityProfile)
+        var result = try await runProcess(
+            executablePath: primary.executablePath,
+            arguments: primary.arguments,
+            environment: primary.environment,
+            stdin: stdin,
+            timeout: timeout,
+            logPhase: "sftp-primary",
+            host: host,
+            outputLogMode: .text,
+            inputLogMode: .text
+        )
+        if result.status == 0 {
+            return result
+        }
+
+        guard primary.usesConnectionReuse, shouldRetryWithoutConnectionReuse(result: result) else {
+            return result
+        }
+
+        let retry = makeSFTPLaunchConfiguration(
+            batchMode: true,
+            useConnectionReuse: false,
+            compatibilityProfile: compatibilityProfile
+        )
+        result = try await runProcess(
+            executablePath: retry.executablePath,
+            arguments: retry.arguments,
+            environment: retry.environment,
+            stdin: stdin,
+            timeout: timeout,
+            logPhase: "sftp-retry-no-reuse",
+            host: host,
+            outputLogMode: .text,
+            inputLogMode: .text
+        )
+        return result
+    }
+
+    private func runSSHAttempt(
+        command: String,
+        stdin: Data?,
+        timeout: TimeInterval?,
+        outputLogMode: OutputLogMode,
+        inputLogMode: InputLogMode,
+        stdoutFileURL: URL?,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async throws -> ProcessResult {
+        let primary = await makePrimarySSHLaunchConfiguration(
+            command: command,
+            compatibilityProfile: compatibilityProfile
+        )
         var result = try await runProcess(
             executablePath: primary.executablePath,
             arguments: primary.arguments,
@@ -864,7 +979,12 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             return result
         }
 
-        let retry = makeSSHLaunchConfiguration(command: command, batchMode: true, useConnectionReuse: false)
+        let retry = makeSSHLaunchConfiguration(
+            command: command,
+            batchMode: true,
+            useConnectionReuse: false,
+            compatibilityProfile: compatibilityProfile
+        )
         result = try await runProcess(
             executablePath: retry.executablePath,
             arguments: retry.arguments,
@@ -1427,13 +1547,20 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         )
     }
 
-    private func makePrimarySFTPLaunchConfiguration() async -> BatchLaunchConfiguration {
+    private func makePrimarySFTPLaunchConfiguration(
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async -> BatchLaunchConfiguration {
         let authState = await primaryLaunchAuthState()
 
         if host.auth.method == .password,
            let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
                baseExecutable: "/usr/bin/sftp",
-               baseArguments: Self.makeSFTPArguments(for: host, batchMode: false, useConnectionReuse: false),
+               baseArguments: Self.makeSFTPArguments(
+                   for: host,
+                   batchMode: false,
+                   useConnectionReuse: false,
+                   compatibilityProfile: compatibilityProfile
+               ),
                usesConnectionReuse: false,
                storedPassword: authState.storedPassword
            )
@@ -1443,17 +1570,26 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
         return makeSFTPLaunchConfiguration(
             batchMode: true,
-            useConnectionReuse: authState.shouldUseConnectionReuse
+            useConnectionReuse: authState.shouldUseConnectionReuse,
+            compatibilityProfile: compatibilityProfile
         )
     }
 
-    private func makePrimarySSHLaunchConfiguration(command: String) async -> BatchLaunchConfiguration {
+    private func makePrimarySSHLaunchConfiguration(
+        command: String,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) async -> BatchLaunchConfiguration {
         let authState = await primaryLaunchAuthState()
 
         if host.auth.method == .password,
            let passwordLaunch = await makePasswordLaunchConfigurationIfAvailable(
                baseExecutable: "/usr/bin/ssh",
-               baseArguments: Self.makeSSHArguments(for: host, batchMode: false, useConnectionReuse: false) + [command],
+               baseArguments: Self.makeSSHArguments(
+                   for: host,
+                   batchMode: false,
+                   useConnectionReuse: false,
+                   compatibilityProfile: compatibilityProfile
+               ) + [command],
                usesConnectionReuse: false,
                storedPassword: authState.storedPassword
            )
@@ -1464,26 +1600,53 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         return makeSSHLaunchConfiguration(
             command: command,
             batchMode: true,
-            useConnectionReuse: authState.shouldUseConnectionReuse
+            useConnectionReuse: authState.shouldUseConnectionReuse,
+            compatibilityProfile: compatibilityProfile
         )
     }
 
-    private func makeSFTPLaunchConfiguration(batchMode: Bool, useConnectionReuse: Bool) -> BatchLaunchConfiguration {
+    private func makeSFTPLaunchConfiguration(
+        batchMode: Bool,
+        useConnectionReuse: Bool,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) -> BatchLaunchConfiguration {
         BatchLaunchConfiguration(
             executablePath: "/usr/bin/sftp",
-            arguments: Self.makeSFTPArguments(for: host, batchMode: batchMode, useConnectionReuse: useConnectionReuse),
+            arguments: Self.makeSFTPArguments(
+                for: host,
+                batchMode: batchMode,
+                useConnectionReuse: useConnectionReuse,
+                compatibilityProfile: compatibilityProfile
+            ),
             environment: [:],
             usesConnectionReuse: useConnectionReuse
         )
     }
 
-    private func makeSSHLaunchConfiguration(command: String, batchMode: Bool, useConnectionReuse: Bool) -> BatchLaunchConfiguration {
+    private func makeSSHLaunchConfiguration(
+        command: String,
+        batchMode: Bool,
+        useConnectionReuse: Bool,
+        compatibilityProfile: SSHCompatibilityProfile
+    ) -> BatchLaunchConfiguration {
         BatchLaunchConfiguration(
             executablePath: "/usr/bin/ssh",
-            arguments: Self.makeSSHArguments(for: host, batchMode: batchMode, useConnectionReuse: useConnectionReuse) + [command],
+            arguments: Self.makeSSHArguments(
+                for: host,
+                batchMode: batchMode,
+                useConnectionReuse: useConnectionReuse,
+                compatibilityProfile: compatibilityProfile
+            ) + [command],
             environment: [:],
             usesConnectionReuse: useConnectionReuse
         )
+    }
+
+    private func combinedFailureOutput(from result: ProcessResult) -> String {
+        [String(decoding: result.stderr, as: UTF8.self), String(decoding: result.stdout, as: UTF8.self)]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
     private func makePasswordLaunchConfigurationIfAvailable(
