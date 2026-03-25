@@ -51,11 +51,16 @@ final class AISettingsStore: @unchecked Sendable {
     }
 
     func apiKey() async -> String? {
-        normalizedStoredString(preferences.value(for: \.aiAPIKey))
+        await MainActor.run {
+            normalizedStoredString(preferences.value(for: \.aiAPIKey))
+        }
     }
 
     func setAPIKey(_ value: String) async {
-        preferences.set(normalizedStoredString(value) ?? "", for: \.aiAPIKey)
+        let normalized = normalizedStoredString(value) ?? ""
+        await MainActor.run {
+            preferences.set(normalized, for: \.aiAPIKey)
+        }
     }
 
     private func normalizedStoredString(_ value: String?) -> String? {

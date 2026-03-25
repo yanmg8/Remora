@@ -1,3 +1,4 @@
+@preconcurrency import Combine
 import Foundation
 import Testing
 @testable import RemoraApp
@@ -96,4 +97,68 @@ struct AISettingsStoreTests {
         let clearedText = try String(contentsOf: fileURL, encoding: .utf8)
         #expect(!clearedText.contains("sk-test-123"))
     }
+
+    @Test
+    @MainActor
+    func detachedAPIKeyUpdatesStillPublishOnMainThread() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ai-settings-store-\(UUID().uuidString)", isDirectory: true)
+        let fileURL = root.appendingPathComponent("settings.json")
+        let preferences = AppPreferences(fileURL: fileURL)
+        let store = AISettingsStore(preferences: preferences)
+        let recorder = PublishThreadRecorder()
+
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let cancellable = preferences.objectWillChange.sink {
+            let isMain = Thread.isMainThread
+            Task {
+                await recorder.record(isMainThread: isMain)
+            }
+        }
+        defer { cancellable.cancel() }
+
+        _ = await Task.detached {
+            await store.setAPIKey("sk-detached")
+        }.value
+
+        let receivedEvent = await waitUntil(timeout: 1.0) {
+            await recorder.hasEvents
+        }
+        #expect(receivedEvent)
+        let events = await recorder.events
+        #expect(events.allSatisfy { $0.isMainThread }, "AppPreferences publishes must stay on the main thread.")
+    }
+}
+
+private actor PublishThreadRecorder {
+    struct Event: Sendable {
+        let isMainThread: Bool
+    }
+
+    private(set) var events: [Event] = []
+
+    var hasEvents: Bool {
+        !events.isEmpty
+    }
+
+    func record(isMainThread: Bool) {
+        events.append(Event(isMainThread: isMainThread))
+    }
+}
+
+private func waitUntil(
+    timeout: TimeInterval,
+    condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+    }
+    return await condition()
 }
