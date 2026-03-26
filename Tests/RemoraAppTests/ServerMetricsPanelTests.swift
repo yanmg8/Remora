@@ -11,7 +11,63 @@ struct ServerMetricsPanelTests {
         assertPanelRendering(for: .dark)
     }
 
+    @Test
+    func headerCardExtendsToDashboardWidth() {
+        let image = renderCachedPanelImage(colorScheme: .light)
+        let samples = [640, 620, 600, 580, 560, 540].map { y in
+            sampleColor(in: image, x: 430, y: y)
+        }
+        #expect(samples.contains { color in
+            guard let color else { return false }
+            return color.alphaComponent > 0.01
+        })
+    }
+
     private func assertPanelRendering(for colorScheme: ColorScheme) {
+        let image = renderPanelImage(colorScheme: colorScheme)
+        #expect(image != nil, "Panel should render in \(String(describing: colorScheme)) mode.")
+        #expect(image?.size.width ?? 0 >= 420, "Rendered panel should keep a readable dashboard width in \(String(describing: colorScheme)) mode.")
+        #expect(image?.size.height ?? 0 >= 300, "Rendered panel should keep a readable height in \(String(describing: colorScheme)) mode.")
+    }
+
+    private func renderPanelImage(colorScheme: ColorScheme) -> NSImage? {
+        let renderer = ImageRenderer(
+            content: makePanel()
+                .environment(\.colorScheme, colorScheme)
+        )
+        renderer.proposedSize = .init(width: 472, height: 720)
+        renderer.scale = 1
+        return renderer.nsImage
+    }
+
+    private func renderCachedPanelImage(colorScheme: ColorScheme) -> NSImage? {
+        let host = makeHostingView(colorScheme: colorScheme)
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+            return nil
+        }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        let image = NSImage(size: host.bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    private func makeHostingView(colorScheme: ColorScheme) -> NSHostingView<some View> {
+        let host = NSHostingView(rootView: makePanel().environment(\.colorScheme, colorScheme))
+        host.frame = NSRect(x: 0, y: 0, width: 472, height: 720)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 472, height: 720),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        return host
+    }
+
+    private func makePanel() -> some View {
         let previous = ServerResourceMetricsSnapshot(
             cpuFraction: 0.24,
             memoryFraction: 0.56,
@@ -78,20 +134,23 @@ struct ServerMetricsPanelTests {
             lastAttemptAt: current.sampledAt
         )
 
-        let renderer = ImageRenderer(
-            content: ServerMetricsPanel(
-                hostTitle: "root@192.0.2.10:22",
-                connectionState: "Connected",
-                state: state
-            )
-            .environment(\.colorScheme, colorScheme)
+        return ServerMetricsPanel(
+            hostTitle: "root@192.0.2.10:22",
+            connectionState: "Connected",
+            state: state
         )
-        renderer.proposedSize = .init(width: 472, height: 720)
-        renderer.scale = 1
+    }
 
-        let image = renderer.nsImage
-        #expect(image != nil, "Panel should render in \(String(describing: colorScheme)) mode.")
-        #expect(image?.size.width ?? 0 >= 420, "Rendered panel should keep a readable dashboard width in \(String(describing: colorScheme)) mode.")
-        #expect(image?.size.height ?? 0 >= 300, "Rendered panel should keep a readable height in \(String(describing: colorScheme)) mode.")
+    private func sampleColor(in image: NSImage?, x: Int, y: Int) -> NSColor? {
+        guard let tiff = image?.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              x >= 0,
+              y >= 0,
+              x < bitmap.pixelsWide,
+              y < bitmap.pixelsHigh
+        else {
+            return nil
+        }
+        return bitmap.colorAt(x: x, y: y)
     }
 }

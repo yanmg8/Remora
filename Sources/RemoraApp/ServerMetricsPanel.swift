@@ -128,7 +128,9 @@ struct ServerMetricsPanel: View {
                     )
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(VisualStyle.elevatedSurfaceBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -147,7 +149,7 @@ struct ServerMetricsPanel: View {
     }
 
     private func overviewSection(_ snapshot: ServerResourceMetricsSnapshot) -> some View {
-        ServerMetricsSectionCard(title: tr("Resources"), accent: .blue) {
+        ServerMetricsSectionCard(title: tr("Resources"), accent: .blue, accessibilityID: "server-metrics-card-resources") {
             VStack(spacing: 8) {
                 ServerMetricsUsageRow(
                     title: tr("CPU"),
@@ -184,7 +186,7 @@ struct ServerMetricsPanel: View {
     @ViewBuilder
     private func processSection(_ snapshot: ServerResourceMetricsSnapshot) -> some View {
         if !snapshot.topProcesses.isEmpty {
-            ServerMetricsSectionCard(title: tr("Top Processes"), accent: .orange) {
+            ServerMetricsSectionCard(title: tr("Top Processes"), accent: .orange, accessibilityID: "server-metrics-card-processes") {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         headerLabel(tr("Memory"), width: 66)
@@ -206,7 +208,7 @@ struct ServerMetricsPanel: View {
     }
 
     private func transferSection(_ snapshot: ServerResourceMetricsSnapshot) -> some View {
-        ServerMetricsSectionCard(title: tr("Network & Disk IO"), accent: .mint) {
+        ServerMetricsSectionCard(title: tr("Network & Disk IO"), accent: .mint, accessibilityID: "server-metrics-card-transfer") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     ServerMetricsStatTile(title: tr("RX/s"), value: formatRate(delta.networkRXBytesPerSecond), tint: .green)
@@ -231,7 +233,7 @@ struct ServerMetricsPanel: View {
     @ViewBuilder
     private func filesystemSection(_ snapshot: ServerResourceMetricsSnapshot) -> some View {
         if !snapshot.filesystems.isEmpty {
-            ServerMetricsSectionCard(title: tr("Filesystems"), accent: .blue) {
+            ServerMetricsSectionCard(title: tr("Filesystems"), accent: .blue, accessibilityID: "server-metrics-card-filesystems") {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         headerLabel(tr("Path"), width: 92)
@@ -356,6 +358,7 @@ struct ServerMetricsPanel: View {
 private struct ServerMetricsSectionCard<Content: View>: View {
     let title: String
     let accent: Color
+    let accessibilityID: String?
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -370,11 +373,13 @@ private struct ServerMetricsSectionCard<Content: View>: View {
             content
         }
         .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(VisualStyle.elevatedSurfaceBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(VisualStyle.borderSoft, lineWidth: 1)
         )
+        .accessibilityIdentifier(accessibilityID ?? "")
     }
 }
 
