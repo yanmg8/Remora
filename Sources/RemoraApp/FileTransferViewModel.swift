@@ -904,6 +904,10 @@ final class FileTransferViewModel: ObservableObject {
             transferQueue[idx].status = .running
         }
 
+        FileTransferDiagnostics.append(
+            "transfer start direction=\(item.direction.rawValue) source=\(item.sourcePath) destination=\(item.destinationPath)"
+        )
+
         do {
             switch item.direction {
             case .upload:
@@ -922,6 +926,9 @@ final class FileTransferViewModel: ObservableObject {
                 let destinationURL = URL(fileURLWithPath: item.destinationPath)
                 let attributes = try await sftpClient.stat(path: item.sourcePath)
                 if attributes.isDirectory {
+                    FileTransferDiagnostics.append(
+                        "materialize directory root remote=\(item.sourcePath) local=\(destinationURL.path)"
+                    )
                     let entry = RemoteFileEntry(
                         name: URL(fileURLWithPath: item.sourcePath).lastPathComponent,
                         path: item.sourcePath,
@@ -968,8 +975,11 @@ final class FileTransferViewModel: ObservableObject {
         } catch {
             if let failedIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
                 transferQueue[failedIdx].status = .failed
-                transferQueue[failedIdx].message = error.localizedDescription
+                transferQueue[failedIdx].message = FileTransferDiagnostics.failureMessage(for: error)
                 let failedItem = transferQueue[failedIdx]
+                FileTransferDiagnostics.append(
+                    "transfer failed direction=\(failedItem.direction.rawValue) source=\(failedItem.sourcePath) destination=\(failedItem.destinationPath) reason=\(error.localizedDescription)"
+                )
                 logger.error(
                     "transfer failed direction=\(failedItem.direction.rawValue, privacy: .public) source=\(failedItem.sourcePath, privacy: .public) destination=\(failedItem.destinationPath, privacy: .public) reason=\(error.localizedDescription, privacy: .public)"
                 )
@@ -1039,8 +1049,14 @@ final class FileTransferViewModel: ObservableObject {
 
     private func materializeRemoteItem(_ entry: RemoteFileEntry, to localURL: URL) async throws {
         if entry.isDirectory {
+            FileTransferDiagnostics.append(
+                "enter directory remote=\(entry.path) local=\(localURL.path)"
+            )
             try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
             let children = try await sftpClient.list(path: entry.path)
+            FileTransferDiagnostics.append(
+                "list directory remote=\(entry.path) children=\(children.count)"
+            )
             for child in children {
                 let childURL = localURL.appendingPathComponent(child.name, isDirectory: child.isDirectory)
                 try await materializeRemoteItem(child, to: childURL)
@@ -1048,6 +1064,9 @@ final class FileTransferViewModel: ObservableObject {
             return
         }
 
+        FileTransferDiagnostics.append(
+            "download file remote=\(entry.path) local=\(localURL.path)"
+        )
         try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try await sftpClient.download(path: entry.path, to: localURL, progress: nil)
     }
