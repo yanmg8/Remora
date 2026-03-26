@@ -152,6 +152,8 @@
 "Click \"New SSH Connection\" to create your first connection." = "请点击“新建 SSH 连接”创建你的第一个连接。";
 
 "Transfer Queue" = "传输队列";
+"Pin Transfer Queue" = "固定传输队列";
+"Unpin Transfer Queue" = "取消固定传输队列";
 "Stop All Transfers" = "停止全部传输";
 "Stop Transfer" = "停止传输";
 "Stopped" = "已停止";

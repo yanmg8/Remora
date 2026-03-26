@@ -154,6 +154,8 @@
 "Click \"New SSH Connection\" to create your first connection." = "Click \"New SSH Connection\" to create your first connection.";
 
 "Transfer Queue" = "Transfer Queue";
+"Pin Transfer Queue" = "Pin Transfer Queue";
+"Unpin Transfer Queue" = "Unpin Transfer Queue";
 "Stop All Transfers" = "Stop All Transfers";
 "Stop Transfer" = "Stop Transfer";
 "Stopped" = "Stopped";
