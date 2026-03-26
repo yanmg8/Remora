@@ -922,7 +922,17 @@ final class FileTransferViewModel: ObservableObject {
                 let destinationURL = URL(fileURLWithPath: item.destinationPath)
                 let attributes = try await sftpClient.stat(path: item.sourcePath)
                 if attributes.isDirectory {
-                    try await materializeRemoteItem(at: item.sourcePath, to: destinationURL)
+                    let entry = RemoteFileEntry(
+                        name: URL(fileURLWithPath: item.sourcePath).lastPathComponent,
+                        path: item.sourcePath,
+                        size: attributes.size,
+                        permissions: attributes.permissions,
+                        owner: attributes.owner,
+                        group: attributes.group,
+                        isDirectory: true,
+                        modifiedAt: attributes.modifiedAt
+                    )
+                    try await materializeRemoteItem(entry, to: destinationURL)
                 } else {
                     try await sftpClient.download(
                         path: item.sourcePath,
@@ -1027,20 +1037,34 @@ final class FileTransferViewModel: ObservableObject {
         enqueueUploadFile(localURL: localURL, destinationPath: destination)
     }
 
-    private func materializeRemoteItem(at remotePath: String, to localURL: URL) async throws {
-        let attributes = try await sftpClient.stat(path: remotePath)
-        if attributes.isDirectory {
+    private func materializeRemoteItem(_ entry: RemoteFileEntry, to localURL: URL) async throws {
+        if entry.isDirectory {
             try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
-            let children = try await sftpClient.list(path: remotePath)
+            let children = try await sftpClient.list(path: entry.path)
             for child in children {
                 let childURL = localURL.appendingPathComponent(child.name, isDirectory: child.isDirectory)
-                try await materializeRemoteItem(at: normalizeRemoteDirectoryPath(child.path), to: childURL)
+                try await materializeRemoteItem(child, to: childURL)
             }
             return
         }
 
         try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try await sftpClient.download(path: remotePath, to: localURL, progress: nil)
+        try await sftpClient.download(path: entry.path, to: localURL, progress: nil)
+    }
+
+    private func materializeRemoteItem(at remotePath: String, to localURL: URL) async throws {
+        let attributes = try await sftpClient.stat(path: remotePath)
+        let entry = RemoteFileEntry(
+            name: URL(fileURLWithPath: remotePath).lastPathComponent,
+            path: remotePath,
+            size: attributes.size,
+            permissions: attributes.permissions,
+            owner: attributes.owner,
+            group: attributes.group,
+            isDirectory: attributes.isDirectory,
+            modifiedAt: attributes.modifiedAt
+        )
+        try await materializeRemoteItem(entry, to: localURL)
     }
 
     private func uploadExtractedItem(_ localURL: URL, toRemoteBasePath remoteBasePath: String) async throws {
