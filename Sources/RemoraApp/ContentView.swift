@@ -3545,6 +3545,7 @@ private struct SessionTabBarItem: View {
     let accessibilityIdentifier: String
     @State private var isHovering = false
     @State private var isMetricsPopoverPresented = false
+    @State private var metricsHoverAnchor = SessionMetricsHoverAnchorState()
 
     private var shouldShowMetrics: Bool {
         runtime.connectionMode == .ssh
@@ -3588,9 +3589,12 @@ private struct SessionTabBarItem: View {
                     GeometryReader { proxy in
                         Color.clear
                             .onAppear {
-                                reportMetricsHoverIfNeeded(frame: proxy.frame(in: .named("session-container")))
+                                let frame = proxy.frame(in: .named("session-container"))
+                                metricsHoverAnchor.update(frame: frame)
+                                reportMetricsHoverIfNeeded(frame: frame)
                             }
                             .onChange(of: proxy.frame(in: .named("session-container"))) { _, frame in
+                                metricsHoverAnchor.update(frame: frame)
                                 reportMetricsHoverIfNeeded(frame: frame)
                             }
                     }
@@ -3598,7 +3602,7 @@ private struct SessionTabBarItem: View {
                 .onHover { hovering in
                     isMetricsPopoverPresented = hovering
                     if hovering {
-                        reportMetricsHoverIfNeeded(frame: nil)
+                        reportMetricsHoverIfNeeded(frame: metricsHoverAnchor.resolvedFrame(explicitFrame: nil))
                     } else {
                         onMetricsHoverChange(nil)
                     }
@@ -3648,8 +3652,7 @@ private struct SessionTabBarItem: View {
             return
         }
 
-        let resolvedFrame = frame ?? .zero
-        guard resolvedFrame != .zero else { return }
+        guard let resolvedFrame = metricsHoverAnchor.resolvedFrame(explicitFrame: frame) else { return }
 
         onMetricsHoverChange(
             HoveredSessionMetricsTooltip(

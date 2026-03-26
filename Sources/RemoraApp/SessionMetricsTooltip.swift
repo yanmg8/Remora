@@ -1,6 +1,22 @@
 import Foundation
 import SwiftUI
 
+struct SessionMetricsHoverAnchorState: Equatable {
+    private(set) var cachedFrame: CGRect = .zero
+
+    mutating func update(frame: CGRect) {
+        guard frame != .zero else { return }
+        cachedFrame = frame
+    }
+
+    func resolvedFrame(explicitFrame: CGRect?) -> CGRect? {
+        if let explicitFrame, explicitFrame != .zero {
+            return explicitFrame
+        }
+        return cachedFrame == .zero ? nil : cachedFrame
+    }
+}
+
 struct SessionMetricsTooltip: View {
     let hostTitle: String
     let connectionState: String

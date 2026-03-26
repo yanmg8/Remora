@@ -7,6 +7,16 @@ import Testing
 @MainActor
 struct SessionMetricsTooltipTests {
     @Test
+    func cachedHoverAnchorFrameIsReusedWhenHoverStartsWithoutFreshGeometry() {
+        var anchor = SessionMetricsHoverAnchorState()
+        anchor.update(frame: CGRect(x: 24, y: 12, width: 36, height: 18))
+
+        let resolved = anchor.resolvedFrame(explicitFrame: nil)
+
+        #expect(resolved == CGRect(x: 24, y: 12, width: 36, height: 18))
+    }
+
+    @Test
     func rendersInLightAndDarkAppearances() {
         assertTooltipRendering(for: .light)
         assertTooltipRendering(for: .dark)
