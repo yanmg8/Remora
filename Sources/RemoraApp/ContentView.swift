@@ -32,12 +32,19 @@ private struct PendingGroupDeletion: Identifiable, Equatable {
 
 private struct HoveredSessionMetricsTooltip: Equatable {
     let tabID: UUID
-    let frame: CGRect
     let hostTitle: String
     let connectionState: String
     let snapshot: ServerResourceMetricsSnapshot?
     let isLoading: Bool
     let errorMessage: String?
+}
+
+private struct SessionMetricsButtonAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: [UUID: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
 }
 
 struct BottomPanelVisibilityState: Equatable {
@@ -231,6 +238,7 @@ struct ContentView: View {
     @State private var fileManagerSFTPBindingKey = "disconnected"
     @State private var fileManagerSFTPBootstrapTask: Task<Void, Never>?
     @State private var hoveredSessionMetricsTooltip: HoveredSessionMetricsTooltip?
+    @State private var hoveredSessionMetricsTooltipSize: CGSize = .zero
     @RemoraStored(\.connectionInfoPasswordCopyMutedUntilEpoch)
     private var connectionInfoPasswordCopyMutedUntilEpoch: Double
     @RemoraStored(\.connectionInfoPasswordCopyMuteForever)
@@ -932,27 +940,57 @@ struct ContentView: View {
         .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
         .layoutPriority(sessionShouldFillRemainingHeight ? 1 : 0)
         .coordinateSpace(name: "session-container")
-        .overlay(alignment: .topLeading) {
-            if let hoveredSessionMetricsTooltip {
-                SessionMetricsTooltip(
-                    hostTitle: hoveredSessionMetricsTooltip.hostTitle,
-                    connectionState: hoveredSessionMetricsTooltip.connectionState,
-                    snapshot: hoveredSessionMetricsTooltip.snapshot,
-                    isLoading: hoveredSessionMetricsTooltip.isLoading,
-                    errorMessage: hoveredSessionMetricsTooltip.errorMessage
-                )
-                .offset(
-                    x: min(
-                        hoveredSessionMetricsTooltip.frame.minX - 6,
-                        max(12, hoveredSessionMetricsTooltip.frame.maxX - 214)
-                    ),
-                    y: hoveredSessionMetricsTooltip.frame.maxY + 8
-                )
-                .allowsHitTesting(false)
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)))
-                .zIndex(100)
+        .overlayPreferenceValue(SessionMetricsButtonAnchorPreferenceKey.self) { anchors in
+            GeometryReader { proxy in
+                if let hoveredSessionMetricsTooltip,
+                   let anchor = anchors[hoveredSessionMetricsTooltip.tabID]
+                {
+                    let frame = proxy[anchor]
+                    SessionMetricsTooltip(
+                        hostTitle: hoveredSessionMetricsTooltip.hostTitle,
+                        connectionState: hoveredSessionMetricsTooltip.connectionState,
+                        snapshot: hoveredSessionMetricsTooltip.snapshot,
+                        isLoading: hoveredSessionMetricsTooltip.isLoading,
+                        errorMessage: hoveredSessionMetricsTooltip.errorMessage
+                    )
+                    .background(
+                        GeometryReader { tooltipProxy in
+                            Color.clear
+                                .onAppear {
+                                    hoveredSessionMetricsTooltipSize = tooltipProxy.size
+                                }
+                                .onChange(of: tooltipProxy.size) { _, size in
+                                    hoveredSessionMetricsTooltipSize = size
+                                }
+                        }
+                    )
+                    .offset(
+                        x: SessionMetricsTooltipPlacement.xOffset(
+                            anchorFrame: frame,
+                            tooltipWidth: max(hoveredSessionMetricsTooltipSize.width, 1),
+                            containerWidth: proxy.size.width
+                        ),
+                        y: frame.maxY + 8
+                    )
+                    .allowsHitTesting(false)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)),
+                            removal: .opacity.combined(with: .scale(scale: 0.985, anchor: .topLeading))
+                        )
+                    )
+                    .zIndex(100)
+                }
             }
         }
+        .animation(
+            .easeOut(
+                duration: hoveredSessionMetricsTooltip == nil
+                    ? SessionMetricsTooltipStyle.exitDuration
+                    : SessionMetricsTooltipStyle.enterDuration
+            ),
+            value: hoveredSessionMetricsTooltip != nil
+        )
     }
 
     private var emptySessionPlaceholder: some View {
@@ -3545,7 +3583,6 @@ private struct SessionTabBarItem: View {
     let accessibilityIdentifier: String
     @State private var isHovering = false
     @State private var isMetricsPopoverPresented = false
-    @State private var metricsHoverAnchor = SessionMetricsHoverAnchorState()
 
     private var shouldShowMetrics: Bool {
         runtime.connectionMode == .ssh
@@ -3585,24 +3622,17 @@ private struct SessionTabBarItem: View {
                 .buttonStyle(.plain)
                 .disabled(runtime.connectedSSHHost == nil)
                 .help(tr("Open server status window"))
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onAppear {
-                                let frame = proxy.frame(in: .named("session-container"))
-                                metricsHoverAnchor.update(frame: frame)
-                                reportMetricsHoverIfNeeded(frame: frame)
-                            }
-                            .onChange(of: proxy.frame(in: .named("session-container"))) { _, frame in
-                                metricsHoverAnchor.update(frame: frame)
-                                reportMetricsHoverIfNeeded(frame: frame)
-                            }
+                .anchorPreference(
+                    key: SessionMetricsButtonAnchorPreferenceKey.self,
+                    value: .bounds,
+                    transform: { anchor in
+                        isMetricsPopoverPresented ? [tabID: anchor] : [:]
                     }
                 )
                 .onHover { hovering in
                     isMetricsPopoverPresented = hovering
                     if hovering {
-                        reportMetricsHoverIfNeeded(frame: metricsHoverAnchor.resolvedFrame(explicitFrame: nil))
+                        reportMetricsHoverIfNeeded()
                     } else {
                         onMetricsHoverChange(nil)
                     }
@@ -3642,22 +3672,19 @@ private struct SessionTabBarItem: View {
             }
         }
         .onChange(of: metricsState) { _, _ in
-            reportMetricsHoverIfNeeded(frame: nil)
+            reportMetricsHoverIfNeeded()
         }
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
-    private func reportMetricsHoverIfNeeded(frame: CGRect?) {
+    private func reportMetricsHoverIfNeeded() {
         guard isMetricsPopoverPresented, shouldShowMetrics else {
             return
         }
 
-        guard let resolvedFrame = metricsHoverAnchor.resolvedFrame(explicitFrame: frame) else { return }
-
         onMetricsHoverChange(
             HoveredSessionMetricsTooltip(
                 tabID: tabID,
-                frame: resolvedFrame,
                 hostTitle: hostDisplayTitle,
                 connectionState: localizedConnectionState(runtime.connectionState),
                 snapshot: metricsState?.snapshot,

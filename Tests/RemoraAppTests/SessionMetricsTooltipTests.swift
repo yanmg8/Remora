@@ -7,6 +7,25 @@ import Testing
 @MainActor
 struct SessionMetricsTooltipTests {
     @Test
+    func placementCentersTooltipOnHoveredTagWhenSpaceAllows() {
+        let offset = SessionMetricsTooltipPlacement.xOffset(
+            anchorFrame: CGRect(x: 560, y: 0, width: 28, height: 18),
+            tooltipWidth: 144,
+            containerWidth: 1200
+        )
+
+        #expect(offset == 502)
+    }
+
+    @Test
+    func tooltipStyleUsesReadableBackgroundAndVisibleMotionTimings() {
+        #expect(SessionMetricsTooltipStyle.backgroundOpacity == 1.0)
+        #expect(SessionMetricsTooltipStyle.shadowOpacity >= 0.16)
+        #expect(SessionMetricsTooltipStyle.enterDuration > 0)
+        #expect(SessionMetricsTooltipStyle.exitDuration > 0)
+    }
+
+    @Test
     func cachedHoverAnchorFrameIsReusedWhenHoverStartsWithoutFreshGeometry() {
         var anchor = SessionMetricsHoverAnchorState()
         anchor.update(frame: CGRect(x: 24, y: 12, width: 36, height: 18))
@@ -77,7 +96,8 @@ struct SessionMetricsTooltipTests {
             #expect(imageRep.pixelsWide > 0)
             #expect(imageRep.pixelsHigh > 0)
         }
-        #expect(host.fittingSize.width >= 214, "Tooltip should preserve its compact width in \(String(describing: colorScheme)) mode.")
+        #expect(host.fittingSize.width >= 136, "Tooltip should remain readable in \(String(describing: colorScheme)) mode.")
+        #expect(host.fittingSize.width <= 190, "Tooltip should fit tightly to its content in \(String(describing: colorScheme)) mode.")
         #expect(host.fittingSize.height >= 110, "Tooltip should preserve readable height in \(String(describing: colorScheme)) mode.")
     }
 }

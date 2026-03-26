@@ -17,6 +17,35 @@ struct SessionMetricsHoverAnchorState: Equatable {
     }
 }
 
+enum SessionMetricsTooltipPlacement {
+    static func xOffset(
+        anchorFrame: CGRect,
+        tooltipWidth: CGFloat,
+        containerWidth: CGFloat,
+        horizontalInset: CGFloat = 12
+    ) -> CGFloat {
+        let preferred = anchorFrame.midX - (tooltipWidth / 2)
+        let maximum = max(horizontalInset, containerWidth - tooltipWidth - horizontalInset)
+        return min(max(horizontalInset, preferred), maximum)
+    }
+}
+
+enum SessionMetricsTooltipStyle {
+    static let cornerRadius: CGFloat = 12
+    static let horizontalPadding: CGFloat = 10
+    static let maxContentWidth: CGFloat = 190
+    static let backgroundOpacity: Double = 1.0
+    static let shadowOpacity: Double = 0.18
+    static let shadowRadius: CGFloat = 18
+    static let shadowYOffset: CGFloat = 8
+    static let enterDuration: Double = 0.18
+    static let exitDuration: Double = 0.12
+
+    static var maxOuterWidth: CGFloat {
+        maxContentWidth + (horizontalPadding * 2)
+    }
+}
+
 struct SessionMetricsTooltip: View {
     let hostTitle: String
     let connectionState: String
@@ -32,13 +61,23 @@ struct SessionMetricsTooltip: View {
             isLoading: isLoading,
             errorMessage: errorMessage
         )
-        .padding(10)
-        .background(VisualStyle.elevatedSurfaceBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(VisualStyle.borderSoft, lineWidth: 1)
+        .padding(SessionMetricsTooltipStyle.horizontalPadding)
+        .frame(maxWidth: SessionMetricsTooltipStyle.maxOuterWidth, alignment: .leading)
+        .background(
+            VisualStyle.settingsSurfaceBackground.opacity(SessionMetricsTooltipStyle.backgroundOpacity),
+            in: RoundedRectangle(cornerRadius: SessionMetricsTooltipStyle.cornerRadius, style: .continuous)
         )
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: SessionMetricsTooltipStyle.cornerRadius, style: .continuous)
+                .stroke(VisualStyle.borderNormal, lineWidth: 1)
+        )
+        .compositingGroup()
+        .shadow(
+            color: .black.opacity(SessionMetricsTooltipStyle.shadowOpacity),
+            radius: SessionMetricsTooltipStyle.shadowRadius,
+            y: SessionMetricsTooltipStyle.shadowYOffset
+        )
+        .fixedSize(horizontal: true, vertical: true)
     }
 }
 
@@ -105,7 +144,7 @@ struct SessionMetricsTooltipCard: View {
                     .foregroundStyle(VisualStyle.textSecondary)
             }
         }
-        .frame(width: 214, alignment: .leading)
+        .frame(maxWidth: SessionMetricsTooltipStyle.maxContentWidth, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
