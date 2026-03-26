@@ -1125,7 +1125,7 @@ struct FileManagerPanelView: View {
                     feedback: makeDownloadQueuedFeedback(count: 1)
                 )
             }
-            .disabled(entry.isDirectory)
+            .disabled(FileManagerContextMenuPolicy.isDownloadDisabled(isDirectory: entry.isDirectory))
 
             Button("\(tr("Download Selected")) (\(selectedDownloadPaths.count))") {
                 performRemoteContextAction(
@@ -1141,7 +1141,7 @@ struct FileManagerPanelView: View {
                     feedback: makeDownloadQueuedFeedback(count: 1)
                 )
             }
-            .disabled(entry.isDirectory)
+            .disabled(FileManagerContextMenuPolicy.isDownloadDisabled(isDirectory: entry.isDirectory))
         }
 
         Button(tr("Move To")) {
