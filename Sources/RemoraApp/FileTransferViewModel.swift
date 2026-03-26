@@ -14,6 +14,7 @@ enum TransferStatus: String, Sendable {
     case success = "Success"
     case failed = "Failed"
     case skipped = "Skipped"
+    case stopped = "Stopped"
 }
 
 enum TransferConflictStrategy: String, CaseIterable, Identifiable, Sendable {
@@ -170,6 +171,7 @@ final class FileTransferViewModel: ObservableObject {
 
     private var sftpClient: SFTPClientProtocol
     private let transferCenter: TransferCenter
+    private var transferTasks: [UUID: Task<Void, Never>] = [:]
     private var remoteDirectoryCache: [String: CachedRemoteDirectory] = [:]
     private var remoteRefreshInFlightPaths: Set<String> = []
     private let remoteDirectoryCacheTTL: TimeInterval = 2
@@ -265,7 +267,7 @@ final class FileTransferViewModel: ObservableObject {
         sftpClient = client
         activeRemoteBindingKey = normalizedBindingKey
         remoteClipboard = nil
-        transferQueue.removeAll()
+        cancelTrackedTransfers(clearQueue: true)
         remoteRefreshInFlightPaths.removeAll()
         isRemoteLoading = false
 
@@ -467,9 +469,7 @@ final class FileTransferViewModel: ObservableObject {
             totalBytes: remoteEntry.isDirectory ? nil : remoteEntry.size
         )
         transferQueue.append(item)
-        Task {
-            await executeTransfer(itemID: item.id)
-        }
+        startTransferTask(for: item.id)
     }
 
     func enqueueDownload(paths: [String]) {
@@ -727,21 +727,36 @@ final class FileTransferViewModel: ObservableObject {
 
     func retryTransfer(itemID: UUID) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
-        guard transferQueue[index].status == .failed || transferQueue[index].status == .skipped else { return }
+        guard transferQueue[index].status == .failed || transferQueue[index].status == .skipped || transferQueue[index].status == .stopped else { return }
         transferQueue[index].status = .queued
         transferQueue[index].message = nil
         transferQueue[index].bytesTransferred = 0
-        Task {
-            await executeTransfer(itemID: itemID)
-        }
+        startTransferTask(for: itemID)
     }
 
     func retryFailedTransfers() {
         let failedIDs = transferQueue
-            .filter { $0.status == .failed || $0.status == .skipped }
+            .filter { $0.status == .failed || $0.status == .skipped || $0.status == .stopped }
             .map(\.id)
         for id in failedIDs {
             retryTransfer(itemID: id)
+        }
+    }
+
+    func stopTransfer(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        let status = transferQueue[index].status
+        guard status == .queued || status == .running else { return }
+        transferTasks[itemID]?.cancel()
+        markTransferStopped(itemID: itemID)
+    }
+
+    func stopAllTransfers() {
+        let stoppableIDs = transferQueue
+            .filter { $0.status == .queued || $0.status == .running }
+            .map(\.id)
+        for id in stoppableIDs {
+            stopTransfer(itemID: id)
         }
     }
 
@@ -882,17 +897,42 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     private func executeTransfer(itemID: UUID) async {
-        await transferCenter.acquireSlot()
+        do {
+            try await transferCenter.acquireSlot()
+        } catch is CancellationError {
+            markTransferStopped(itemID: itemID)
+            return
+        } catch {
+            return
+        }
         defer {
             Task {
                 await transferCenter.releaseSlot()
             }
         }
 
+        do {
+            try Task.checkCancellation()
+        } catch {
+            markTransferStopped(itemID: itemID)
+            return
+        }
+
         guard let idx = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
         var item = transferQueue[idx]
+        if item.status == .stopped {
+            return
+        }
 
         let conflictOutcome = await resolveConflictOutcome(for: item)
+        do {
+            try Task.checkCancellation()
+        } catch {
+            markTransferStopped(itemID: itemID)
+            return
+        }
+
+        var destinationExistedBeforeTransfer = false
         switch conflictOutcome {
         case .skip(let reason):
             transferQueue[idx].status = .skipped
@@ -901,6 +941,8 @@ final class FileTransferViewModel: ObservableObject {
         case .proceed(let destinationPath):
             transferQueue[idx].destinationPath = destinationPath
             item.destinationPath = destinationPath
+            destinationExistedBeforeTransfer = item.direction == .download
+                && FileManager.default.fileExists(atPath: destinationPath)
             transferQueue[idx].status = .running
         }
 
@@ -961,6 +1003,11 @@ final class FileTransferViewModel: ObservableObject {
             }
 
             if let doneIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
+                if transferQueue[doneIdx].status == .stopped || Task.isCancelled {
+                    cleanupStoppedDownloadIfNeeded(item: item, destinationExistedBeforeTransfer: destinationExistedBeforeTransfer)
+                    markTransferStopped(itemID: itemID)
+                    return
+                }
                 transferQueue[doneIdx].status = .success
                 if let total = transferQueue[doneIdx].totalBytes {
                     transferQueue[doneIdx].bytesTransferred = total
@@ -973,6 +1020,15 @@ final class FileTransferViewModel: ObservableObject {
                 }
             }
         } catch {
+            if error is CancellationError || Task.isCancelled {
+                cleanupStoppedDownloadIfNeeded(item: item, destinationExistedBeforeTransfer: destinationExistedBeforeTransfer)
+                markTransferStopped(itemID: itemID)
+                FileTransferDiagnostics.append(
+                    "transfer stopped direction=\(item.direction.rawValue) source=\(item.sourcePath) destination=\(item.destinationPath)"
+                )
+                return
+            }
+
             if let failedIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
                 transferQueue[failedIdx].status = .failed
                 transferQueue[failedIdx].message = FileTransferDiagnostics.failureMessage(for: error)
@@ -998,7 +1054,7 @@ final class FileTransferViewModel: ObservableObject {
             switch $0.status {
             case .queued, .running, .success:
                 return true
-            case .failed, .skipped:
+            case .failed, .skipped, .stopped:
                 return false
             }
         }
@@ -1048,6 +1104,7 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     private func materializeRemoteItem(_ entry: RemoteFileEntry, to localURL: URL) async throws {
+        try Task.checkCancellation()
         if entry.isDirectory {
             FileTransferDiagnostics.append(
                 "enter directory remote=\(entry.path) local=\(localURL.path)"
@@ -1058,6 +1115,7 @@ final class FileTransferViewModel: ObservableObject {
                 "list directory remote=\(entry.path) children=\(children.count)"
             )
             for child in children {
+                try Task.checkCancellation()
                 let childURL = localURL.appendingPathComponent(child.name, isDirectory: child.isDirectory)
                 try await materializeRemoteItem(child, to: childURL)
             }
@@ -1068,6 +1126,7 @@ final class FileTransferViewModel: ObservableObject {
             "download file remote=\(entry.path) local=\(localURL.path)"
         )
         try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Task.checkCancellation()
         try await sftpClient.download(path: entry.path, to: localURL, progress: nil)
     }
 
@@ -1128,9 +1187,42 @@ final class FileTransferViewModel: ObservableObject {
             totalBytes: fileSize
         )
         transferQueue.append(item)
-        Task {
-            await executeTransfer(itemID: item.id)
+        startTransferTask(for: item.id)
+    }
+
+    private func startTransferTask(for itemID: UUID) {
+        transferTasks[itemID]?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.executeTransfer(itemID: itemID)
+            self.transferTasks.removeValue(forKey: itemID)
         }
+        transferTasks[itemID] = task
+    }
+
+    private func cancelTrackedTransfers(clearQueue: Bool) {
+        for task in transferTasks.values {
+            task.cancel()
+        }
+        transferTasks.removeAll()
+        if clearQueue {
+            transferQueue.removeAll()
+        }
+    }
+
+    private func markTransferStopped(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        transferQueue[index].status = .stopped
+        transferQueue[index].message = tr("Stopped")
+    }
+
+    private func cleanupStoppedDownloadIfNeeded(
+        item: TransferItem,
+        destinationExistedBeforeTransfer: Bool
+    ) {
+        guard item.direction == .download else { return }
+        guard destinationExistedBeforeTransfer == false else { return }
+        try? FileManager.default.removeItem(atPath: item.destinationPath)
     }
 
     private func updateTransferProgress(itemID: UUID, snapshot: TransferProgressSnapshot) {

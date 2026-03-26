@@ -194,6 +194,102 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func stopTransferCancelsRunningDownload() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-stop-transfer-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let client = SlowDownloadSFTPClient()
+        let vm = FileTransferViewModel(
+            sftpClient: client,
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+
+        await vm.refreshRemoteEntries()
+        guard let readme = vm.remoteEntries.first(where: { $0.path == "/README.txt" }) else {
+            Issue.record("Remote README not found.")
+            return
+        }
+
+        vm.enqueueDownload(remoteEntry: readme)
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            vm.transferQueue.contains(where: { $0.sourcePath == "/README.txt" && $0.status == .running })
+        }
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            let startedPaths = await client.startedDownloadPaths()
+            return startedPaths.contains("/README.txt")
+        }
+
+        guard let runningItem = vm.transferQueue.first(where: { $0.sourcePath == "/README.txt" }) else {
+            Issue.record("Expected running download item.")
+            return
+        }
+
+        vm.stopTransfer(itemID: runningItem.id)
+
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            vm.transferQueue.contains(where: { $0.id == runningItem.id && $0.status == .stopped })
+        }
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            let cancelledPaths = await client.cancelledDownloadPaths()
+            return cancelledPaths == ["/README.txt"]
+        }
+
+        let cancelledPaths = await client.cancelledDownloadPaths()
+        #expect(cancelledPaths == ["/README.txt"])
+        #expect(FileManager.default.fileExists(atPath: runningItem.destinationPath) == false)
+    }
+
+    @Test
+    func stopAllTransfersCancelsRunningAndQueuedDownloads() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-stop-all-transfer-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let client = SlowDownloadSFTPClient()
+        let vm = FileTransferViewModel(
+            sftpClient: client,
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+
+        await vm.refreshRemoteEntries()
+        guard let readme = vm.remoteEntries.first(where: { $0.path == "/README.txt" }) else {
+            Issue.record("Remote README not found.")
+            return
+        }
+
+        vm.enqueueDownload(remoteEntry: readme)
+        try await vm.enqueueDownload(path: "/logs/app.log")
+
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            let runningCount = vm.transferQueue.filter { $0.status == .running }.count
+            let queuedCount = vm.transferQueue.filter { $0.status == .queued }.count
+            return runningCount == 1 && queuedCount == 1
+        }
+
+        vm.stopAllTransfers()
+
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            vm.transferQueue.count == 2 && vm.transferQueue.allSatisfy { $0.status == .stopped }
+        }
+        try await waitUntil(timeoutLoops: 80, intervalMS: 25) {
+            let cancelledPaths = await client.cancelledDownloadPaths()
+            return cancelledPaths.count == 1
+        }
+
+        let startedPaths = await client.startedDownloadPaths()
+        let cancelledPaths = await client.cancelledDownloadPaths()
+        #expect(startedPaths.count == 1)
+        #expect(cancelledPaths.count == 1)
+    }
+
+    @Test
     func moveAndDeleteRemoteEntries() async throws {
         let vm = FileTransferViewModel(
             sftpClient: MockSFTPClient(),
@@ -885,6 +981,89 @@ private actor StatBudgetSFTPClient: SFTPClientProtocol {
             throw NSError(domain: "Remora.Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Connection failed"])
         }
         return try await base.stat(path: path)
+    }
+}
+
+private actor SlowDownloadSFTPClient: SFTPClientProtocol {
+    private let base = MockSFTPClient()
+    private let chunkDelay: Duration
+    private let chunkCount: Int
+    private var startedPaths: [String] = []
+    private var cancelledPaths: [String] = []
+
+    init(chunkDelay: Duration = .milliseconds(40), chunkCount: Int = 12) {
+        self.chunkDelay = chunkDelay
+        self.chunkCount = max(2, chunkCount)
+    }
+
+    func startedDownloadPaths() -> [String] {
+        startedPaths
+    }
+
+    func cancelledDownloadPaths() -> [String] {
+        cancelledPaths
+    }
+
+    func list(path: String) async throws -> [RemoteFileEntry] { try await base.list(path: path) }
+
+    func download(path: String) async throws -> Data {
+        let data = try await base.download(path: path)
+        try await simulateSlowTransfer(path: path, totalBytes: Int64(data.count), progress: nil)
+        return data
+    }
+
+    func download(path: String, progress: TransferProgressHandler?) async throws -> Data {
+        let data = try await base.download(path: path)
+        try await simulateSlowTransfer(path: path, totalBytes: Int64(data.count), progress: progress)
+        return data
+    }
+
+    func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws {
+        let data = try await base.download(path: path)
+        try await simulateSlowTransfer(path: path, totalBytes: Int64(data.count), progress: progress)
+        try FileManager.default.createDirectory(
+            at: localFileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: localFileURL, options: .atomic)
+    }
+
+    func executeRemoteShellCommand(_ command: String, timeout: TimeInterval?) async throws -> String { try await base.executeRemoteShellCommand(command, timeout: timeout) }
+    func streamRemoteShellCommand(_ command: String) async throws -> AsyncThrowingStream<String, Error> { try await base.streamRemoteShellCommand(command) }
+    func upload(data: Data, to path: String) async throws { try await base.upload(data: data, to: path) }
+    func upload(data: Data, to path: String, progress: TransferProgressHandler?) async throws { try await base.upload(data: data, to: path, progress: progress) }
+    func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws { try await base.upload(fileURL: fileURL, to: path, progress: progress) }
+    func rename(from: String, to: String) async throws { try await base.rename(from: from, to: to) }
+    func move(from: String, to: String) async throws { try await base.move(from: from, to: to) }
+    func copy(from: String, to: String) async throws { try await base.copy(from: from, to: to) }
+    func mkdir(path: String) async throws { try await base.mkdir(path: path) }
+    func remove(path: String) async throws { try await base.remove(path: path) }
+    func stat(path: String) async throws -> RemoteFileAttributes { try await base.stat(path: path) }
+    func setAttributes(path: String, attributes: RemoteFileAttributes) async throws { try await base.setAttributes(path: path, attributes: attributes) }
+
+    private func simulateSlowTransfer(
+        path: String,
+        totalBytes: Int64,
+        progress: TransferProgressHandler?
+    ) async throws {
+        startedPaths.append(path)
+        progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
+
+        do {
+            for step in 1 ... chunkCount {
+                try Task.checkCancellation()
+                try await Task.sleep(for: chunkDelay)
+                try Task.checkCancellation()
+                let fraction = Double(step) / Double(chunkCount)
+                let bytesTransferred = Int64((Double(totalBytes) * fraction).rounded(.down))
+                progress?(.init(bytesTransferred: min(bytesTransferred, totalBytes), totalBytes: totalBytes))
+            }
+        } catch {
+            if error is CancellationError {
+                cancelledPaths.append(path)
+            }
+            throw error
+        }
     }
 }
 

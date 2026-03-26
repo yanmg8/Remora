@@ -919,6 +919,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             outputLogMode: .text,
             inputLogMode: .text
         )
+        try Task.checkCancellation()
         if result.status == 0 {
             return result
         }
@@ -943,6 +944,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             outputLogMode: .text,
             inputLogMode: .text
         )
+        try Task.checkCancellation()
         return result
     }
 
@@ -971,6 +973,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             inputLogMode: inputLogMode,
             stdoutFileURL: stdoutFileURL
         )
+        try Task.checkCancellation()
         if result.status == 0 {
             return result
         }
@@ -997,6 +1000,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             inputLogMode: inputLogMode,
             stdoutFileURL: stdoutFileURL
         )
+        try Task.checkCancellation()
         return result
     }
 
@@ -1012,6 +1016,32 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         inputLogMode: InputLogMode,
         stdoutFileURL: URL? = nil
     ) async throws -> ProcessResult {
+        final class ProcessBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var process: Process?
+            private var wasCancelled = false
+
+            func setProcess(_ process: Process) {
+                lock.lock()
+                self.process = process
+                lock.unlock()
+            }
+
+            func cancel() {
+                lock.lock()
+                wasCancelled = true
+                let process = self.process
+                lock.unlock()
+                process?.terminate()
+            }
+
+            func isCancelled() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                return wasCancelled
+            }
+        }
+
         Self.appendDiagnostics(
             Self.formatDiagnosticsMessage(
                 host: host,
@@ -1025,9 +1055,11 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             )
         )
         let startedAt = Date()
+        let processBox = ProcessBox()
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ProcessResult, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async {
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ProcessResult, Error>) in
+                DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: executablePath)
                 process.arguments = arguments
@@ -1064,6 +1096,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
 
                 do {
                     try process.run()
+                    processBox.setProcess(process)
                 } catch {
                     let elapsed = Date().timeIntervalSince(startedAt)
                     Self.appendDiagnostics(
@@ -1166,6 +1199,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                 }
 
                 let elapsed = Date().timeIntervalSince(startedAt)
+                let cancelled = processBox.isCancelled()
                 Self.appendDiagnostics(
                     Self.formatDiagnosticsMessage(
                         host: host,
@@ -1173,6 +1207,7 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                         body: [
                             "duration_ms=\(Int(elapsed * 1000))",
                             "status=\(process.terminationStatus)",
+                            "cancelled=\(cancelled)",
                             "stdout=\(Self.describeOutput(capturedStdout, mode: outputLogMode))",
                             "stderr=\(Self.describeOutput(capturedStderr, mode: .text))"
                         ]
@@ -1187,6 +1222,9 @@ public actor SystemSFTPClient: SFTPClientProtocol {
                     )
                 )
             }
+            }
+        } onCancel: {
+            processBox.cancel()
         }
     }
 
