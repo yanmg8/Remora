@@ -20,6 +20,18 @@ private actor TransferConcurrencyProbe {
     }
 }
 
+private actor TransferBoolProbe {
+    private var value = false
+
+    func markTrue() {
+        value = true
+    }
+
+    func currentValue() -> Bool {
+        value
+    }
+}
+
 struct TransferCenterTests {
     @Test
     func respectsMaxConcurrentTransfers() async throws {
@@ -29,7 +41,7 @@ struct TransferCenterTests {
         await withTaskGroup(of: Void.self) { group in
             for _ in 0 ..< 8 {
                 group.addTask {
-                    await center.acquireSlot()
+                    try? await center.acquireSlot()
                     await probe.begin()
                     try? await Task.sleep(for: .milliseconds(30))
                     await probe.end()
@@ -40,5 +52,50 @@ struct TransferCenterTests {
 
         let maxConcurrency = await probe.observedMax()
         #expect(maxConcurrency <= 2)
+    }
+
+    @Test
+    func cancelledWaiterDoesNotBlockNextTransfer() async throws {
+        let center = TransferCenter(maxConcurrentTransfers: 1)
+        let acquiredProbe = TransferBoolProbe()
+
+        try await center.acquireSlot()
+
+        let cancelledWaiter = Task {
+            do {
+                try await center.acquireSlot()
+                await center.releaseSlot()
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                Issue.record("Unexpected waiter failure: \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        try await Task.sleep(for: .milliseconds(30))
+        cancelledWaiter.cancel()
+        let waiterWasCancelled = await cancelledWaiter.value
+        #expect(waiterWasCancelled)
+
+        let nextWaiter = Task {
+            try await center.acquireSlot()
+            await acquiredProbe.markTrue()
+            await center.releaseSlot()
+        }
+
+        try await Task.sleep(for: .milliseconds(30))
+        await center.releaseSlot()
+
+        for _ in 0 ..< 20 {
+            if await acquiredProbe.currentValue() {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(await acquiredProbe.currentValue())
+        try await nextWaiter.value
     }
 }

@@ -17,4 +17,11 @@ struct ByteSizeFormatterTests {
         #expect(ByteSizeFormatter.format(11 * 1_048_576) == "11MB")
         #expect(ByteSizeFormatter.format(5 * 1_073_741_824) == "5GB")
     }
+
+    @Test
+    func formatsTransferRate() {
+        #expect(ByteSizeFormatter.formatRate(0) == "0B/s")
+        #expect(ByteSizeFormatter.formatRate(1536) == "1.5KB/s")
+        #expect(ByteSizeFormatter.formatRate(2 * 1_048_576) == "2MB/s")
+    }
 }

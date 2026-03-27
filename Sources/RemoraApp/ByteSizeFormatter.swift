@@ -21,6 +21,10 @@ enum ByteSizeFormatter {
         return "\(displayed)\(units[max(unitIndex, 0)])"
     }
 
+    static func formatRate(_ bytesPerSecond: Int64) -> String {
+        "\(format(bytesPerSecond))/s"
+    }
+
     private static func roundedString(_ value: Double) -> String {
         let roundedToSingleDecimal = (value * 10).rounded() / 10
         if abs(roundedToSingleDecimal.rounded() - roundedToSingleDecimal) < 0.000_1 {

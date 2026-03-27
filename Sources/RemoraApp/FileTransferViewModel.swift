@@ -14,6 +14,16 @@ enum TransferStatus: String, Sendable {
     case success = "Success"
     case failed = "Failed"
     case skipped = "Skipped"
+    case stopped = "Stopped"
+
+    var isTerminal: Bool {
+        switch self {
+        case .success, .failed, .skipped, .stopped:
+            return true
+        case .queued, .running:
+            return false
+        }
+    }
 }
 
 enum TransferConflictStrategy: String, CaseIterable, Identifiable, Sendable {
@@ -80,6 +90,7 @@ enum RemoteTextDocumentError: Error, Equatable, Sendable {
 
 struct TransferItem: Identifiable, Sendable {
     let id: UUID
+    var batchID: Int
     var direction: TransferDirection
     var name: String
     var sourcePath: String
@@ -87,10 +98,14 @@ struct TransferItem: Identifiable, Sendable {
     var status: TransferStatus
     var bytesTransferred: Int64
     var totalBytes: Int64?
+    var speedBytesPerSecond: Int64?
     var message: String?
+    var lastProgressSampleBytes: Int64?
+    var lastProgressSampleDate: Date?
 
     init(
         id: UUID = UUID(),
+        batchID: Int = 0,
         direction: TransferDirection,
         name: String,
         sourcePath: String,
@@ -98,9 +113,11 @@ struct TransferItem: Identifiable, Sendable {
         status: TransferStatus = .queued,
         bytesTransferred: Int64 = 0,
         totalBytes: Int64? = nil,
+        speedBytesPerSecond: Int64? = nil,
         message: String? = nil
     ) {
         self.id = id
+        self.batchID = batchID
         self.direction = direction
         self.name = name
         self.sourcePath = sourcePath
@@ -108,13 +125,22 @@ struct TransferItem: Identifiable, Sendable {
         self.status = status
         self.bytesTransferred = bytesTransferred
         self.totalBytes = totalBytes
+        self.speedBytesPerSecond = speedBytesPerSecond
         self.message = message
+        self.lastProgressSampleBytes = nil
+        self.lastProgressSampleDate = nil
     }
 
     var fractionCompleted: Double? {
         guard let totalBytes, totalBytes > 0 else { return nil }
         return min(max(Double(bytesTransferred) / Double(totalBytes), 0), 1)
     }
+}
+
+private struct DirectoryDownloadPlanNode: Sendable {
+    var entry: RemoteFileEntry
+    var children: [DirectoryDownloadPlanNode]
+    var totalFileBytes: Int64
 }
 
 struct LocalFileEntry: Identifiable, Hashable {
@@ -167,9 +193,12 @@ final class FileTransferViewModel: ObservableObject {
     @Published private(set) var archiveOperationProgress: Double?
     @Published private(set) var archiveOperationStatusText: String?
     @Published private(set) var transferQueue: [TransferItem] = []
+    @Published private(set) var currentTransferBatchID: Int?
 
     private var sftpClient: SFTPClientProtocol
     private let transferCenter: TransferCenter
+    private var transferTasks: [UUID: Task<Void, Never>] = [:]
+    private var nextTransferBatchSeed: Int = 0
     private var remoteDirectoryCache: [String: CachedRemoteDirectory] = [:]
     private var remoteRefreshInFlightPaths: Set<String> = []
     private let remoteDirectoryCacheTTL: TimeInterval = 2
@@ -265,7 +294,9 @@ final class FileTransferViewModel: ObservableObject {
         sftpClient = client
         activeRemoteBindingKey = normalizedBindingKey
         remoteClipboard = nil
-        transferQueue.removeAll()
+        cancelTrackedTransfers(clearQueue: true)
+        currentTransferBatchID = nil
+        nextTransferBatchSeed = 0
         remoteRefreshInFlightPaths.removeAll()
         isRemoteLoading = false
 
@@ -460,6 +491,7 @@ final class FileTransferViewModel: ObservableObject {
     func enqueueDownload(remoteEntry: RemoteFileEntry) {
         let destinationURL = ensureWritableLocalDirectory().appendingPathComponent(remoteEntry.name)
         let item = TransferItem(
+            batchID: prepareBatchIDForNewTransfer(),
             direction: .download,
             name: remoteEntry.name,
             sourcePath: remoteEntry.path,
@@ -467,9 +499,7 @@ final class FileTransferViewModel: ObservableObject {
             totalBytes: remoteEntry.isDirectory ? nil : remoteEntry.size
         )
         transferQueue.append(item)
-        Task {
-            await executeTransfer(itemID: item.id)
-        }
+        startTransferTask(for: item.id)
     }
 
     func enqueueDownload(paths: [String]) {
@@ -727,21 +757,44 @@ final class FileTransferViewModel: ObservableObject {
 
     func retryTransfer(itemID: UUID) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
-        guard transferQueue[index].status == .failed || transferQueue[index].status == .skipped else { return }
+        guard transferQueue[index].status == .failed || transferQueue[index].status == .skipped || transferQueue[index].status == .stopped else { return }
+        transferQueue[index].batchID = prepareBatchIDForNewTransfer()
         transferQueue[index].status = .queued
         transferQueue[index].message = nil
         transferQueue[index].bytesTransferred = 0
-        Task {
-            await executeTransfer(itemID: itemID)
-        }
+        transferQueue[index].speedBytesPerSecond = nil
+        transferQueue[index].lastProgressSampleBytes = nil
+        transferQueue[index].lastProgressSampleDate = nil
+        startTransferTask(for: itemID)
     }
 
     func retryFailedTransfers() {
         let failedIDs = transferQueue
-            .filter { $0.status == .failed || $0.status == .skipped }
+            .filter { $0.status == .failed || $0.status == .skipped || $0.status == .stopped }
             .map(\.id)
+        let retryBatchID = prepareBatchIDForNewTransfer()
         for id in failedIDs {
+            if let index = transferQueue.firstIndex(where: { $0.id == id }) {
+                transferQueue[index].batchID = retryBatchID
+            }
             retryTransfer(itemID: id)
+        }
+    }
+
+    func stopTransfer(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        let status = transferQueue[index].status
+        guard status == .queued || status == .running else { return }
+        transferTasks[itemID]?.cancel()
+        markTransferStopped(itemID: itemID)
+    }
+
+    func stopAllTransfers() {
+        let stoppableIDs = transferQueue
+            .filter { $0.status == .queued || $0.status == .running }
+            .map(\.id)
+        for id in stoppableIDs {
+            stopTransfer(itemID: id)
         }
     }
 
@@ -882,26 +935,57 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     private func executeTransfer(itemID: UUID) async {
-        await transferCenter.acquireSlot()
+        do {
+            try await transferCenter.acquireSlot()
+        } catch is CancellationError {
+            markTransferStopped(itemID: itemID)
+            return
+        } catch {
+            return
+        }
         defer {
             Task {
                 await transferCenter.releaseSlot()
             }
         }
 
+        do {
+            try Task.checkCancellation()
+        } catch {
+            markTransferStopped(itemID: itemID)
+            return
+        }
+
         guard let idx = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
         var item = transferQueue[idx]
+        if item.status == .stopped {
+            return
+        }
 
         let conflictOutcome = await resolveConflictOutcome(for: item)
+        do {
+            try Task.checkCancellation()
+        } catch {
+            markTransferStopped(itemID: itemID)
+            return
+        }
+
+        var destinationExistedBeforeTransfer = false
         switch conflictOutcome {
         case .skip(let reason):
             transferQueue[idx].status = .skipped
             transferQueue[idx].message = reason
+            clearTransferSpeedState(itemID: itemID)
             return
         case .proceed(let destinationPath):
             transferQueue[idx].destinationPath = destinationPath
             item.destinationPath = destinationPath
+            destinationExistedBeforeTransfer = item.direction == .download
+                && FileManager.default.fileExists(atPath: destinationPath)
             transferQueue[idx].status = .running
+            transferQueue[idx].speedBytesPerSecond = nil
+            transferQueue[idx].lastProgressSampleBytes = 0
+            transferQueue[idx].lastProgressSampleDate = nil
         }
 
         FileTransferDiagnostics.append(
@@ -939,7 +1023,7 @@ final class FileTransferViewModel: ObservableObject {
                         isDirectory: true,
                         modifiedAt: attributes.modifiedAt
                     )
-                    try await materializeRemoteItem(entry, to: destinationURL)
+                    try await downloadDirectoryTransfer(entry, to: destinationURL, itemID: itemID)
                 } else {
                     try await sftpClient.download(
                         path: item.sourcePath,
@@ -961,7 +1045,13 @@ final class FileTransferViewModel: ObservableObject {
             }
 
             if let doneIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
+                if transferQueue[doneIdx].status == .stopped || Task.isCancelled {
+                    cleanupStoppedDownloadIfNeeded(item: item, destinationExistedBeforeTransfer: destinationExistedBeforeTransfer)
+                    markTransferStopped(itemID: itemID)
+                    return
+                }
                 transferQueue[doneIdx].status = .success
+                clearTransferSpeedState(itemID: itemID)
                 if let total = transferQueue[doneIdx].totalBytes {
                     transferQueue[doneIdx].bytesTransferred = total
                 }
@@ -973,8 +1063,18 @@ final class FileTransferViewModel: ObservableObject {
                 }
             }
         } catch {
+            if error is CancellationError || Task.isCancelled {
+                cleanupStoppedDownloadIfNeeded(item: item, destinationExistedBeforeTransfer: destinationExistedBeforeTransfer)
+                markTransferStopped(itemID: itemID)
+                FileTransferDiagnostics.append(
+                    "transfer stopped direction=\(item.direction.rawValue) source=\(item.sourcePath) destination=\(item.destinationPath)"
+                )
+                return
+            }
+
             if let failedIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
                 transferQueue[failedIdx].status = .failed
+                clearTransferSpeedState(itemID: itemID)
                 transferQueue[failedIdx].message = FileTransferDiagnostics.failureMessage(for: error)
                 let failedItem = transferQueue[failedIdx]
                 FileTransferDiagnostics.append(
@@ -994,24 +1094,13 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     var overallTransferProgress: Double? {
-        let trackedItems = transferQueue.filter {
-            switch $0.status {
-            case .queued, .running, .success:
-                return true
-            case .failed, .skipped:
-                return false
-            }
-        }
-
-        let totalBytes = trackedItems.reduce(Int64(0)) { partial, item in
-            partial + (item.totalBytes ?? 0)
-        }
-        guard totalBytes > 0 else { return nil }
-
-        let completedBytes = trackedItems.reduce(Int64(0)) { partial, item in
-            partial + min(item.bytesTransferred, item.totalBytes ?? item.bytesTransferred)
-        }
-        return min(max(Double(completedBytes) / Double(totalBytes), 0), 1)
+        let snapshot = TransferQueueAggregateSnapshot.resolve(
+            items: transferQueue,
+            currentBatchID: currentTransferBatchID,
+            runningFallbackProgress: 0.1
+        )
+        guard snapshot.status != .idle else { return nil }
+        return snapshot.progress
     }
 
     private func enqueueUploadRecursively(localURL: URL, remoteBaseDirectory: String) {
@@ -1048,6 +1137,7 @@ final class FileTransferViewModel: ObservableObject {
     }
 
     private func materializeRemoteItem(_ entry: RemoteFileEntry, to localURL: URL) async throws {
+        try Task.checkCancellation()
         if entry.isDirectory {
             FileTransferDiagnostics.append(
                 "enter directory remote=\(entry.path) local=\(localURL.path)"
@@ -1058,6 +1148,7 @@ final class FileTransferViewModel: ObservableObject {
                 "list directory remote=\(entry.path) children=\(children.count)"
             )
             for child in children {
+                try Task.checkCancellation()
                 let childURL = localURL.appendingPathComponent(child.name, isDirectory: child.isDirectory)
                 try await materializeRemoteItem(child, to: childURL)
             }
@@ -1068,7 +1159,99 @@ final class FileTransferViewModel: ObservableObject {
             "download file remote=\(entry.path) local=\(localURL.path)"
         )
         try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Task.checkCancellation()
         try await sftpClient.download(path: entry.path, to: localURL, progress: nil)
+    }
+
+    private func downloadDirectoryTransfer(
+        _ entry: RemoteFileEntry,
+        to localURL: URL,
+        itemID: UUID
+    ) async throws {
+        let plan = try await makeDirectoryDownloadPlan(for: entry)
+        if let index = transferQueue.firstIndex(where: { $0.id == itemID }) {
+            transferQueue[index].totalBytes = max(plan.totalFileBytes, 0)
+            transferQueue[index].bytesTransferred = 0
+        }
+
+        var completedBytes: Int64 = 0
+        try await materializeDirectoryPlanNode(
+            plan,
+            to: localURL,
+            itemID: itemID,
+            completedBytes: &completedBytes,
+            totalBytes: plan.totalFileBytes
+        )
+    }
+
+    private func makeDirectoryDownloadPlan(for entry: RemoteFileEntry) async throws -> DirectoryDownloadPlanNode {
+        try Task.checkCancellation()
+        guard entry.isDirectory else {
+            return DirectoryDownloadPlanNode(entry: entry, children: [], totalFileBytes: max(entry.size, 0))
+        }
+
+        let children = try await sftpClient.list(path: entry.path)
+        var plannedChildren: [DirectoryDownloadPlanNode] = []
+        plannedChildren.reserveCapacity(children.count)
+        var totalBytes: Int64 = 0
+
+        for child in children {
+            try Task.checkCancellation()
+            let childPlan = try await makeDirectoryDownloadPlan(for: child)
+            plannedChildren.append(childPlan)
+            totalBytes += childPlan.totalFileBytes
+        }
+
+        return DirectoryDownloadPlanNode(entry: entry, children: plannedChildren, totalFileBytes: totalBytes)
+    }
+
+    private func materializeDirectoryPlanNode(
+        _ node: DirectoryDownloadPlanNode,
+        to localURL: URL,
+        itemID: UUID,
+        completedBytes: inout Int64,
+        totalBytes: Int64
+    ) async throws {
+        try Task.checkCancellation()
+        if node.entry.isDirectory {
+            FileTransferDiagnostics.append(
+                "enter directory remote=\(node.entry.path) local=\(localURL.path)"
+            )
+            try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
+            for child in node.children {
+                try Task.checkCancellation()
+                let childURL = localURL.appendingPathComponent(child.entry.name, isDirectory: child.entry.isDirectory)
+                try await materializeDirectoryPlanNode(
+                    child,
+                    to: childURL,
+                    itemID: itemID,
+                    completedBytes: &completedBytes,
+                    totalBytes: totalBytes
+                )
+            }
+            return
+        }
+
+        FileTransferDiagnostics.append(
+            "download file remote=\(node.entry.path) local=\(localURL.path)"
+        )
+        try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let completedBytesBeforeFile = completedBytes
+        try await sftpClient.download(
+            path: node.entry.path,
+            to: localURL,
+            progress: { [weak self] snapshot in
+                Task { @MainActor in
+                    self?.updateDirectoryTransferProgress(
+                        itemID: itemID,
+                        completedBytes: completedBytesBeforeFile + snapshot.bytesTransferred,
+                        totalBytes: totalBytes
+                    )
+                }
+            }
+        )
+        completedBytes += node.entry.size
+        updateDirectoryTransferProgress(itemID: itemID, completedBytes: completedBytes, totalBytes: totalBytes)
     }
 
     private func materializeRemoteItem(at remotePath: String, to localURL: URL) async throws {
@@ -1121,6 +1304,7 @@ final class FileTransferViewModel: ObservableObject {
     private func enqueueUploadFile(localURL: URL, destinationPath: String) {
         let fileSize = (try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
         let item = TransferItem(
+            batchID: prepareBatchIDForNewTransfer(),
             direction: .upload,
             name: localURL.lastPathComponent,
             sourcePath: localURL.path,
@@ -1128,17 +1312,105 @@ final class FileTransferViewModel: ObservableObject {
             totalBytes: fileSize
         )
         transferQueue.append(item)
-        Task {
-            await executeTransfer(itemID: item.id)
+        startTransferTask(for: item.id)
+    }
+
+    private func startTransferTask(for itemID: UUID) {
+        transferTasks[itemID]?.cancel()
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.executeTransfer(itemID: itemID)
+            self.transferTasks.removeValue(forKey: itemID)
         }
+        transferTasks[itemID] = task
+    }
+
+    private func cancelTrackedTransfers(clearQueue: Bool) {
+        for task in transferTasks.values {
+            task.cancel()
+        }
+        transferTasks.removeAll()
+        if clearQueue {
+            transferQueue.removeAll()
+        }
+    }
+
+    private func prepareBatchIDForNewTransfer() -> Int {
+        if let currentTransferBatchID {
+            let currentBatchItems = transferQueue.filter { $0.batchID == currentTransferBatchID }
+            if currentBatchItems.isEmpty == false,
+               currentBatchItems.contains(where: { $0.status.isTerminal == false }) {
+                return currentTransferBatchID
+            }
+        }
+
+        nextTransferBatchSeed += 1
+        currentTransferBatchID = nextTransferBatchSeed
+        return nextTransferBatchSeed
+    }
+
+    private func markTransferStopped(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        transferQueue[index].status = .stopped
+        clearTransferSpeedState(itemID: itemID)
+        transferQueue[index].message = tr("Stopped")
+    }
+
+    private func cleanupStoppedDownloadIfNeeded(
+        item: TransferItem,
+        destinationExistedBeforeTransfer: Bool
+    ) {
+        guard item.direction == .download else { return }
+        guard destinationExistedBeforeTransfer == false else { return }
+        try? FileManager.default.removeItem(atPath: item.destinationPath)
     }
 
     private func updateTransferProgress(itemID: UUID, snapshot: TransferProgressSnapshot) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
-        transferQueue[index].bytesTransferred = snapshot.bytesTransferred
-        if let total = snapshot.totalBytes {
-            transferQueue[index].totalBytes = total
+        applyTransferProgressSample(
+            index: index,
+            bytesTransferred: snapshot.bytesTransferred,
+            totalBytes: snapshot.totalBytes
+        )
+    }
+
+    private func updateDirectoryTransferProgress(itemID: UUID, completedBytes: Int64, totalBytes: Int64) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        applyTransferProgressSample(
+            index: index,
+            bytesTransferred: min(max(completedBytes, 0), max(totalBytes, 0)),
+            totalBytes: max(totalBytes, 0)
+        )
+    }
+
+    private func applyTransferProgressSample(index: Int, bytesTransferred: Int64, totalBytes: Int64?) {
+        let now = Date()
+        let clampedBytes = max(bytesTransferred, 0)
+        let previousBytes = transferQueue[index].lastProgressSampleBytes
+        let previousDate = transferQueue[index].lastProgressSampleDate
+
+        transferQueue[index].bytesTransferred = clampedBytes
+        if let totalBytes {
+            transferQueue[index].totalBytes = max(totalBytes, 0)
         }
+
+        if let previousBytes, let previousDate {
+            let deltaBytes = clampedBytes - previousBytes
+            let deltaTime = now.timeIntervalSince(previousDate)
+            if deltaBytes > 0, deltaTime > 0 {
+                transferQueue[index].speedBytesPerSecond = max(Int64(Double(deltaBytes) / deltaTime), 0)
+            }
+        }
+
+        transferQueue[index].lastProgressSampleBytes = clampedBytes
+        transferQueue[index].lastProgressSampleDate = now
+    }
+
+    private func clearTransferSpeedState(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        transferQueue[index].speedBytesPerSecond = nil
+        transferQueue[index].lastProgressSampleBytes = nil
+        transferQueue[index].lastProgressSampleDate = nil
     }
 
     private func beginArchiveProgress(status: String, progress: Double) {

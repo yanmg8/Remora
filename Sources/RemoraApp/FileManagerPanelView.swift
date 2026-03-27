@@ -90,7 +90,7 @@ struct FileManagerPanelView: View {
     @State private var createRemoteKind: RemoteCreateKind = .file
     @State private var createRemoteTargetDirectory = "/"
     @State private var createRemoteNameDraft = ""
-    @State private var isTransferQueueExpanded = false
+    @State private var transferQueueOverlayState = TransferQueueOverlayState()
     @State private var remoteSortColumn: RemoteSortColumn = .name
     @State private var isRemoteSortAscending = true
     @State private var activeRemoteDropDirectoryPath: String?
@@ -103,7 +103,11 @@ struct FileManagerPanelView: View {
     }
 
     private var hasRetryableTransfers: Bool {
-        viewModel.transferQueue.contains { $0.status == .failed || $0.status == .skipped }
+        viewModel.transferQueue.contains { $0.status == .failed || $0.status == .skipped || $0.status == .stopped }
+    }
+
+    private var hasStoppableTransfers: Bool {
+        viewModel.transferQueue.contains { $0.status == .queued || $0.status == .running }
     }
 
     private var abbreviatedLocalDirectoryPath: String {
@@ -125,32 +129,37 @@ struct FileManagerPanelView: View {
     }
 
     private var transferQueueSummary: TransferQueueSummary {
-        let items = viewModel.transferQueue
-        guard !items.isEmpty else {
+        let snapshot = TransferQueueAggregateSnapshot.resolve(
+            items: viewModel.transferQueue,
+            currentBatchID: viewModel.currentTransferBatchID,
+            runningFallbackProgress: 0.1
+        )
+        guard snapshot.status != .idle else {
             return TransferQueueSummary(statusText: tr("Idle"), progress: 0, statusColor: .secondary)
         }
 
-        let hasRunning = items.contains { $0.status == .running || $0.status == .queued }
-        let hasIssue = items.contains { $0.status == .failed || $0.status == .skipped }
-
-        let statusText: String
-        let statusColor: Color
-        if hasRunning {
-            statusText = tr("Transferring")
-            statusColor = .orange
-        } else if hasIssue {
-            statusText = tr("Finished with Issues")
-            statusColor = .red
-        } else {
-            statusText = tr("Completed")
-            statusColor = .green
+        let statusText: String = switch snapshot.status {
+        case .idle:
+            tr("Idle")
+        case .transferring:
+            tr("Transferring")
+        case .finishedWithIssues:
+            tr("Finished with Issues")
+        case .completed:
+            tr("Completed")
+        }
+        let statusColor: Color = switch snapshot.status {
+        case .idle:
+            .secondary
+        case .transferring:
+            .orange
+        case .finishedWithIssues:
+            .red
+        case .completed:
+            .green
         }
 
-        let aggregate = items.reduce(Double(0)) { partial, item in
-            partial + transferProgressValue(for: item)
-        }
-        let progress = min(max(aggregate / Double(max(items.count, 1)), 0), 1)
-        return TransferQueueSummary(statusText: statusText, progress: progress, statusColor: statusColor)
+        return TransferQueueSummary(statusText: statusText, progress: snapshot.progress, statusColor: statusColor)
     }
 
     private var hasTransferTasks: Bool {
@@ -277,13 +286,23 @@ struct FileManagerPanelView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                if hasTransferTasks, !isTransferQueueExpanded {
+                if hasTransferTasks, !transferQueueOverlayState.isExpanded {
                     transferQueueCollapsedInlineControl
                 }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: viewModel.transferQueue.map(\.status))
-        .animation(.easeInOut(duration: 0.2), value: isTransferQueueExpanded)
+        .animation(.easeInOut(duration: 0.2), value: transferQueueOverlayState)
+        .overlay {
+            if transferQueueOverlayState.isExpanded, transferQueueOverlayState.isPinned == false {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        transferQueueOverlayState.handleOutsideClick()
+                    }
+                    .accessibilityIdentifier("file-manager-transfer-outside-dismiss")
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             transferQueueFloatingOverlay
                 .padding(8)
@@ -297,9 +316,7 @@ struct FileManagerPanelView: View {
             }
         }
         .onChange(of: hasTransferTasks) {
-            if !hasTransferTasks {
-                isTransferQueueExpanded = false
-            }
+            transferQueueOverlayState.handleTaskAvailabilityChanged(hasTasks: hasTransferTasks)
         }
         .onAppear {
             remotePathDraft = viewModel.remoteDirectoryPath
@@ -861,7 +878,7 @@ struct FileManagerPanelView: View {
 
     private var transferQueueFloatingOverlay: some View {
         Group {
-            if hasTransferTasks, isTransferQueueExpanded {
+            if hasTransferTasks, transferQueueOverlayState.isExpanded {
                 transferQueueExpandedPanel
             }
         }
@@ -869,7 +886,7 @@ struct FileManagerPanelView: View {
 
     private var transferQueueCollapsedInlineControl: some View {
         Button {
-            isTransferQueueExpanded = true
+            transferQueueOverlayState.expand()
         } label: {
             ProgressView(value: transferQueueSummary.progress)
                 .progressViewStyle(.linear)
@@ -890,15 +907,30 @@ struct FileManagerPanelView: View {
                 Text("\(Int(transferQueueSummary.progress * 100))%")
                     .font(.caption.monospaced())
                     .foregroundStyle(VisualStyle.textSecondary)
-                Button {
-                    isTransferQueueExpanded = false
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
+                toolbarIconButton(
+                    transferQueueOverlayState.isPinned ? "pin.fill" : "pin",
+                    accessibilityIdentifier: "file-manager-transfer-pin",
+                    helpText: transferQueueOverlayState.isPinned ? tr("Unpin Transfer Queue") : tr("Pin Transfer Queue"),
+                    disabled: false
+                ) {
+                    transferQueueOverlayState.togglePinned()
                 }
-                .buttonStyle(.borderless)
-                .help(tr("Collapse Transfer Queue"))
-                .accessibilityIdentifier("file-manager-transfer-collapse")
+                toolbarIconButton(
+                    "stop.circle",
+                    accessibilityIdentifier: "file-manager-transfer-stop-all",
+                    helpText: tr("Stop All Transfers"),
+                    disabled: !hasStoppableTransfers
+                ) {
+                    viewModel.stopAllTransfers()
+                }
+                toolbarIconButton(
+                    "chevron.down",
+                    accessibilityIdentifier: "file-manager-transfer-collapse",
+                    helpText: tr("Collapse Transfer Queue"),
+                    disabled: false
+                ) {
+                    transferQueueOverlayState.collapse()
+                }
             }
 
             HStack(spacing: 8) {
@@ -907,24 +939,24 @@ struct FileManagerPanelView: View {
                     .foregroundStyle(VisualStyle.textSecondary)
                     .lineLimit(1)
 
-                Button {
+                toolbarIconButton(
+                    "square.and.pencil",
+                    accessibilityIdentifier: "file-manager-open-download-settings",
+                    helpText: tr("Edit download directory"),
+                    disabled: false
+                ) {
                     onEditDownloadPath?()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(.borderless)
-                .help(tr("Edit download directory"))
-                .accessibilityIdentifier("file-manager-open-download-settings")
 
                 Spacer()
 
-                Button(tr("Open Folder")) {
+                toolbarTextButton(
+                    tr("Open Folder"),
+                    accessibilityIdentifier: "file-manager-open-download-folder",
+                    disabled: false
+                ) {
                     revealInFinder(path: viewModel.localDirectoryURL.path)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .accessibilityIdentifier("file-manager-open-download-folder")
             }
 
             ProgressView(value: transferQueueSummary.progress)
@@ -946,6 +978,17 @@ struct FileManagerPanelView: View {
                                 .lineLimit(1)
                                 .foregroundStyle(VisualStyle.textPrimary)
                             Spacer()
+                            if item.status == .queued || item.status == .running {
+                                Button {
+                                    viewModel.stopTransfer(itemID: item.id)
+                                } label: {
+                                    Image(systemName: "stop.circle")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.borderless)
+                                .help(tr("Stop Transfer"))
+                                .accessibilityIdentifier("file-manager-transfer-stop-\(item.id.uuidString)")
+                            }
                             if item.direction == .download, item.status == .success {
                                 Button {
                                     revealInFinder(path: item.destinationPath)
@@ -1204,7 +1247,7 @@ struct FileManagerPanelView: View {
             return 1
         case .running:
             return 0.1
-        case .queued:
+        case .queued, .stopped:
             return 0
         }
     }
@@ -1212,6 +1255,11 @@ struct FileManagerPanelView: View {
     private func transferStatusText(for item: TransferItem) -> String {
         let localizedStatus = tr(item.status.rawValue)
         switch item.status {
+        case .running:
+            if let speed = item.speedBytesPerSecond, speed > 0 {
+                return "\(localizedStatus) · \(ByteSizeFormatter.formatRate(speed))"
+            }
+            return localizedStatus
         case .failed, .skipped:
             if let message = item.message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return "\(localizedStatus): \(message)"
@@ -1234,6 +1282,8 @@ struct FileManagerPanelView: View {
             return .red
         case .skipped:
             return .gray
+        case .stopped:
+            return .secondary
         }
     }
 
@@ -1274,6 +1324,34 @@ struct FileManagerPanelView: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
+        .disabled(disabled)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    @ViewBuilder
+    private func toolbarTextButton(
+        _ title: String,
+        accessibilityIdentifier: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(disabled ? VisualStyle.textTertiary : VisualStyle.textSecondary)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(disabled ? 0.72 : 1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor).opacity(disabled ? 0.35 : 0.7), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .disabled(disabled)
         .accessibilityIdentifier(accessibilityIdentifier)
     }
@@ -1375,7 +1453,7 @@ struct FileManagerPanelView: View {
 
         if alert.runModal() == .alertFirstButtonReturn {
             viewModel.performContextAction(.download(paths: [entry.path]))
-            isTransferQueueExpanded = true
+            transferQueueOverlayState.expand()
         }
     }
 
