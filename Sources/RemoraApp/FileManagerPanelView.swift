@@ -923,15 +923,14 @@ struct FileManagerPanelView: View {
                 ) {
                     viewModel.stopAllTransfers()
                 }
-                Button {
+                toolbarIconButton(
+                    "chevron.down",
+                    accessibilityIdentifier: "file-manager-transfer-collapse",
+                    helpText: tr("Collapse Transfer Queue"),
+                    disabled: false
+                ) {
                     transferQueueOverlayState.collapse()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(.borderless)
-                .help(tr("Collapse Transfer Queue"))
-                .accessibilityIdentifier("file-manager-transfer-collapse")
             }
 
             HStack(spacing: 8) {
@@ -940,24 +939,24 @@ struct FileManagerPanelView: View {
                     .foregroundStyle(VisualStyle.textSecondary)
                     .lineLimit(1)
 
-                Button {
+                toolbarIconButton(
+                    "square.and.pencil",
+                    accessibilityIdentifier: "file-manager-open-download-settings",
+                    helpText: tr("Edit download directory"),
+                    disabled: false
+                ) {
                     onEditDownloadPath?()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(.borderless)
-                .help(tr("Edit download directory"))
-                .accessibilityIdentifier("file-manager-open-download-settings")
 
                 Spacer()
 
-                Button(tr("Open Folder")) {
+                toolbarTextButton(
+                    tr("Open Folder"),
+                    accessibilityIdentifier: "file-manager-open-download-folder",
+                    disabled: false
+                ) {
                     revealInFinder(path: viewModel.localDirectoryURL.path)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
-                .accessibilityIdentifier("file-manager-open-download-folder")
             }
 
             ProgressView(value: transferQueueSummary.progress)
@@ -1320,6 +1319,34 @@ struct FileManagerPanelView: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
+        .disabled(disabled)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    @ViewBuilder
+    private func toolbarTextButton(
+        _ title: String,
+        accessibilityIdentifier: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(disabled ? VisualStyle.textTertiary : VisualStyle.textSecondary)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(disabled ? 0.72 : 1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor).opacity(disabled ? 0.35 : 0.7), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .disabled(disabled)
         .accessibilityIdentifier(accessibilityIdentifier)
     }

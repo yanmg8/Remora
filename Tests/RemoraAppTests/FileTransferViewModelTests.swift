@@ -194,6 +194,47 @@ struct FileTransferViewModelTests {
     }
 
     @Test
+    func directoryDownloadReportsLiveProgressBeforeCompleting() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-directory-progress-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let client = SlowDownloadSFTPClient()
+        let vm = FileTransferViewModel(
+            sftpClient: client,
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+
+        await vm.refreshRemoteEntries()
+        guard let logs = vm.remoteEntries.first(where: { $0.path == "/logs" }) else {
+            Issue.record("Remote logs directory not found.")
+            return
+        }
+
+        vm.enqueueDownload(remoteEntry: logs)
+
+        try await waitUntil(timeoutLoops: 120, intervalMS: 25) {
+            vm.transferQueue.contains(where: { $0.sourcePath == "/logs" && $0.status == .running })
+        }
+
+        try await waitUntil(timeoutLoops: 160, intervalMS: 25) {
+            guard let item = vm.transferQueue.first(where: { $0.sourcePath == "/logs" }) else { return false }
+            return item.totalBytes != nil && item.bytesTransferred > 0 && item.status == .running
+        }
+
+        guard let runningItem = vm.transferQueue.first(where: { $0.sourcePath == "/logs" }) else {
+            Issue.record("Expected logs transfer item.")
+            return
+        }
+
+        #expect(runningItem.totalBytes != nil)
+        #expect(runningItem.bytesTransferred > 0)
+    }
+
+    @Test
     func stopTransferCancelsRunningDownload() async throws {
         let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("remora-stop-transfer-\(UUID().uuidString)")

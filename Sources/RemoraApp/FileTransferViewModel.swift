@@ -130,6 +130,12 @@ struct TransferItem: Identifiable, Sendable {
     }
 }
 
+private struct DirectoryDownloadPlanNode: Sendable {
+    var entry: RemoteFileEntry
+    var children: [DirectoryDownloadPlanNode]
+    var totalFileBytes: Int64
+}
+
 struct LocalFileEntry: Identifiable, Hashable {
     let id: UUID
     var url: URL
@@ -1003,7 +1009,7 @@ final class FileTransferViewModel: ObservableObject {
                         isDirectory: true,
                         modifiedAt: attributes.modifiedAt
                     )
-                    try await materializeRemoteItem(entry, to: destinationURL)
+                    try await downloadDirectoryTransfer(entry, to: destinationURL, itemID: itemID)
                 } else {
                     try await sftpClient.download(
                         path: item.sourcePath,
@@ -1141,6 +1147,97 @@ final class FileTransferViewModel: ObservableObject {
         try await sftpClient.download(path: entry.path, to: localURL, progress: nil)
     }
 
+    private func downloadDirectoryTransfer(
+        _ entry: RemoteFileEntry,
+        to localURL: URL,
+        itemID: UUID
+    ) async throws {
+        let plan = try await makeDirectoryDownloadPlan(for: entry)
+        if let index = transferQueue.firstIndex(where: { $0.id == itemID }) {
+            transferQueue[index].totalBytes = max(plan.totalFileBytes, 0)
+            transferQueue[index].bytesTransferred = 0
+        }
+
+        var completedBytes: Int64 = 0
+        try await materializeDirectoryPlanNode(
+            plan,
+            to: localURL,
+            itemID: itemID,
+            completedBytes: &completedBytes,
+            totalBytes: plan.totalFileBytes
+        )
+    }
+
+    private func makeDirectoryDownloadPlan(for entry: RemoteFileEntry) async throws -> DirectoryDownloadPlanNode {
+        try Task.checkCancellation()
+        guard entry.isDirectory else {
+            return DirectoryDownloadPlanNode(entry: entry, children: [], totalFileBytes: max(entry.size, 0))
+        }
+
+        let children = try await sftpClient.list(path: entry.path)
+        var plannedChildren: [DirectoryDownloadPlanNode] = []
+        plannedChildren.reserveCapacity(children.count)
+        var totalBytes: Int64 = 0
+
+        for child in children {
+            try Task.checkCancellation()
+            let childPlan = try await makeDirectoryDownloadPlan(for: child)
+            plannedChildren.append(childPlan)
+            totalBytes += childPlan.totalFileBytes
+        }
+
+        return DirectoryDownloadPlanNode(entry: entry, children: plannedChildren, totalFileBytes: totalBytes)
+    }
+
+    private func materializeDirectoryPlanNode(
+        _ node: DirectoryDownloadPlanNode,
+        to localURL: URL,
+        itemID: UUID,
+        completedBytes: inout Int64,
+        totalBytes: Int64
+    ) async throws {
+        try Task.checkCancellation()
+        if node.entry.isDirectory {
+            FileTransferDiagnostics.append(
+                "enter directory remote=\(node.entry.path) local=\(localURL.path)"
+            )
+            try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: true)
+            for child in node.children {
+                try Task.checkCancellation()
+                let childURL = localURL.appendingPathComponent(child.entry.name, isDirectory: child.entry.isDirectory)
+                try await materializeDirectoryPlanNode(
+                    child,
+                    to: childURL,
+                    itemID: itemID,
+                    completedBytes: &completedBytes,
+                    totalBytes: totalBytes
+                )
+            }
+            return
+        }
+
+        FileTransferDiagnostics.append(
+            "download file remote=\(node.entry.path) local=\(localURL.path)"
+        )
+        try FileManager.default.createDirectory(at: localURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let completedBytesBeforeFile = completedBytes
+        try await sftpClient.download(
+            path: node.entry.path,
+            to: localURL,
+            progress: { [weak self] snapshot in
+                Task { @MainActor in
+                    self?.updateDirectoryTransferProgress(
+                        itemID: itemID,
+                        completedBytes: completedBytesBeforeFile + snapshot.bytesTransferred,
+                        totalBytes: totalBytes
+                    )
+                }
+            }
+        )
+        completedBytes += node.entry.size
+        updateDirectoryTransferProgress(itemID: itemID, completedBytes: completedBytes, totalBytes: totalBytes)
+    }
+
     private func materializeRemoteItem(at remotePath: String, to localURL: URL) async throws {
         let attributes = try await sftpClient.stat(path: remotePath)
         let entry = RemoteFileEntry(
@@ -1257,6 +1354,12 @@ final class FileTransferViewModel: ObservableObject {
         if let total = snapshot.totalBytes {
             transferQueue[index].totalBytes = total
         }
+    }
+
+    private func updateDirectoryTransferProgress(itemID: UUID, completedBytes: Int64, totalBytes: Int64) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        transferQueue[index].totalBytes = max(totalBytes, 0)
+        transferQueue[index].bytesTransferred = min(max(completedBytes, 0), max(totalBytes, 0))
     }
 
     private func beginArchiveProgress(status: String, progress: Double) {
