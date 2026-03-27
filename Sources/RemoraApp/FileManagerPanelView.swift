@@ -1255,6 +1255,11 @@ struct FileManagerPanelView: View {
     private func transferStatusText(for item: TransferItem) -> String {
         let localizedStatus = tr(item.status.rawValue)
         switch item.status {
+        case .running:
+            if let speed = item.speedBytesPerSecond, speed > 0 {
+                return "\(localizedStatus) · \(ByteSizeFormatter.formatRate(speed))"
+            }
+            return localizedStatus
         case .failed, .skipped:
             if let message = item.message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return "\(localizedStatus): \(message)"
