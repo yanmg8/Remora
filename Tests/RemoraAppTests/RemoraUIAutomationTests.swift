@@ -735,6 +735,19 @@ struct RemoraUIAutomationTests {
     }
 
     @Test
+    func privateKeyConnectionEditorShowsChooserInLightAndDarkMode() throws {
+        guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
+            return
+        }
+
+        #expect(AXIsProcessTrusted(), "Grant Accessibility permission to the terminal running tests.")
+        guard AXIsProcessTrusted() else { return }
+
+        try assertPrivateKeyChooserVisible(for: .light)
+        try assertPrivateKeyChooserVisible(for: .dark)
+    }
+
+    @Test
     func settingsButtonOpensSettingsWindowAndSwitchesTabs() throws {
         guard ProcessInfo.processInfo.environment["REMORA_RUN_UI_TESTS"] == "1" else {
             return
@@ -2364,6 +2377,56 @@ struct RemoraUIAutomationTests {
             }) != nil
         }
         #expect(hintVisible, "Rename sheet should explain that SSH connection names stay unchanged in \(appearanceMode.rawValue) mode.")
+    }
+
+    private func assertPrivateKeyChooserVisible(for appearanceMode: AppAppearanceMode) throws {
+        let homeDirectoryURL = try makeUIAutomationHome(appearanceMode: appearanceMode)
+        defer { try? FileManager.default.removeItem(at: homeDirectoryURL) }
+
+        let launched = try launchAppForUIAutomation(homeDirectoryURL: homeDirectoryURL)
+        let process = launched.process
+        let appElement = launched.appElement
+        defer {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        guard let hostRow = waitForElement(
+            in: appElement,
+            timeout: 8,
+            matching: { element in
+                self.identifier(of: element) == self.sidebarHostRowIdentifier(for: "prod-api")
+                    || self.isSidebarHostRow(element, named: "prod-api")
+            }
+        ), let hostFrame = frame(of: hostRow) else {
+            Issue.record("Could not find prod-api row in \(appearanceMode.rawValue) mode.")
+            return
+        }
+
+        moveMouse(to: CGPoint(x: hostFrame.midX, y: hostFrame.midY))
+
+        guard let editButton = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "sidebar-host-edit-prod-api" }
+        ) else {
+            Issue.record("Could not find quick edit button for prod-api in \(appearanceMode.rawValue) mode.")
+            return
+        }
+
+        _ = AXUIElementPerformAction(editButton, kAXPressAction as CFString)
+
+        let editorVisible = waitForElement(
+            in: appElement,
+            timeout: 5,
+            matching: { self.identifier(of: $0) == "host-editor-private-key-choose" }
+        ) != nil
+        #expect(editorVisible, "Private-key chooser button should appear in \(appearanceMode.rawValue) mode.")
+        guard editorVisible else {
+            Issue.record("Could not find private-key chooser button in \(appearanceMode.rawValue) mode.")
+            return
+        }
     }
 
     private func assertSidebarHelpMenu(for appearanceMode: AppAppearanceMode) throws {

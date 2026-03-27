@@ -33,6 +33,7 @@ DerivedData/
 *.xcuserstate
 .history/
 .codex/
+.worktree/
 .worktrees/
 #
 # Wiki / Docs (Astro + Starlight)

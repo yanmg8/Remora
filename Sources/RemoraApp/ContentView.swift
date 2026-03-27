@@ -2804,6 +2804,7 @@ private struct SidebarHostRow: View {
                             .frame(width: 18, height: 18)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("sidebar-host-edit-\(host.name)")
 
                     Button(action: onDelete) {
                         Image(systemName: "trash")
@@ -3197,9 +3198,19 @@ private struct SidebarHostEditorSheet: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .accessibilityIdentifier("host-editor-auth")
 
                 if draft.authMethod == .privateKey {
-                    TextField(tr("Private key path"), text: $draft.privateKeyPath)
+                    HStack(spacing: 8) {
+                        TextField(tr("Private key path"), text: $draft.privateKeyPath)
+                            .accessibilityIdentifier("host-editor-private-key-path")
+
+                        Button(tr("Choose…")) {
+                            choosePrivateKeyPath()
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("host-editor-private-key-choose")
+                    }
                 }
 
                 if draft.authMethod == .password {
@@ -3265,6 +3276,56 @@ private struct SidebarHostEditorSheet: View {
                 isPasswordVisible = false
             }
         }
+    }
+
+    private func choosePrivateKeyPath() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = tr("Choose…")
+
+        let trimmedPath = draft.privateKeyPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileManager = FileManager.default
+
+        if !trimmedPath.isEmpty {
+            let expandedURL = URL(fileURLWithPath: (trimmedPath as NSString).expandingTildeInPath)
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: expandedURL.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue {
+                    panel.directoryURL = expandedURL.standardizedFileURL
+                } else {
+                    panel.directoryURL = expandedURL.deletingLastPathComponent().standardizedFileURL
+                    panel.nameFieldStringValue = expandedURL.lastPathComponent
+                }
+            } else {
+                let parentURL = expandedURL.deletingLastPathComponent().standardizedFileURL
+                if fileManager.fileExists(atPath: parentURL.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue
+                {
+                    panel.directoryURL = parentURL
+                }
+            }
+        }
+
+        if panel.directoryURL == nil {
+            let defaultSSHDirectory = fileManager.homeDirectoryForCurrentUser
+                .appendingPathComponent(".ssh", isDirectory: true)
+                .standardizedFileURL
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: defaultSSHDirectory.path, isDirectory: &isDirectory),
+               isDirectory.boolValue
+            {
+                panel.directoryURL = defaultSSHDirectory
+            }
+        }
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else {
+            return
+        }
+
+        draft.privateKeyPath = selectedURL.standardizedFileURL.path
     }
 }
 
