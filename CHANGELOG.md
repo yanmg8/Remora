@@ -6,6 +6,62 @@ This project generally follows [Keep a Changelog](https://keepachangelog.com/en/
 
 ## [Unreleased]
 
+## [v0.14.3] - 2026-03-27
+
+### English
+
+#### Added
+
+- Added a richer server monitoring dashboard with overview cards, top-process snapshots, network and disk throughput rates, filesystem usage, and a lightweight session-metrics hover tooltip anchored to the hovered status tag.
+- Added recursive remote directory downloads from file menus and bottom-bar actions so entire folders can be materialized locally without falling back to manual file-by-file downloads.
+- Added live transfer queue speed tracking, batch-aware progress aggregation, pin/unpin behavior for the floating queue, and stop controls for individual transfers or the whole active queue.
+- Added a private-key file picker in the SSH host editor so key-based connections can be configured without manually pasting file paths.
+
+#### Changed
+
+- Refined the server-status experience around the dedicated monitoring window, widened the layout for denser metrics, and aligned the dashboard cards and hover affordances with the expanded monitoring workflow.
+- Updated file-manager context menus to use grouped native icons and expanded batch-download actions so mixed selections can download directories and files more consistently.
+
+#### Fixed
+
+- Fixed AI settings persistence so API key reads and writes always happen on the main actor, avoiding state-update races from background contexts.
+- Fixed system-backed upload and download progress reporting so SSH-streaming transfers surface live progress and speed information instead of jumping directly from idle to complete.
+- Fixed SSH directory listing fallback handling so empty shell-based listings are accepted when remote folders are legitimately empty, instead of being treated as a failed fallback.
+- Fixed cancellation plumbing for queued and running transfers so stopping a transfer releases queue slots correctly and cleans up unfinished local download targets when appropriate.
+
+#### Internal
+
+- Refactored `ContentView` into focused layout, sidebar, sheet, support, and session component modules to make the main workspace easier to maintain without changing the product workflow.
+- Expanded regression coverage for transfer progress, diagnostics, monitoring panels, context-menu behavior, localized clipboard/importer flows, and other asynchronous host/transfer edge cases touched in this release.
+- Updated the packaging flow to regenerate the Xcode project before building release archives so packaged builds stay aligned with the current SwiftPM source layout.
+
+### 中文
+
+#### 新增
+
+- 新增更完整的服务器监控面板，提供总览卡片、Top 进程快照、网络与磁盘吞吐速率、文件系统占用信息，以及锚定到当前状态标签的轻量级会话指标悬浮提示。
+- 新增远程目录递归下载能力，可直接从文件菜单和底部操作栏把整个目录完整下载到本地，不再需要逐个文件手动下载。
+- 新增传输队列实时速度显示、按批次聚合的总体进度、浮动队列的固定/取消固定能力，以及单任务和整队列的停止控制。
+- 在 SSH 主机编辑器中新增私钥文件选择器，配置基于私钥的连接时不再需要手动粘贴文件路径。
+
+#### 变更
+
+- 围绕独立监控窗口重构了服务器状态体验，扩展了窗口宽度与指标布局，并让监控卡片和悬浮提示更适配增强后的监控工作流。
+- 调整了文件管理器右键菜单，改用分组的原生图标展示，并扩展批量下载行为，使混合选择目录和文件时的下载操作更一致。
+
+#### 修复
+
+- 修复了 AI 设置持久化的线程问题，API Key 的读取和写入现在始终在主线程执行，避免后台上下文触发状态更新竞态。
+- 修复了系统级上传/下载的进度上报逻辑，使 SSH streaming 路径下的传输也能实时显示进度与速度，而不是从空闲直接跳到完成。
+- 修复了 SSH 目录列表回退逻辑：当远程目录本身为空时，现在会正确接受 shell fallback 的空结果，而不再误判为回退失败。
+- 修复了排队中和运行中传输任务的取消链路，停止任务后会正确释放传输槽位，并在合适场景下清理未完成的本地下载目标。
+
+#### 内部
+
+- 将 `ContentView` 拆分为布局、侧边栏、弹窗、支持类型和会话组件等聚焦模块，在不改变产品工作流的前提下提升主工作区的可维护性。
+- 扩展了传输进度、诊断日志、监控面板、右键菜单行为、本地化剪贴板/导入流程以及其他主机/传输异步边界场景的回归测试覆盖。
+- 更新了打包流程：在构建发布归档前先重生成 Xcode 工程，确保打包产物始终与当前 SwiftPM 源码布局保持一致。
+
 ## [v0.14.2] - 2026-03-25
 
 ### English
