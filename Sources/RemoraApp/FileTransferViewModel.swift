@@ -98,7 +98,10 @@ struct TransferItem: Identifiable, Sendable {
     var status: TransferStatus
     var bytesTransferred: Int64
     var totalBytes: Int64?
+    var speedBytesPerSecond: Int64?
     var message: String?
+    var lastProgressSampleBytes: Int64?
+    var lastProgressSampleDate: Date?
 
     init(
         id: UUID = UUID(),
@@ -110,6 +113,7 @@ struct TransferItem: Identifiable, Sendable {
         status: TransferStatus = .queued,
         bytesTransferred: Int64 = 0,
         totalBytes: Int64? = nil,
+        speedBytesPerSecond: Int64? = nil,
         message: String? = nil
     ) {
         self.id = id
@@ -121,7 +125,10 @@ struct TransferItem: Identifiable, Sendable {
         self.status = status
         self.bytesTransferred = bytesTransferred
         self.totalBytes = totalBytes
+        self.speedBytesPerSecond = speedBytesPerSecond
         self.message = message
+        self.lastProgressSampleBytes = nil
+        self.lastProgressSampleDate = nil
     }
 
     var fractionCompleted: Double? {
@@ -755,6 +762,9 @@ final class FileTransferViewModel: ObservableObject {
         transferQueue[index].status = .queued
         transferQueue[index].message = nil
         transferQueue[index].bytesTransferred = 0
+        transferQueue[index].speedBytesPerSecond = nil
+        transferQueue[index].lastProgressSampleBytes = nil
+        transferQueue[index].lastProgressSampleDate = nil
         startTransferTask(for: itemID)
     }
 
@@ -965,6 +975,7 @@ final class FileTransferViewModel: ObservableObject {
         case .skip(let reason):
             transferQueue[idx].status = .skipped
             transferQueue[idx].message = reason
+            clearTransferSpeedState(itemID: itemID)
             return
         case .proceed(let destinationPath):
             transferQueue[idx].destinationPath = destinationPath
@@ -972,6 +983,9 @@ final class FileTransferViewModel: ObservableObject {
             destinationExistedBeforeTransfer = item.direction == .download
                 && FileManager.default.fileExists(atPath: destinationPath)
             transferQueue[idx].status = .running
+            transferQueue[idx].speedBytesPerSecond = nil
+            transferQueue[idx].lastProgressSampleBytes = 0
+            transferQueue[idx].lastProgressSampleDate = nil
         }
 
         FileTransferDiagnostics.append(
@@ -1037,6 +1051,7 @@ final class FileTransferViewModel: ObservableObject {
                     return
                 }
                 transferQueue[doneIdx].status = .success
+                clearTransferSpeedState(itemID: itemID)
                 if let total = transferQueue[doneIdx].totalBytes {
                     transferQueue[doneIdx].bytesTransferred = total
                 }
@@ -1059,6 +1074,7 @@ final class FileTransferViewModel: ObservableObject {
 
             if let failedIdx = transferQueue.firstIndex(where: { $0.id == itemID }) {
                 transferQueue[failedIdx].status = .failed
+                clearTransferSpeedState(itemID: itemID)
                 transferQueue[failedIdx].message = FileTransferDiagnostics.failureMessage(for: error)
                 let failedItem = transferQueue[failedIdx]
                 FileTransferDiagnostics.append(
@@ -1336,6 +1352,7 @@ final class FileTransferViewModel: ObservableObject {
     private func markTransferStopped(itemID: UUID) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
         transferQueue[index].status = .stopped
+        clearTransferSpeedState(itemID: itemID)
         transferQueue[index].message = tr("Stopped")
     }
 
@@ -1350,16 +1367,50 @@ final class FileTransferViewModel: ObservableObject {
 
     private func updateTransferProgress(itemID: UUID, snapshot: TransferProgressSnapshot) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
-        transferQueue[index].bytesTransferred = snapshot.bytesTransferred
-        if let total = snapshot.totalBytes {
-            transferQueue[index].totalBytes = total
-        }
+        applyTransferProgressSample(
+            index: index,
+            bytesTransferred: snapshot.bytesTransferred,
+            totalBytes: snapshot.totalBytes
+        )
     }
 
     private func updateDirectoryTransferProgress(itemID: UUID, completedBytes: Int64, totalBytes: Int64) {
         guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
-        transferQueue[index].totalBytes = max(totalBytes, 0)
-        transferQueue[index].bytesTransferred = min(max(completedBytes, 0), max(totalBytes, 0))
+        applyTransferProgressSample(
+            index: index,
+            bytesTransferred: min(max(completedBytes, 0), max(totalBytes, 0)),
+            totalBytes: max(totalBytes, 0)
+        )
+    }
+
+    private func applyTransferProgressSample(index: Int, bytesTransferred: Int64, totalBytes: Int64?) {
+        let now = Date()
+        let clampedBytes = max(bytesTransferred, 0)
+        let previousBytes = transferQueue[index].lastProgressSampleBytes
+        let previousDate = transferQueue[index].lastProgressSampleDate
+
+        transferQueue[index].bytesTransferred = clampedBytes
+        if let totalBytes {
+            transferQueue[index].totalBytes = max(totalBytes, 0)
+        }
+
+        if let previousBytes, let previousDate {
+            let deltaBytes = clampedBytes - previousBytes
+            let deltaTime = now.timeIntervalSince(previousDate)
+            if deltaBytes > 0, deltaTime > 0 {
+                transferQueue[index].speedBytesPerSecond = max(Int64(Double(deltaBytes) / deltaTime), 0)
+            }
+        }
+
+        transferQueue[index].lastProgressSampleBytes = clampedBytes
+        transferQueue[index].lastProgressSampleDate = now
+    }
+
+    private func clearTransferSpeedState(itemID: UUID) {
+        guard let index = transferQueue.firstIndex(where: { $0.id == itemID }) else { return }
+        transferQueue[index].speedBytesPerSecond = nil
+        transferQueue[index].lastProgressSampleBytes = nil
+        transferQueue[index].lastProgressSampleDate = nil
     }
 
     private func beginArchiveProgress(status: String, progress: Double) {

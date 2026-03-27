@@ -232,6 +232,45 @@ struct FileTransferViewModelTests {
 
         #expect(runningItem.totalBytes != nil)
         #expect(runningItem.bytesTransferred > 0)
+        #expect((runningItem.speedBytesPerSecond ?? 0) > 0)
+    }
+
+    @Test
+    func uploadReportsLiveSpeedBeforeCompleting() async throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("remora-upload-speed-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let localFile = tempRoot.appendingPathComponent("payload.bin")
+        try Data(repeating: 0x41, count: 32 * 1024).write(to: localFile)
+
+        let vm = FileTransferViewModel(
+            sftpClient: SlowUploadSFTPClient(chunkDelay: .milliseconds(80), chunkCount: 14),
+            localDirectoryURL: tempRoot,
+            remoteDirectoryPath: "/",
+            maxConcurrentTransfers: 1
+        )
+        vm.refreshLocalEntries()
+
+        guard let localEntry = vm.localEntries.first(where: { $0.name == "payload.bin" }) else {
+            Issue.record("Local upload file not found.")
+            return
+        }
+
+        vm.enqueueUpload(localEntry: localEntry)
+
+        try await waitUntil(timeoutLoops: 160, intervalMS: 25) {
+            guard let item = vm.transferQueue.first(where: { $0.direction == .upload }) else { return false }
+            return item.status != .queued && (item.speedBytesPerSecond ?? 0) > 0
+        }
+
+        guard let runningItem = vm.transferQueue.first(where: { $0.direction == .upload }) else {
+            Issue.record("Expected upload item.")
+            return
+        }
+
+        #expect((runningItem.speedBytesPerSecond ?? 0) > 0)
     }
 
     @Test
@@ -1176,6 +1215,58 @@ private actor SlowDownloadSFTPClient: SFTPClientProtocol {
                 cancelledPaths.append(path)
             }
             throw error
+        }
+    }
+}
+
+private actor SlowUploadSFTPClient: SFTPClientProtocol {
+    private let base = MockSFTPClient()
+    private let chunkDelay: Duration
+    private let chunkCount: Int
+
+    init(chunkDelay: Duration = .milliseconds(40), chunkCount: Int = 12) {
+        self.chunkDelay = chunkDelay
+        self.chunkCount = max(2, chunkCount)
+    }
+
+    func list(path: String) async throws -> [RemoteFileEntry] { try await base.list(path: path) }
+    func download(path: String) async throws -> Data { try await base.download(path: path) }
+    func download(path: String, progress: TransferProgressHandler?) async throws -> Data { try await base.download(path: path, progress: progress) }
+    func download(path: String, to localFileURL: URL, progress: TransferProgressHandler?) async throws { try await base.download(path: path, to: localFileURL, progress: progress) }
+    func executeRemoteShellCommand(_ command: String, timeout: TimeInterval?) async throws -> String { try await base.executeRemoteShellCommand(command, timeout: timeout) }
+    func streamRemoteShellCommand(_ command: String) async throws -> AsyncThrowingStream<String, Error> { try await base.streamRemoteShellCommand(command) }
+    func rename(from: String, to: String) async throws { try await base.rename(from: from, to: to) }
+    func move(from: String, to: String) async throws { try await base.move(from: from, to: to) }
+    func copy(from: String, to: String) async throws { try await base.copy(from: from, to: to) }
+    func mkdir(path: String) async throws { try await base.mkdir(path: path) }
+    func remove(path: String) async throws { try await base.remove(path: path) }
+    func stat(path: String) async throws -> RemoteFileAttributes { try await base.stat(path: path) }
+    func setAttributes(path: String, attributes: RemoteFileAttributes) async throws { try await base.setAttributes(path: path, attributes: attributes) }
+
+    func upload(data: Data, to path: String) async throws {
+        try await simulateSlowUpload(totalBytes: Int64(data.count), progress: nil)
+        try await base.upload(data: data, to: path)
+    }
+
+    func upload(data: Data, to path: String, progress: TransferProgressHandler?) async throws {
+        try await simulateSlowUpload(totalBytes: Int64(data.count), progress: progress)
+        try await base.upload(data: data, to: path)
+    }
+
+    func upload(fileURL: URL, to path: String, progress: TransferProgressHandler?) async throws {
+        let data = try Data(contentsOf: fileURL)
+        try await simulateSlowUpload(totalBytes: Int64(data.count), progress: progress)
+        try await base.upload(fileURL: fileURL, to: path, progress: nil)
+    }
+
+    private func simulateSlowUpload(totalBytes: Int64, progress: TransferProgressHandler?) async throws {
+        progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
+        for step in 1 ... chunkCount {
+            try Task.checkCancellation()
+            try await Task.sleep(for: chunkDelay)
+            let fraction = Double(step) / Double(chunkCount)
+            let bytesTransferred = Int64((Double(totalBytes) * fraction).rounded(.down))
+            progress?(.init(bytesTransferred: min(bytesTransferred, totalBytes), totalBytes: totalBytes))
         }
     }
 }
