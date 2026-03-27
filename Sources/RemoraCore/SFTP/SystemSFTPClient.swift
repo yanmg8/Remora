@@ -145,28 +145,47 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let prepared = try prepareDownloadDestination(localFileURL)
         defer { try? FileManager.default.removeItem(at: prepared.tempURL) }
 
-        if prefersSSHStreamingDownload {
-            try await downloadViaSSH(path: normalized, to: prepared.tempURL)
-        } else {
-            do {
-                try await downloadViaSFTP(path: normalized, to: prepared.tempURL)
-            } catch {
-                guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
-                    throw error
-                }
-                prefersSSHStreamingDownload = true
-                Self.appendDiagnostics(
-                    Self.formatDiagnosticsMessage(
-                        host: host,
-                        phase: "download-mode-switch",
-                        body: [
-                            "reason=\(error.localizedDescription)",
-                            "mode=ssh-streaming"
-                        ]
-                    )
-                )
+        let progressState = TransferProgressPollingState()
+        let monitorTask = Task {
+            await Self.emitLocalFileProgress(
+                fileURL: prepared.tempURL,
+                expectedSize: expectedSize,
+                state: progressState,
+                progress: progress
+            )
+        }
+
+        do {
+            if prefersSSHStreamingDownload {
                 try await downloadViaSSH(path: normalized, to: prepared.tempURL)
+            } else {
+                do {
+                    try await downloadViaSFTP(path: normalized, to: prepared.tempURL)
+                } catch {
+                    guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
+                        throw error
+                    }
+                    prefersSSHStreamingDownload = true
+                    Self.appendDiagnostics(
+                        Self.formatDiagnosticsMessage(
+                            host: host,
+                            phase: "download-mode-switch",
+                            body: [
+                                "reason=\(error.localizedDescription)",
+                                "mode=ssh-streaming"
+                            ]
+                        )
+                    )
+                    try await downloadViaSSH(path: normalized, to: prepared.tempURL)
+                }
             }
+            await progressState.finish()
+            _ = await monitorTask.value
+        } catch {
+            await progressState.finish()
+            monitorTask.cancel()
+            _ = await monitorTask.value
+            throw error
         }
 
         try finalizeDownloadedFile(tempURL: prepared.tempURL, destinationURL: prepared.destinationURL)
@@ -195,30 +214,47 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         let totalBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
         progress?(.init(bytesTransferred: 0, totalBytes: totalBytes))
 
-        if prefersSSHStreamingUpload {
-            try await uploadViaSSH(fileURL: fileURL, to: normalized)
-            progress?(.init(bytesTransferred: totalBytes ?? 0, totalBytes: totalBytes))
-            return
+        let progressState = TransferProgressPollingState()
+        let monitorTask = Task {
+            await self.emitRemotePathProgress(
+                path: normalized,
+                expectedSize: totalBytes,
+                state: progressState,
+                progress: progress
+            )
         }
 
         do {
-            try await uploadViaSFTP(fileURL: fileURL, to: normalized)
-        } catch {
-            guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
-                throw error
+            if prefersSSHStreamingUpload {
+                try await uploadViaSSH(fileURL: fileURL, to: normalized)
+            } else {
+                do {
+                    try await uploadViaSFTP(fileURL: fileURL, to: normalized)
+                } catch {
+                    guard Self.shouldSwitchToSSHStreamingTransfer(for: error) else {
+                        throw error
+                    }
+                    prefersSSHStreamingUpload = true
+                    Self.appendDiagnostics(
+                        Self.formatDiagnosticsMessage(
+                            host: host,
+                            phase: "upload-mode-switch",
+                            body: [
+                                "reason=\(error.localizedDescription)",
+                                "mode=ssh-streaming"
+                            ]
+                        )
+                    )
+                    try await uploadViaSSH(fileURL: fileURL, to: normalized)
+                }
             }
-            prefersSSHStreamingUpload = true
-            Self.appendDiagnostics(
-                Self.formatDiagnosticsMessage(
-                    host: host,
-                    phase: "upload-mode-switch",
-                    body: [
-                        "reason=\(error.localizedDescription)",
-                        "mode=ssh-streaming"
-                    ]
-                )
-            )
-            try await uploadViaSSH(fileURL: fileURL, to: normalized)
+            await progressState.finish()
+            _ = await monitorTask.value
+        } catch {
+            await progressState.finish()
+            monitorTask.cancel()
+            _ = await monitorTask.value
+            throw error
         }
 
         progress?(.init(bytesTransferred: totalBytes ?? 0, totalBytes: totalBytes))
@@ -840,6 +876,77 @@ public actor SystemSFTPClient: SFTPClientProtocol {
     private func downloadViaSSH(path: String, to localFileURL: URL) async throws {
         let command = "cat -- \(Self.quoteShellArgument(path))"
         try await runSSHCommandToFile(command, destinationURL: localFileURL)
+    }
+
+    internal actor TransferProgressPollingState {
+        private var finished = false
+
+        func finish() {
+            finished = true
+        }
+
+        func isFinished() -> Bool {
+            finished
+        }
+    }
+
+    internal static func emitLocalFileProgress(
+        fileURL: URL,
+        expectedSize: Int64?,
+        state: TransferProgressPollingState,
+        pollIntervalNanoseconds: UInt64 = 100_000_000,
+        progress: TransferProgressHandler?
+    ) async {
+        guard let progress else { return }
+        var lastReportedBytes: Int64 = 0
+
+        while await state.isFinished() == false {
+            let currentBytes = currentFileSize(at: fileURL)
+            if currentBytes > lastReportedBytes {
+                lastReportedBytes = currentBytes
+                progress(.init(bytesTransferred: currentBytes, totalBytes: expectedSize))
+            }
+            try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+
+        let finalBytes = currentFileSize(at: fileURL)
+        if finalBytes > lastReportedBytes {
+            progress(.init(bytesTransferred: finalBytes, totalBytes: expectedSize ?? finalBytes))
+        }
+    }
+
+    private func emitRemotePathProgress(
+        path: String,
+        expectedSize: Int64?,
+        state: TransferProgressPollingState,
+        pollIntervalNanoseconds: UInt64 = 100_000_000,
+        progress: TransferProgressHandler?
+    ) async {
+        guard let progress else { return }
+        var lastReportedBytes: Int64 = 0
+
+        while await state.isFinished() == false {
+            let currentBytes = await currentRemoteFileSizeForProgress(path: path)
+            if currentBytes > lastReportedBytes {
+                lastReportedBytes = currentBytes
+                progress(.init(bytesTransferred: currentBytes, totalBytes: expectedSize))
+            }
+            try? await Task.sleep(nanoseconds: pollIntervalNanoseconds)
+        }
+
+        let finalBytes = await currentRemoteFileSizeForProgress(path: path)
+        if finalBytes > lastReportedBytes {
+            progress(.init(bytesTransferred: finalBytes, totalBytes: expectedSize ?? finalBytes))
+        }
+    }
+
+    private func currentRemoteFileSizeForProgress(path: String) async -> Int64 {
+        (try? await stat(path: path).size) ?? 0
+    }
+
+    private static func currentFileSize(at fileURL: URL) -> Int64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
 
     private func uploadViaSSH(fileURL: URL, to path: String) async throws {
