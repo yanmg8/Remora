@@ -92,6 +92,65 @@ struct SidebarActionRowButton: View {
     }
 }
 
+enum SidebarThreadsHeaderButtonKind: CaseIterable {
+    case createConnection
+    case createGroup
+
+    var systemImage: String {
+        switch self {
+        case .createConnection:
+            return "plus.circle"
+        case .createGroup:
+            return "folder.badge.plus"
+        }
+    }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .createConnection:
+            return "sidebar-header-create-connection"
+        case .createGroup:
+            return "sidebar-header-create-group"
+        }
+    }
+}
+
+struct SidebarThreadsHeaderActions {
+    let onCreateConnection: () -> Void
+    let onCreateGroup: () -> Void
+
+    func perform(_ kind: SidebarThreadsHeaderButtonKind) {
+        switch kind {
+        case .createConnection:
+            onCreateConnection()
+        case .createGroup:
+            onCreateGroup()
+        }
+    }
+}
+
+struct SidebarThreadsHeaderView: View {
+    let actions: SidebarThreadsHeaderActions
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(tr("SSH Threads"))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(VisualStyle.textSecondary)
+            Spacer()
+            SidebarIconButton(systemImage: SidebarThreadsHeaderButtonKind.createConnection.systemImage) {
+                actions.perform(.createConnection)
+            }
+            .accessibilityIdentifier(SidebarThreadsHeaderButtonKind.createConnection.accessibilityIdentifier)
+
+            SidebarIconButton(systemImage: SidebarThreadsHeaderButtonKind.createGroup.systemImage) {
+                actions.perform(.createGroup)
+            }
+            .accessibilityIdentifier(SidebarThreadsHeaderButtonKind.createGroup.accessibilityIdentifier)
+        }
+    }
+}
+
 struct SidebarGroupSectionView: View {
     let section: HostGroupSection
     let displayName: String

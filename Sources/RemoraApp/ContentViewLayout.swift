@@ -224,15 +224,16 @@ extension ContentView {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 10)
 
-            HStack(spacing: 8) {
-                Text(tr("SSH Threads"))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(VisualStyle.textSecondary)
-                Spacer()
-                SidebarIconButton(systemImage: "folder.badge.plus") {
-                    beginCreateGroup()
-                }
-            }
+            SidebarThreadsHeaderView(
+                actions: SidebarThreadsHeaderActions(
+                    onCreateConnection: {
+                        beginCreateHostInPreferredGroup()
+                    },
+                    onCreateGroup: {
+                        beginCreateGroup()
+                    }
+                )
+            )
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
         }
