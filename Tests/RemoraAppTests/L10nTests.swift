@@ -40,4 +40,20 @@ struct L10nTests {
         #expect(L10n.tr("Uploading archive…", fallback: "Uploading archive…", modeOverride: .simplifiedChinese) == "正在上传压缩包…")
         #expect(L10n.tr("Extracting archive…", fallback: "Extracting archive…", modeOverride: .simplifiedChinese) == "正在解压压缩包…")
     }
+
+    @Test
+    func monitoringTabStringsAreLocalizedInSimplifiedChinese() {
+        #expect(L10n.tr("System Information Monitoring", fallback: "System Information Monitoring", modeOverride: .simplifiedChinese) == "系统信息监控")
+        #expect(L10n.tr("Network Monitoring", fallback: "Network Monitoring", modeOverride: .simplifiedChinese) == "网络监控")
+        #expect(L10n.tr("Process Monitoring", fallback: "Process Monitoring", modeOverride: .simplifiedChinese) == "进程监控")
+        #expect(L10n.tr("Listen IP", fallback: "Listen IP", modeOverride: .simplifiedChinese) == "监听 IP")
+        #expect(L10n.tr("IP Count", fallback: "IP Count", modeOverride: .simplifiedChinese) == "IP 数")
+        #expect(L10n.tr("Connections", fallback: "Connections", modeOverride: .simplifiedChinese) == "连接数")
+        #expect(L10n.tr("Upload", fallback: "Upload", modeOverride: .simplifiedChinese) == "上传")
+        #expect(L10n.tr("Location", fallback: "Location", modeOverride: .simplifiedChinese) == "位置")
+        #expect(L10n.tr("No network monitoring data yet.", fallback: "No network monitoring data yet.", modeOverride: .simplifiedChinese) == "暂无网络监控数据。")
+        #expect(L10n.tr("Network activity rows will appear after the next successful sampling cycle.", fallback: "Network activity rows will appear after the next successful sampling cycle.", modeOverride: .simplifiedChinese) == "下一次成功采样后，这里会显示网络活动行。")
+        #expect(L10n.tr("No process monitoring data yet.", fallback: "No process monitoring data yet.", modeOverride: .simplifiedChinese) == "暂无进程监控数据。")
+        #expect(L10n.tr("Process rows will appear after the next successful sampling cycle.", fallback: "Process rows will appear after the next successful sampling cycle.", modeOverride: .simplifiedChinese) == "下一次成功采样后，这里会显示进程行。")
+    }
 }
