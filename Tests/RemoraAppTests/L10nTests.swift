@@ -40,4 +40,11 @@ struct L10nTests {
         #expect(L10n.tr("Uploading archive…", fallback: "Uploading archive…", modeOverride: .simplifiedChinese) == "正在上传压缩包…")
         #expect(L10n.tr("Extracting archive…", fallback: "Extracting archive…", modeOverride: .simplifiedChinese) == "正在解压压缩包…")
     }
+
+    @Test
+    func terminalActionStringsAreLocalizedInSimplifiedChinese() {
+        #expect(L10n.tr("Select All", fallback: "Select All", modeOverride: .simplifiedChinese) == "全选")
+        #expect(L10n.tr("Clear Screen", fallback: "Clear Screen", modeOverride: .simplifiedChinese) == "清屏")
+        #expect(L10n.tr("Terminal", fallback: "Terminal", modeOverride: .simplifiedChinese) == "终端")
+    }
 }
