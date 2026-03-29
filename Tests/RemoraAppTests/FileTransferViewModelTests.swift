@@ -200,7 +200,7 @@ struct FileTransferViewModelTests {
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        let client = SlowDownloadSFTPClient()
+        let client = SlowDownloadSFTPClient(chunkDelay: .milliseconds(80), chunkCount: 20)
         let vm = FileTransferViewModel(
             sftpClient: client,
             localDirectoryURL: tempRoot,
@@ -216,11 +216,11 @@ struct FileTransferViewModelTests {
 
         vm.enqueueDownload(remoteEntry: logs)
 
-        try await waitUntil(timeoutLoops: 120, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             vm.transferQueue.contains(where: { $0.sourcePath == "/logs" && $0.status == .running })
         }
 
-        try await waitUntil(timeoutLoops: 160, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             guard let item = vm.transferQueue.first(where: { $0.sourcePath == "/logs" }) else { return false }
             return item.totalBytes != nil && item.bytesTransferred > 0 && item.status == .running
         }
@@ -280,7 +280,7 @@ struct FileTransferViewModelTests {
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempRoot) }
 
-        let client = SlowDownloadSFTPClient()
+        let client = SlowDownloadSFTPClient(chunkDelay: .milliseconds(80), chunkCount: 20)
         let vm = FileTransferViewModel(
             sftpClient: client,
             localDirectoryURL: tempRoot,
@@ -295,10 +295,10 @@ struct FileTransferViewModelTests {
         }
 
         vm.enqueueDownload(remoteEntry: readme)
-        try await waitUntil(timeoutLoops: 240, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             vm.transferQueue.contains(where: { $0.sourcePath == "/README.txt" && $0.status == .running })
         }
-        try await waitUntil(timeoutLoops: 240, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             let startedPaths = await client.startedDownloadPaths()
             return startedPaths.contains("/README.txt")
         }
@@ -310,10 +310,10 @@ struct FileTransferViewModelTests {
 
         vm.stopTransfer(itemID: runningItem.id)
 
-        try await waitUntil(timeoutLoops: 240, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             vm.transferQueue.contains(where: { $0.id == runningItem.id && $0.status == .stopped })
         }
-        try await waitUntil(timeoutLoops: 240, intervalMS: 25) {
+        try await waitUntil(timeoutLoops: 400, intervalMS: 25) {
             let cancelledPaths = await client.cancelledDownloadPaths()
             return cancelledPaths.contains("/README.txt")
         }

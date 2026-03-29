@@ -1386,6 +1386,14 @@ final class FileTransferViewModel: ObservableObject {
     private func applyTransferProgressSample(index: Int, bytesTransferred: Int64, totalBytes: Int64?) {
         let now = Date()
         let clampedBytes = max(bytesTransferred, 0)
+        let currentBytes = transferQueue[index].bytesTransferred
+
+        // Progress callbacks should be monotonic. Ignore stale samples that arrive out of order
+        // so a delayed zero-byte update cannot erase later observed progress.
+        guard clampedBytes >= currentBytes else {
+            return
+        }
+
         let previousBytes = transferQueue[index].lastProgressSampleBytes
         let previousDate = transferQueue[index].lastProgressSampleDate
 
