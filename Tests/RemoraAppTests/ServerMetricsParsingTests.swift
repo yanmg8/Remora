@@ -166,8 +166,35 @@ struct ServerMetricsParsingTests {
         #expect(snapshot.processDetails.first?.user == "root")
         #expect(snapshot.processDetails.first?.memoryBytes == 99_719_168)
         #expect(abs((snapshot.processDetails.first?.cpuPercent ?? -1) - 5.0) < 0.0001)
-        #expect(snapshot.processDetails.first?.command == "AliYunDunMonito")
+        #expect(snapshot.processDetails.first?.command == "AliYunDunMonitor")
         #expect(snapshot.processDetails.first?.location == "/usr/local/aegis/aegis_client/aegis_12_91/AliYunDunMonitor")
+    }
+
+    @Test
+    func parseSnapshotUsesExecutableNameWithoutLeakingArguments() {
+        let output = """
+        cpu_permille=425
+        ps_0=912|root|97382|5.0|API_TOKEN=super-secret /usr/bin/python3 /srv/app.py --password hunter2|/usr/bin/python3
+        """
+
+        let snapshot = RemoteServerMetricsProbe.parseSnapshot(from: output)
+        #expect(snapshot != nil)
+        guard let process = snapshot?.processDetails.first else { return }
+
+        #expect(process.command == "python3")
+        #expect(!process.command.contains("super-secret"))
+        #expect(!process.command.contains("hunter2"))
+    }
+
+    @Test
+    func parseSnapshotSupportsLiteralBackslashNSeparatedMetricsOutput() {
+        let output = #"cpu_permille=425\nmem_total_kb=8192000\nmem_used_kb=2048000\nps_0=912|root|97382|5.0|python3|/usr/bin/python3\n"#
+
+        let snapshot = RemoteServerMetricsProbe.parseSnapshot(from: output)
+        #expect(snapshot != nil)
+        #expect(snapshot?.cpuFraction == 0.425)
+        #expect(snapshot?.memoryTotalBytes == 8_388_608_000)
+        #expect(snapshot?.processDetails.first?.command == "python3")
     }
 
     @Test

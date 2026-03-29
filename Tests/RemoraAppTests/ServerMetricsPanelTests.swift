@@ -15,7 +15,7 @@ struct ServerMetricsPanelTests {
     func headerCardExtendsToDashboardWidth() {
         let image = renderCachedPanelImage(colorScheme: .light)
         let samples = [640, 620, 600, 580, 560, 540].map { y in
-            sampleColor(in: image, x: 430, y: y)
+            sampleColor(in: image, x: 250, y: y)
         }
         #expect(samples.contains { color in
             guard let color else { return false }
@@ -27,29 +27,42 @@ struct ServerMetricsPanelTests {
     func networkTabRendersAtTableFriendlyWidth() {
         let image = renderPanelImage(colorScheme: ColorScheme.light, initialTab: .network)
         #expect(image != nil)
-        #expect(image?.size.width ?? 0 >= 820)
+        #expect(image?.size.width ?? 0 >= 500)
+        #expect(image?.size.width ?? 0 <= 620)
     }
 
     @Test
     func processTabRendersAtTableFriendlyWidth() {
         let image = renderPanelImage(colorScheme: ColorScheme.dark, initialTab: .process)
         #expect(image != nil)
-        #expect(image?.size.width ?? 0 >= 820)
+        #expect(image?.size.width ?? 0 >= 500)
+        #expect(image?.size.width ?? 0 <= 620)
+    }
+
+    @Test
+    func processTabKeepsLongCommandsSingleLine() {
+        let image = renderPanelImage(colorScheme: ColorScheme.dark, initialTab: .process, useLongProcessCommand: true)
+        #expect(image != nil)
+        #expect(image?.size.height ?? 0 <= 720)
     }
 
     private func assertPanelRendering(for colorScheme: ColorScheme) {
         let image = renderPanelImage(colorScheme: colorScheme)
         #expect(image != nil, "Panel should render in \(String(describing: colorScheme)) mode.")
-        #expect(image?.size.width ?? 0 >= 820, "Rendered panel should keep a readable dashboard width in \(String(describing: colorScheme)) mode.")
+        #expect(image?.size.width ?? 0 >= 500, "Rendered panel should keep a readable dashboard width in \(String(describing: colorScheme)) mode.")
         #expect(image?.size.height ?? 0 >= 300, "Rendered panel should keep a readable height in \(String(describing: colorScheme)) mode.")
     }
 
-    private func renderPanelImage(colorScheme: ColorScheme, initialTab: ServerMonitoringTab = .system) -> NSImage? {
+    private func renderPanelImage(
+        colorScheme: ColorScheme,
+        initialTab: ServerMonitoringTab = .system,
+        useLongProcessCommand: Bool = false
+    ) -> NSImage? {
         let renderer = ImageRenderer(
-            content: makePanel(initialTab: initialTab)
+            content: makePanel(initialTab: initialTab, useLongProcessCommand: useLongProcessCommand)
                 .environment(\.colorScheme, colorScheme)
         )
-        renderer.proposedSize = ProposedViewSize(width: 960, height: 720)
+        renderer.proposedSize = ProposedViewSize(width: 560, height: 720)
         renderer.scale = 1
         return renderer.nsImage
     }
@@ -67,9 +80,9 @@ struct ServerMetricsPanelTests {
 
     private func makeHostingView(colorScheme: ColorScheme, initialTab: ServerMonitoringTab = .system) -> NSHostingView<AnyView> {
         let host = NSHostingView(rootView: AnyView(makePanel(initialTab: initialTab).environment(\.colorScheme, colorScheme)))
-        host.frame = NSRect(x: 0, y: 0, width: 960, height: 720)
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 720)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 720),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -81,7 +94,13 @@ struct ServerMetricsPanelTests {
         return host
     }
 
-    private func makePanel(initialTab: ServerMonitoringTab = .system) -> some View {
+    private func makePanel(
+        initialTab: ServerMonitoringTab = .system,
+        useLongProcessCommand: Bool = false
+    ) -> some View {
+        let processCommand = useLongProcessCommand
+            ? "python3 ... python3 ... python3 ... python3 ... python3 ... python3 ..."
+            : "redis-server"
         let previous = ServerResourceMetricsSnapshot(
             cpuFraction: 0.24,
             memoryFraction: 0.56,
@@ -112,7 +131,7 @@ struct ServerMetricsPanelTests {
                 ServerNetworkConnectionMetric(pid: 1263, processName: "sshd", listenAddress: "0.0.0.0", port: 22, remoteAddressCount: 1, connectionCount: 1, sentBytes: 900, receivedBytes: 300)
             ],
             processDetails: [
-                ServerProcessDetailsMetric(pid: 1383, user: "redis", memoryBytes: 12_517_376, cpuPercent: 0.3, command: "redis-server", location: "/www/server/redis/src/redis-server")
+                ServerProcessDetailsMetric(pid: 1383, user: "redis", memoryBytes: 12_517_376, cpuPercent: 0.3, command: processCommand, location: "/www/server/redis/src/redis-server")
             ],
             sampledAt: Date(timeIntervalSince1970: 100)
         )
@@ -150,7 +169,7 @@ struct ServerMetricsPanelTests {
             ],
             processDetails: [
                 ServerProcessDetailsMetric(pid: 783_214, user: "root", memoryBytes: 99_719_168, cpuPercent: 5.0, command: "AliYunDunMonito", location: "/usr/local/aegis/aegis_client/aegis_12_91/AliYunDunMonitor"),
-                ServerProcessDetailsMetric(pid: 1383, user: "redis", memoryBytes: 12_533_760, cpuPercent: 0.3, command: "redis-server", location: "/www/server/redis/src/redis-server")
+                ServerProcessDetailsMetric(pid: 1383, user: "redis", memoryBytes: 12_533_760, cpuPercent: 0.3, command: processCommand, location: "/www/server/redis/src/redis-server")
             ],
             sampledAt: Date(timeIntervalSince1970: 103)
         )
@@ -163,7 +182,8 @@ struct ServerMetricsPanelTests {
         )
 
         return ServerMetricsPanel(
-            hostTitle: "root@192.0.2.10:22",
+            hostTitle: "prod-api",
+            hostSubtitle: "root@192.0.2.10:22",
             connectionState: "Connected",
             state: state,
             initialTab: initialTab
