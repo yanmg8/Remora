@@ -53,4 +53,12 @@ struct TerminalViewTests {
 
         #expect(clearCalls == 1)
     }
+
+    @Test
+    func contextMenuShortcutMappingMatchesTerminalCommands() {
+        #expect(TerminalView.shortcut(for: .copy) == TerminalActionShortcut(keyEquivalent: "c", modifierFlags: [.command]))
+        #expect(TerminalView.shortcut(for: .paste) == TerminalActionShortcut(keyEquivalent: "v", modifierFlags: [.command]))
+        #expect(TerminalView.shortcut(for: .selectAll) == TerminalActionShortcut(keyEquivalent: "a", modifierFlags: [.command]))
+        #expect(TerminalView.shortcut(for: .clearScreen) == TerminalActionShortcut(keyEquivalent: "k", modifierFlags: [.command]))
+    }
 }

@@ -38,6 +38,16 @@ public struct TerminalContextMenuItem: Equatable {
     }
 }
 
+public struct TerminalActionShortcut: Equatable {
+    public let keyEquivalent: String
+    public let modifierFlags: NSEvent.ModifierFlags
+
+    public init(keyEquivalent: String, modifierFlags: NSEvent.ModifierFlags) {
+        self.keyEquivalent = keyEquivalent
+        self.modifierFlags = modifierFlags
+    }
+}
+
 public final class TerminalView: SwiftTerm.TerminalView, @preconcurrency SwiftTerm.TerminalViewDelegate {
     public var onInput: (@Sendable (Data) -> Void)?
     public var onFocus: (() -> Void)?
@@ -126,6 +136,19 @@ public final class TerminalView: SwiftTerm.TerminalView, @preconcurrency SwiftTe
         }
     }
 
+    public static func shortcut(for action: TerminalAction) -> TerminalActionShortcut {
+        switch action {
+        case .copy:
+            return TerminalActionShortcut(keyEquivalent: "c", modifierFlags: [.command])
+        case .paste:
+            return TerminalActionShortcut(keyEquivalent: "v", modifierFlags: [.command])
+        case .selectAll:
+            return TerminalActionShortcut(keyEquivalent: "a", modifierFlags: [.command])
+        case .clearScreen:
+            return TerminalActionShortcut(keyEquivalent: "k", modifierFlags: [.command])
+        }
+    }
+
     public override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
         case #selector(copy(_:)):
@@ -197,13 +220,15 @@ public final class TerminalView: SwiftTerm.TerminalView, @preconcurrency SwiftTe
         menu.autoenablesItems = false
 
         for item in contextMenuItems() {
+            let shortcut = Self.shortcut(for: item.action)
             let menuItem = NSMenuItem(
                 title: title(for: item.action),
                 action: selector(for: item.action),
-                keyEquivalent: ""
+                keyEquivalent: shortcut.keyEquivalent
             )
             menuItem.target = self
             menuItem.isEnabled = item.isEnabled
+            menuItem.keyEquivalentModifierMask = shortcut.modifierFlags
             menu.addItem(menuItem)
         }
 
