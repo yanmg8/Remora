@@ -50,15 +50,19 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     private let credentialStore = CredentialStore()
     private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
     private let compatibilityRetryWindow: TimeInterval = 3
+    private let interactivePasswordAutofillWindow: TimeInterval
     private let compatibilityPersistenceDelay: Duration = .seconds(1)
     private let failureProbeBufferLimit = 16 * 1024
     private var activeCompatibilityProfile = SSHCompatibilityProfile()
     private var recentFailureProbeBuffer = Data()
     private var activeAttemptStartedAt: Date?
     private var compatibilityPersistenceTask: Task<Void, Never>?
+    private var skipAutoPasswordDelivery = false
+    private var cachedStoredPassword: String?
     private var interactivePasswordAutofill: String?
     private var hasSubmittedInteractivePassword = false
     private var authPromptProbeTail = ""
+    private var interactivePasswordAutofillDeadline: Date?
 
     public init(host: Host, pty: PTYSize) {
         self.host = host
@@ -66,6 +70,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         self.interactivePasswordAutofillOverride = nil
         self.compatibilityProfileStore = .shared
         self.pty = pty
+        self.interactivePasswordAutofillWindow = 15
     }
 
     init(
@@ -73,6 +78,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         pty: PTYSize,
         launchConfigurationOverride: LaunchConfiguration?,
         interactivePasswordAutofillOverride: String? = nil,
+        interactivePasswordAutofillWindow: TimeInterval = 15,
+        initialSkipAutoPasswordDelivery: Bool = false,
+        cachedStoredPasswordOverride: String? = nil,
         compatibilityProfileStore: SSHCompatibilityProfileStore = .shared
     ) {
         self.host = host
@@ -80,6 +88,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         self.interactivePasswordAutofillOverride = interactivePasswordAutofillOverride
         self.compatibilityProfileStore = compatibilityProfileStore
         self.pty = pty
+        self.interactivePasswordAutofillWindow = interactivePasswordAutofillWindow
+        self.skipAutoPasswordDelivery = initialSkipAutoPasswordDelivery
+        self.cachedStoredPassword = cachedStoredPasswordOverride
     }
 
     public func start() async throws {
@@ -171,6 +182,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             interactivePasswordAutofill = launchPlan.interactivePasswordAutofill
             hasSubmittedInteractivePassword = false
             authPromptProbeTail.removeAll(keepingCapacity: true)
+            interactivePasswordAutofillDeadline = skipAutoPasswordDelivery
+                ? attemptStartedAt.addingTimeInterval(interactivePasswordAutofillWindow)
+                : nil
         }
 
         scheduleCompatibilityProfilePersistence(
@@ -244,6 +258,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             interactivePasswordAutofill = nil
             hasSubmittedInteractivePassword = false
             authPromptProbeTail.removeAll(keepingCapacity: false)
+            interactivePasswordAutofillDeadline = nil
 
             return handle
         }
@@ -288,16 +303,40 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
                 authPromptProbeTail = String(authPromptProbeTail.suffix(512))
             }
 
-            guard Self.detectPasswordPrompt(in: authPromptProbeTail.lowercased()) else {
+            let lowercasedProbeTail = authPromptProbeTail.lowercased()
+
+            if skipAutoPasswordDelivery, let interactivePasswordAutofillDeadline {
+                guard Date() <= interactivePasswordAutofillDeadline else {
+                    hasSubmittedInteractivePassword = true
+                    authPromptProbeTail.removeAll(keepingCapacity: true)
+                    self.interactivePasswordAutofillDeadline = nil
+                    return nil
+                }
+
+                if Self.looksLikeOTPChallenge(lowercasedProbeTail) {
+                    return nil
+                }
+            }
+
+            guard Self.detectPasswordPrompt(in: lowercasedProbeTail) else {
                 return nil
             }
 
             hasSubmittedInteractivePassword = true
+            self.interactivePasswordAutofillDeadline = nil
             return interactivePasswordAutofill
         }
 
         guard let password else { return }
         try? writeSync(Data((password + "\n").utf8))
+    }
+
+    private static func looksLikeOTPChallenge(_ output: String) -> Bool {
+        output.contains("verification code")
+            || output.contains("one-time password")
+            || output.contains("otp")
+            || output.contains("token code")
+            || output.contains("authenticator code")
     }
 
     private func handleProcessTermination(
@@ -330,12 +369,64 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             }
         }
 
+        if !skipAutoPasswordDelivery,
+           host.auth.method == .password,
+           elapsed <= compatibilityRetryWindow,
+           stateQueue.sync(execute: { cachedStoredPassword?.isEmpty == false }),
+           Self.looksLikeInteractiveAuthRetryCandidate(output) {
+            skipAutoPasswordDelivery = true
+            do {
+                try await startProcess(using: compatibilityProfile)
+                return
+            } catch {
+                let message = error.localizedDescription
+                onOutput?(Data((message + "\r\n").utf8))
+                onStateChange?(.failed(message))
+                return
+            }
+        }
+
         let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
         let message = trimmedOutput.isEmpty ? "ssh exited with status \(status)" : trimmedOutput
         if trimmedOutput.isEmpty {
             onOutput?(Data((message + "\r\n").utf8))
         }
         onStateChange?(.failed(message))
+    }
+
+    private static func looksLikeInteractiveAuthRetryCandidate(_ output: String) -> Bool {
+        let lower = output.lowercased()
+
+        if lower.contains("keyboard-interactive") {
+            return true
+        }
+
+        if lower.contains("one-time password")
+            || lower.contains("verification code")
+            || lower.contains("otp")
+            || lower.contains("authenticator code")
+            || lower.contains("token code")
+        {
+            return true
+        }
+
+        if lower.contains("too many authentication failures") {
+            return true
+        }
+
+        if lower.contains("permission denied, please try again.")
+            || lower.contains("permission denied (")
+        {
+            return true
+        }
+
+        if lower.contains("permission denied")
+            && (lower.contains("password") || lower.contains("keyboard-interactive"))
+        {
+            return true
+        }
+
+        return false
     }
 
     private func scheduleCompatibilityProfilePersistence(
@@ -388,7 +479,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         if let launchConfigurationOverride {
             return LaunchPlan(
                 configuration: launchConfigurationOverride,
-                interactivePasswordAutofill: interactivePasswordAutofillOverride
+                interactivePasswordAutofill: interactivePasswordAutofillOverride ?? cachedStoredPassword
             )
         }
 
@@ -401,11 +492,14 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         } else {
             nil
         }
-
+        stateQueue.sync {
+            cachedStoredPassword = storedPassword
+        }
         return Self.makeShellLaunchPlan(
             for: host,
             storedPassword: storedPassword,
-            compatibilityProfile: compatibilityProfile
+            compatibilityProfile: compatibilityProfile,
+            skipAutoPasswordDelivery: skipAutoPasswordDelivery
         )
     }
 
@@ -414,12 +508,13 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         storedPassword: String?,
         sshpassPath: String? = defaultSSHPassPath(),
         askPassScriptPath: String? = ensureAskPassScriptPath(),
-        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile(),
+        skipAutoPasswordDelivery: Bool = false
     ) -> LaunchPlan {
         let hasStoredPassword = storedPassword?.isEmpty == false
 
         if host.auth.method == .password, let password = storedPassword, !password.isEmpty {
-            if let launch = makePasswordLaunchConfiguration(
+            if !skipAutoPasswordDelivery, let launch = makePasswordLaunchConfiguration(
                 for: host,
                 password: password,
                 sshpassPath: sshpassPath,
@@ -482,8 +577,11 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             }
             args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
         case .password:
-            args.append(contentsOf: ["-o", "PreferredAuthentications=password,keyboard-interactive"])
-            args.append(contentsOf: ["-o", "NumberOfPasswordPrompts=1"])
+            args.append(contentsOf: ["-o", "PreferredAuthentications=keyboard-interactive,password"])
+            args.append(contentsOf: ["-o", "NumberOfPasswordPrompts=3"])
+            args.append(contentsOf: ["-o", "PubkeyAuthentication=no"])
+            args.append(contentsOf: ["-o", "GSSAPIAuthentication=no"])
+            args.append(contentsOf: ["-o", "KbdInteractiveAuthentication=yes"])
         case .agent:
             args.append(contentsOf: ["-o", "PreferredAuthentications=publickey"])
         }
