@@ -44,6 +44,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     private let credentialStore = CredentialStore()
     private let stateQueue = DispatchQueue(label: "io.lighting-tech.remora.ssh.session")
     private let compatibilityRetryWindow: TimeInterval = 3
+    private let interactivePasswordAutofillWindow: TimeInterval
     private let compatibilityPersistenceDelay: Duration = .seconds(1)
     private let failureProbeBufferLimit = 16 * 1024
     private var activeCompatibilityProfile = SSHCompatibilityProfile()
@@ -54,24 +55,32 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     private var cachedStoredPassword: String?
     private var interactivePromptBuffer = ""
     private var interactivePasswordAutofillUsed = false
+    private var interactivePasswordAutofillDeadline: Date?
 
     public init(host: Host, pty: PTYSize) {
         self.host = host
         self.launchConfigurationOverride = nil
         self.compatibilityProfileStore = .shared
         self.pty = pty
+        self.interactivePasswordAutofillWindow = 15
     }
 
     init(
         host: Host,
         pty: PTYSize,
         launchConfigurationOverride: LaunchConfiguration?,
+        interactivePasswordAutofillWindow: TimeInterval = 15,
+        initialSkipAutoPasswordDelivery: Bool = false,
+        cachedStoredPasswordOverride: String? = nil,
         compatibilityProfileStore: SSHCompatibilityProfileStore = .shared
     ) {
         self.host = host
         self.launchConfigurationOverride = launchConfigurationOverride
         self.compatibilityProfileStore = compatibilityProfileStore
         self.pty = pty
+        self.interactivePasswordAutofillWindow = interactivePasswordAutofillWindow
+        self.skipAutoPasswordDelivery = initialSkipAutoPasswordDelivery
+        self.cachedStoredPassword = cachedStoredPasswordOverride
     }
 
     public func start() async throws {
@@ -159,6 +168,11 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             activeCompatibilityProfile = compatibilityProfile
             activeAttemptStartedAt = attemptStartedAt
             recentFailureProbeBuffer.removeAll(keepingCapacity: true)
+            interactivePromptBuffer.removeAll(keepingCapacity: true)
+            interactivePasswordAutofillUsed = false
+            interactivePasswordAutofillDeadline = skipAutoPasswordDelivery
+                ? attemptStartedAt.addingTimeInterval(interactivePasswordAutofillWindow)
+                : nil
         }
 
         scheduleCompatibilityProfilePersistence(
@@ -231,6 +245,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             activeAttemptStartedAt = nil
             interactivePromptBuffer.removeAll(keepingCapacity: true)
             interactivePasswordAutofillUsed = false
+            interactivePasswordAutofillDeadline = nil
 
             return handle
         }
@@ -270,8 +285,16 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
                   host.auth.method == .password,
                   !interactivePasswordAutofillUsed,
                   let cachedStoredPassword,
-                  !cachedStoredPassword.isEmpty
+                  !cachedStoredPassword.isEmpty,
+                  let interactivePasswordAutofillDeadline
             else {
+                return nil
+            }
+
+            guard Date() <= interactivePasswordAutofillDeadline else {
+                interactivePasswordAutofillUsed = true
+                interactivePromptBuffer.removeAll(keepingCapacity: true)
+                self.interactivePasswordAutofillDeadline = nil
                 return nil
             }
 
@@ -293,6 +316,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
 
             interactivePasswordAutofillUsed = true
             interactivePromptBuffer.removeAll(keepingCapacity: true)
+            self.interactivePasswordAutofillDeadline = nil
             return Data((cachedStoredPassword + "\n").utf8)
         }
 
@@ -345,6 +369,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         if !skipAutoPasswordDelivery,
            host.auth.method == .password,
            elapsed <= compatibilityRetryWindow,
+           stateQueue.sync(execute: { cachedStoredPassword?.isEmpty == false }),
            Self.looksLikeInteractiveAuthRetryCandidate(output) {
             skipAutoPasswordDelivery = true
             do {

@@ -197,6 +197,98 @@ struct SystemSSHClientTests {
 
         await session.stop()
     }
+
+    @Test
+    func runningSessionDoesNotAutofillPasswordAfterAuthWindowExpires() async throws {
+        let host = Host(
+            name: "password-timeout",
+            address: "example.com",
+            username: "root",
+            auth: HostAuth(method: .password, passwordReference: "pw-ref")
+        )
+        let output = OutputCollector()
+        let session = ProcessSSHShellSession(
+            host: host,
+            pty: .init(columns: 80, rows: 24),
+            launchConfigurationOverride: ProcessSSHShellSession.LaunchConfiguration(
+                executablePath: "/bin/bash",
+                arguments: [
+                    "-lc",
+                    "sleep 1; printf 'password:'; if IFS= read -r -t 1 pw; then if [ \"$pw\" = top-secret ]; then printf '\\r\\nLEAKED\\r\\n'; else printf '\\r\\nUNEXPECTED\\r\\n'; fi; else printf '\\r\\nSAFE\\r\\n'; fi"
+                ],
+                environment: ["TERM": "xterm-256color"]
+            ),
+            interactivePasswordAutofillWindow: 0.25,
+            initialSkipAutoPasswordDelivery: true,
+            cachedStoredPasswordOverride: "top-secret"
+        )
+        session.onOutput = { (data: Data) in
+            Task {
+                await output.append(String(decoding: data, as: UTF8.self))
+            }
+        }
+
+        try await session.start()
+        #expect(
+            await waitUntil(timeout: 3) { await output.joined.contains("SAFE") },
+            "Password autofill should disarm after the initial auth window instead of writing credentials into a later shell prompt."
+        )
+        #expect(await output.joined.contains("LEAKED") == false)
+
+        await session.stop()
+    }
+
+    @Test
+    func runningSessionDoesNotRetryInteractiveAuthWithoutCachedPassword() async throws {
+        let host = Host(
+            name: "retry-without-password",
+            address: "example.com",
+            username: "root",
+            auth: HostAuth(method: .password)
+        )
+        let output = OutputCollector()
+        let states = StateCollector()
+        let attemptFileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remora-system-ssh-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: attemptFileURL) }
+
+        let script = """
+        count=$(cat '\(attemptFileURL.path)' 2>/dev/null || printf '0')
+        count=$((count + 1))
+        printf '%s' "$count" > '\(attemptFileURL.path)'
+        printf 'Permission denied (keyboard-interactive,password).\\r\\n'
+        exit 1
+        """
+
+        let session = ProcessSSHShellSession(
+            host: host,
+            pty: .init(columns: 80, rows: 24),
+            launchConfigurationOverride: ProcessSSHShellSession.LaunchConfiguration(
+                executablePath: "/bin/sh",
+                arguments: ["-c", script],
+                environment: ["TERM": "xterm-256color"]
+            )
+        )
+        session.onOutput = { (data: Data) in
+            Task {
+                await output.append(String(decoding: data, as: UTF8.self))
+            }
+        }
+        session.onStateChange = { state in
+            Task {
+                await states.append(state)
+            }
+        }
+
+        try await session.start()
+        #expect(
+            await waitUntil(timeout: 2) { await states.last == .failed("Permission denied (keyboard-interactive,password).") },
+            "Password-auth retries should stop after the first failure when there is no cached password to replay."
+        )
+
+        let attempts = try String(contentsOf: attemptFileURL, encoding: .utf8)
+        #expect(attempts == "1")
+    }
 }
 
 private actor OutputCollector {
@@ -204,6 +296,14 @@ private actor OutputCollector {
 
     func append(_ chunk: String) {
         joined += chunk
+    }
+}
+
+private actor StateCollector {
+    private(set) var last: ShellSessionState = .idle
+
+    func append(_ state: ShellSessionState) {
+        last = state
     }
 }
 
