@@ -135,6 +135,32 @@ struct SystemSSHClientTests {
     }
 
     @Test
+    func passwordShellLaunchPlanFallsBackToPTYAutofillWhenSSHPassIsUnavailable() {
+        let host = Host(
+            name: "prod",
+            address: "example.com",
+            port: 22,
+            username: "root",
+            auth: HostAuth(method: .password, passwordReference: "pw-ref")
+        )
+
+        let plan = ProcessSSHShellSession.makeShellLaunchPlan(
+            for: host,
+            storedPassword: "top-secret",
+            sshpassPath: nil,
+            askPassScriptPath: nil
+        )
+
+        #expect(plan.interactivePasswordAutofill == "top-secret")
+        #expect(plan.configuration.environment["SSH_ASKPASS"] == nil)
+        if FileManager.default.isExecutableFile(atPath: "/usr/bin/script") {
+            #expect(plan.configuration.executablePath == "/usr/bin/script")
+        } else {
+            #expect(plan.configuration.executablePath == "/usr/bin/ssh")
+        }
+    }
+
+    @Test
     func runningSessionReportsUpdatedPTYSizeAfterResize() async throws {
         let host = Host(
             name: "pty-test",
@@ -175,6 +201,50 @@ struct SystemSSHClientTests {
         #expect(
             await waitUntil(timeout: 1) { await output.joined.contains("37 101") },
             "Resizing the session should update the child PTY, otherwise shells redraw against stale dimensions."
+        )
+
+        await session.stop()
+    }
+
+    @Test
+    func runningSessionAutofillsStoredPasswordAfterHostKeyConfirmation() async throws {
+        let host = Host(
+            name: "password-test",
+            address: "example.com",
+            username: "root",
+            auth: HostAuth(method: .password, passwordReference: "pw-ref")
+        )
+        let output = OutputCollector()
+        let session = ProcessSSHShellSession(
+            host: host,
+            pty: .init(columns: 80, rows: 24),
+            launchConfigurationOverride: ProcessSSHShellSession.LaunchConfiguration(
+                executablePath: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "printf 'Are you sure you want to continue connecting (yes/no/[fingerprint])? '; IFS= read -r trust; printf '\\r\\nroot@example.com password:'; IFS= read -r pw; if [ \"$trust\" = yes ] && [ \"$pw\" = top-secret ]; then printf '\\r\\nREADY\\r\\n'; else printf '\\r\\nBAD trust=%s pw=%s\\r\\n' \"$trust\" \"$pw\"; fi"
+                ],
+                environment: ["TERM": "xterm-256color"]
+            ),
+            interactivePasswordAutofillOverride: "top-secret"
+        )
+        session.onOutput = { (data: Data) in
+            Task {
+                await output.append(String(decoding: data, as: UTF8.self))
+            }
+        }
+
+        try await session.start()
+        #expect(
+            await waitUntil(timeout: 1) {
+                await output.joined.contains("continue connecting")
+            }
+        )
+
+        try await session.write(Data("yes\n".utf8))
+        #expect(
+            await waitUntil(timeout: 1) { await output.joined.contains("READY") },
+            "Interactive shells should preserve host-key confirmation while still sending the saved password once ssh prompts for it."
         )
 
         await session.stop()

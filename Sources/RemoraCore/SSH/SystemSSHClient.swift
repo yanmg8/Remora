@@ -31,11 +31,17 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         var environment: [String: String]
     }
 
+    struct LaunchPlan {
+        var configuration: LaunchConfiguration
+        var interactivePasswordAutofill: String?
+    }
+
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onStateChange: (@Sendable (ShellSessionState) -> Void)?
 
     private let host: Host
     private let launchConfigurationOverride: LaunchConfiguration?
+    private let interactivePasswordAutofillOverride: String?
     private let compatibilityProfileStore: SSHCompatibilityProfileStore
     private var pty: PTYSize
     private var process: Process?
@@ -50,10 +56,14 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
     private var recentFailureProbeBuffer = Data()
     private var activeAttemptStartedAt: Date?
     private var compatibilityPersistenceTask: Task<Void, Never>?
+    private var interactivePasswordAutofill: String?
+    private var hasSubmittedInteractivePassword = false
+    private var authPromptProbeTail = ""
 
     public init(host: Host, pty: PTYSize) {
         self.host = host
         self.launchConfigurationOverride = nil
+        self.interactivePasswordAutofillOverride = nil
         self.compatibilityProfileStore = .shared
         self.pty = pty
     }
@@ -62,10 +72,12 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         host: Host,
         pty: PTYSize,
         launchConfigurationOverride: LaunchConfiguration?,
+        interactivePasswordAutofillOverride: String? = nil,
         compatibilityProfileStore: SSHCompatibilityProfileStore = .shared
     ) {
         self.host = host
         self.launchConfigurationOverride = launchConfigurationOverride
+        self.interactivePasswordAutofillOverride = interactivePasswordAutofillOverride
         self.compatibilityProfileStore = compatibilityProfileStore
         self.pty = pty
     }
@@ -84,7 +96,8 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         compatibilityPersistenceTask?.cancel()
 
         let proc = Process()
-        let launch = await makeLaunchConfiguration(compatibilityProfile: compatibilityProfile)
+        let launchPlan = await makeLaunchPlan(compatibilityProfile: compatibilityProfile)
+        let launch = launchPlan.configuration
         proc.executableURL = URL(fileURLWithPath: launch.executablePath)
         proc.arguments = launch.arguments
         if !launch.environment.isEmpty {
@@ -120,6 +133,7 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             let data = handle.availableData
             guard !data.isEmpty else { return }
             self?.recordFailureProbeOutput(data)
+            self?.attemptInteractivePasswordAutofillIfNeeded(from: data)
             self?.onOutput?(data)
         }
 
@@ -154,6 +168,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             activeCompatibilityProfile = compatibilityProfile
             activeAttemptStartedAt = attemptStartedAt
             recentFailureProbeBuffer.removeAll(keepingCapacity: true)
+            interactivePasswordAutofill = launchPlan.interactivePasswordAutofill
+            hasSubmittedInteractivePassword = false
+            authPromptProbeTail.removeAll(keepingCapacity: true)
         }
 
         scheduleCompatibilityProfilePersistence(
@@ -224,6 +241,9 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             masterFileDescriptor = nil
             process = nil
             activeAttemptStartedAt = nil
+            interactivePasswordAutofill = nil
+            hasSubmittedInteractivePassword = false
+            authPromptProbeTail.removeAll(keepingCapacity: false)
 
             return handle
         }
@@ -255,6 +275,29 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
                 profile: activeCompatibilityProfile
             )
         }
+    }
+
+    private func attemptInteractivePasswordAutofillIfNeeded(from data: Data) {
+        let password = stateQueue.sync { () -> String? in
+            guard let interactivePasswordAutofill, hasSubmittedInteractivePassword == false else {
+                return nil
+            }
+
+            authPromptProbeTail.append(String(decoding: data, as: UTF8.self))
+            if authPromptProbeTail.count > 512 {
+                authPromptProbeTail = String(authPromptProbeTail.suffix(512))
+            }
+
+            guard Self.detectPasswordPrompt(in: authPromptProbeTail.lowercased()) else {
+                return nil
+            }
+
+            hasSubmittedInteractivePassword = true
+            return interactivePasswordAutofill
+        }
+
+        guard let password else { return }
+        try? writeSync(Data((password + "\n").utf8))
     }
 
     private func handleProcessTermination(
@@ -339,11 +382,14 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         )
     }
 
-    private func makeLaunchConfiguration(
+    private func makeLaunchPlan(
         compatibilityProfile: SSHCompatibilityProfile
-    ) async -> LaunchConfiguration {
+    ) async -> LaunchPlan {
         if let launchConfigurationOverride {
-            return launchConfigurationOverride
+            return LaunchPlan(
+                configuration: launchConfigurationOverride,
+                interactivePasswordAutofill: interactivePasswordAutofillOverride
+            )
         }
 
         let storedPassword: String? = if host.auth.method == .password,
@@ -355,28 +401,55 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         } else {
             nil
         }
-        let hasStoredPassword = storedPassword != nil
 
-        if host.auth.method == .password,
-           hasStoredPassword,
-           let password = storedPassword,
-           let launch = Self.makePasswordLaunchConfiguration(
+        return Self.makeShellLaunchPlan(
+            for: host,
+            storedPassword: storedPassword,
+            compatibilityProfile: compatibilityProfile
+        )
+    }
+
+    static func makeShellLaunchPlan(
+        for host: Host,
+        storedPassword: String?,
+        sshpassPath: String? = defaultSSHPassPath(),
+        askPassScriptPath: String? = ensureAskPassScriptPath(),
+        compatibilityProfile: SSHCompatibilityProfile = SSHCompatibilityProfile()
+    ) -> LaunchPlan {
+        let hasStoredPassword = storedPassword?.isEmpty == false
+
+        if host.auth.method == .password, let password = storedPassword, !password.isEmpty {
+            if let launch = makePasswordLaunchConfiguration(
                 for: host,
                 password: password,
+                sshpassPath: sshpassPath,
+                askPassScriptPath: sshpassPath == nil ? nil : askPassScriptPath,
                 compatibilityProfile: compatibilityProfile
-           )
-        {
-            return launch
+            ) {
+                return LaunchPlan(configuration: launch, interactivePasswordAutofill: nil)
+            }
+
+            return LaunchPlan(
+                configuration: makeStandardLaunchConfiguration(
+                    for: host,
+                    useConnectionReuse: false,
+                    compatibilityProfile: compatibilityProfile
+                ),
+                interactivePasswordAutofill: password
+            )
         }
 
         let useConnectionReuse = SSHConnectionReusePolicy.shouldUseConnectionReuse(
             authMethod: host.auth.method,
             hasStoredPassword: hasStoredPassword
         )
-        return Self.makeStandardLaunchConfiguration(
-            for: host,
-            useConnectionReuse: useConnectionReuse,
-            compatibilityProfile: compatibilityProfile
+        return LaunchPlan(
+            configuration: makeStandardLaunchConfiguration(
+                for: host,
+                useConnectionReuse: useConnectionReuse,
+                compatibilityProfile: compatibilityProfile
+            ),
+            interactivePasswordAutofill: nil
         )
     }
 
@@ -526,6 +599,12 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         )
     }
 
+    static func detectPasswordPrompt(in lowercasedText: String) -> Bool {
+        lowercasedText.contains("password:")
+            || lowercasedText.contains("password for ")
+            || lowercasedText.contains("userauth_passwd")
+    }
+
     private static func wrappedSSHLaunchConfiguration(
         sshArguments: [String],
         environment: [String: String],
@@ -567,6 +646,10 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
             "/usr/bin/sshpass",
         ]
         return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    }
+
+    public static func hasSSHPassInstalled() -> Bool {
+        defaultSSHPassPath() != nil
     }
 
     private static func ensureAskPassScriptPath() -> String? {

@@ -146,6 +146,50 @@ struct TerminalRuntimeTests {
     }
 
     @Test
+    func passwordSSHDefersShellIntegrationInstallerUntilAfterSessionConnectsWhenSSHPassIsUnavailable() async {
+        let manager = SessionManager(sshClientFactory: { MockSSHClient() })
+        let recorder = InstallerStateRecorder()
+        let runtimeBox = RuntimeStateBox()
+        var runtime: TerminalRuntime!
+        runtime = TerminalRuntime(
+            localSessionManager: manager,
+            sshSessionManager: manager,
+            remoteShellIntegrationInstaller: { host in
+                let state = await MainActor.run {
+                    runtimeBox.runtime?.connectionState ?? ""
+                }
+                await recorder.record(host: host, state: state)
+            }
+        )
+        runtimeBox.runtime = runtime
+        let host = Host(
+            name: "prod",
+            address: "127.0.0.1",
+            username: "deploy",
+            auth: HostAuth(method: .password, passwordReference: "pw-ref")
+        )
+
+        runtime.connectSSH(host: host)
+
+        let connected = await waitUntil(timeout: 2.0) {
+            runtime.connectionState.contains("Connected (SSH)")
+        }
+        #expect(connected)
+        guard connected else { return }
+
+        let installerRan = await waitUntilAsync(timeout: 2.0) {
+            await recorder.records.count == 1
+        }
+        #expect(installerRan)
+        guard installerRan else { return }
+
+        let records = await recorder.records
+        #expect(records.first?.host.address == "127.0.0.1")
+        #expect(records.first?.state.contains("Connected (SSH)") == true)
+        runtime.disconnect()
+    }
+
+    @Test
     func connectSSHHostPreservesOriginalHostIdentity() async {
         let manager = SessionManager(sshClientFactory: { MockSSHClient() })
         let runtime = TerminalRuntime(localSessionManager: manager, sshSessionManager: manager, remoteShellIntegrationInstaller: { _ in })
@@ -730,4 +774,21 @@ private actor InstallerSpy {
     func record(host: RemoraCore.Host) {
         recordedHosts.append(host)
     }
+}
+
+private actor InstallerStateRecorder {
+    struct Record {
+        var host: RemoraCore.Host
+        var state: String
+    }
+
+    private(set) var records: [Record] = []
+
+    func record(host: RemoraCore.Host, state: String) {
+        records.append(.init(host: host, state: state))
+    }
+}
+
+private final class RuntimeStateBox: @unchecked Sendable {
+    weak var runtime: TerminalRuntime?
 }

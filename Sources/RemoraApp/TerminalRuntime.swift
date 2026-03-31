@@ -188,8 +188,10 @@ final class TerminalRuntime: ObservableObject {
             }
 
             let manager = await MainActor.run(body: { sessionManager(for: config.mode) })
+            let shouldPreinstallRemoteShellIntegration = config.mode == .ssh
+                && Self.shouldPreinstallRemoteShellIntegration(for: host)
 
-            if config.mode == .ssh {
+            if shouldPreinstallRemoteShellIntegration {
                 try? await remoteShellIntegrationInstaller(host)
             }
 
@@ -209,6 +211,12 @@ final class TerminalRuntime: ObservableObject {
                     isReconnecting = false
                 }
                 await self.applyPendingResizeIfNeeded()
+
+                if config.mode == .ssh, !shouldPreinstallRemoteShellIntegration {
+                    Task {
+                        try? await self.remoteShellIntegrationInstaller(host)
+                    }
+                }
             } catch {
                 await MainActor.run {
                     connectionState = "Failed: \(error.localizedDescription)"
@@ -217,6 +225,10 @@ final class TerminalRuntime: ObservableObject {
                 }
             }
         }
+    }
+
+    private static func shouldPreinstallRemoteShellIntegration(for host: RemoraCore.Host) -> Bool {
+        host.auth.method != .password || ProcessSSHShellSession.hasSSHPassInstalled()
     }
 
     func disconnect() {
