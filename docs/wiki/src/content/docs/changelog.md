@@ -7,6 +7,22 @@ description: Remora 版本更新历史
 
 ## [Unreleased]
 
+## [v0.15.1] - 2026-03-31
+
+### English
+
+#### Fixed
+
+- Fixed saved-password SSH sessions on first connect so accepting a new host key still reaches the password prompt and completes the login flow reliably.
+- Improved bastion / 2FA password-auth fallback by retrying through `keyboard-interactive` prompts, limiting automatic password replay to the initial auth window, and skipping the extra retry when no cached password exists. This release includes [#5](https://github.com/wuuJiawei/Remora/pull/5). Thanks [@yanmg8](https://github.com/yanmg8) for the contribution.
+
+### 中文
+
+#### 修复
+
+- 修复了首次连接使用已保存密码的 SSH 主机场景：当需要先确认新的 host key 时，现在仍能顺利进入密码提示并完成登录。
+- 改进了堡垒机 / 2FA 场景下的密码认证回退逻辑：现在会通过 `keyboard-interactive` 路径重试、把自动密码回填严格限制在初始认证窗口内，并在没有缓存密码时不再额外重试。本次发布包含 [#5](https://github.com/wuuJiawei/Remora/pull/5)，感谢 [@yanmg8](https://github.com/yanmg8) 的贡献。
+
 ## [v0.15.0] - 2026-03-30
 
 ### English
