@@ -31,6 +31,60 @@ extension ContentView {
         bottomPanelVisibility.normalize(fileManagerAvailable: shouldShowFileManager)
     }
 
+    func toggleWorkspaceFocusMode(_ target: WorkspaceFocusMode) {
+        if workspaceFocusMode == target {
+            exitWorkspaceFocusMode()
+        } else {
+            enterWorkspaceFocusMode(target)
+        }
+    }
+
+    func enterWorkspaceFocusMode(_ target: WorkspaceFocusMode) {
+        guard target != .none else {
+            exitWorkspaceFocusMode()
+            return
+        }
+        guard canEnterWorkspaceFocusMode(target) else { return }
+
+        if !workspaceFocusMode.isActive {
+            splitVisibilityBeforeFocusMode = splitVisibility
+        }
+
+        workspaceFocusMode = target
+        splitVisibility = .detailOnly
+    }
+
+    func exitWorkspaceFocusMode() {
+        workspaceFocusMode = .none
+        if let previousVisibility = splitVisibilityBeforeFocusMode {
+            splitVisibility = previousVisibility
+        }
+        splitVisibilityBeforeFocusMode = nil
+    }
+
+    func normalizeWorkspaceFocusMode() {
+        guard workspaceFocusMode.isActive else { return }
+        guard canEnterWorkspaceFocusMode(workspaceFocusMode) else {
+            exitWorkspaceFocusMode()
+            return
+        }
+
+        if splitVisibility != .detailOnly {
+            splitVisibility = .detailOnly
+        }
+    }
+
+    func canEnterWorkspaceFocusMode(_ target: WorkspaceFocusMode) -> Bool {
+        switch target {
+        case .none:
+            return true
+        case .terminal:
+            return workspace.activePane != nil
+        case .fileManager:
+            return shouldShowFileManager && !workspace.tabs.isEmpty
+        }
+    }
+
     func beginCreateHostInPreferredGroup() {
         let preferredGroup = selectedHost?.group == HostCatalogStore.ungroupedGroupIdentifier
             ? ""

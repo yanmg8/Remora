@@ -112,6 +112,16 @@ struct BottomPanelVisibilityState: Equatable {
     }
 }
 
+enum WorkspaceFocusMode: Equatable {
+    case none
+    case terminal
+    case fileManager
+
+    var isActive: Bool {
+        self != .none
+    }
+}
+
 enum SSHRefreshActionDecision: Equatable {
     case refresh
     case reconnect

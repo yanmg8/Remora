@@ -8,9 +8,11 @@ struct TerminalPaneView: View {
     var quickCommands: [HostQuickCommand]
     var isContentVisible: Bool
     var isFocused: Bool
+    var isInFocusMode: Bool
     var canClose: Bool
     var onSelect: () -> Void
     var onToggleCollapse: () -> Void
+    var onToggleFocusMode: () -> Void
     var onReconnect: () -> Void
     var onClose: () -> Void
     var onRunQuickCommand: (HostQuickCommand) -> Void
@@ -34,9 +36,11 @@ struct TerminalPaneView: View {
         quickCommands: [HostQuickCommand] = [],
         isContentVisible: Bool = true,
         isFocused: Bool,
+        isInFocusMode: Bool = false,
         canClose: Bool = false,
         onSelect: @escaping () -> Void,
         onToggleCollapse: @escaping () -> Void = {},
+        onToggleFocusMode: @escaping () -> Void = {},
         onReconnect: @escaping () -> Void = {},
         onClose: @escaping () -> Void = {},
         onRunQuickCommand: @escaping (HostQuickCommand) -> Void = { _ in },
@@ -48,9 +52,11 @@ struct TerminalPaneView: View {
         self.quickCommands = quickCommands
         self.isContentVisible = isContentVisible
         self.isFocused = isFocused
+        self.isInFocusMode = isInFocusMode
         self.canClose = canClose
         self.onSelect = onSelect
         self.onToggleCollapse = onToggleCollapse
+        self.onToggleFocusMode = onToggleFocusMode
         self.onReconnect = onReconnect
         self.onClose = onClose
         self.onRunQuickCommand = onRunQuickCommand
@@ -60,39 +66,66 @@ struct TerminalPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button {
-                    onToggleCollapse()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: isContentVisible ? "chevron.down" : "chevron.right")
-                            .font(.caption.weight(.semibold))
+                Group {
+                    if isInFocusMode {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 8, height: 8)
 
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 8, height: 8)
+                            Text(localizedConnectionState(runtime.connectionState))
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
+                                .foregroundStyle(VisualStyle.textPrimary)
 
-                        Text(localizedConnectionState(runtime.connectionState))
-                            .font(.system(.caption, design: .monospaced))
-                            .lineLimit(1)
-                            .foregroundStyle(VisualStyle.textPrimary)
+                            Text(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
+                                .font(.system(size: 1))
+                                .foregroundStyle(.clear)
+                                .opacity(0.01)
+                                .frame(width: 12, height: 12)
+                                .accessibilityLabel(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
+                                .accessibilityHidden(false)
+                                .accessibilityIdentifier("terminal-transcript")
 
-                        Text(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
-                            .font(.system(size: 1))
-                            .foregroundStyle(.clear)
-                            .opacity(0.01)
-                            .frame(width: 12, height: 12)
-                            .accessibilityLabel(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
-                            .accessibilityHidden(false)
-                            .accessibilityIdentifier("terminal-transcript")
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(VisualStyle.textSecondary)
+                    } else {
+                        Button {
+                            onToggleCollapse()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: isContentVisible ? "chevron.down" : "chevron.right")
+                                    .font(.caption.weight(.semibold))
 
-                        Spacer(minLength: 0)
+                                Circle()
+                                    .fill(statusColor)
+                                    .frame(width: 8, height: 8)
+
+                                Text(localizedConnectionState(runtime.connectionState))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .foregroundStyle(VisualStyle.textPrimary)
+
+                                Text(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
+                                    .font(.system(size: 1))
+                                    .foregroundStyle(.clear)
+                                    .opacity(0.01)
+                                    .frame(width: 12, height: 12)
+                                    .accessibilityLabel(runtime.transcriptSnapshot.isEmpty ? " " : runtime.transcriptSnapshot)
+                                    .accessibilityHidden(false)
+                                    .accessibilityIdentifier("terminal-transcript")
+
+                                Spacer(minLength: 0)
+                            }
+                            .foregroundStyle(VisualStyle.textSecondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isContentVisible ? tr("Collapse Terminal") : tr("Expand Terminal"))
+                        .accessibilityIdentifier("terminal-collapse-toggle")
                     }
-                    .foregroundStyle(VisualStyle.textSecondary)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help(isContentVisible ? tr("Collapse Terminal") : tr("Expand Terminal"))
-                .accessibilityIdentifier("terminal-collapse-toggle")
 
                 if runtime.connectionMode == .ssh {
                     Menu {
@@ -116,8 +149,20 @@ struct TerminalPaneView: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .foregroundStyle(VisualStyle.textSecondary)
-                    .help(tr("Run SSH quick command"))
+                    .accessibilityLabel(tr("Run SSH quick command"))
                     .accessibilityIdentifier("terminal-quick-commands")
+
+                    Button {
+                        onSelect()
+                        onToggleFocusMode()
+                    } label: {
+                        Image(systemName: isInFocusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .accessibilityLabel(isInFocusMode ? tr("Exit Terminal Focus") : tr("Focus Terminal"))
+                    .accessibilityIdentifier("terminal-focus-toggle")
 
                     Button {
                         onSelect()
@@ -129,7 +174,7 @@ struct TerminalPaneView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(canReconnect ? VisualStyle.textSecondary : VisualStyle.textTertiary)
                     .disabled(!canReconnect)
-                    .help(tr("Reconnect SSH"))
+                    .accessibilityLabel(tr("Reconnect SSH"))
                     .accessibilityIdentifier("terminal-reconnect")
                 }
 
@@ -143,7 +188,7 @@ struct TerminalPaneView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(pane.isAIAssistantVisible ? Color.accentColor : VisualStyle.textSecondary)
-                    .help(tr("Toggle Terminal AI"))
+                    .accessibilityLabel(tr("Toggle Terminal AI"))
                     .accessibilityIdentifier("terminal-ai-toggle")
                 }
 
@@ -156,7 +201,7 @@ struct TerminalPaneView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(VisualStyle.textSecondary)
-                    .help(tr("Close Pane"))
+                    .accessibilityLabel(tr("Close Pane"))
                     .accessibilityIdentifier("terminal-close-pane")
                 }
 

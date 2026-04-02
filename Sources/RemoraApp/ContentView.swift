@@ -26,7 +26,9 @@ struct ContentView: View {
     @State var selectedHostID: UUID?
     @State var selectedTemplateID: UUID?
     @State var splitVisibility: NavigationSplitViewVisibility = .all
+    @State var splitVisibilityBeforeFocusMode: NavigationSplitViewVisibility?
     @State var bottomPanelVisibility = BottomPanelVisibilityState(terminal: true, fileManager: false)
+    @State var workspaceFocusMode: WorkspaceFocusMode = .none
     @State var collapsedGroupNames: Set<String> = []
     @State var isGroupEditorSheetPresented = false
     @State var groupEditorMode: SidebarGroupEditorMode = .create
@@ -233,6 +235,7 @@ struct ContentView: View {
                 selectedTemplateID = availableTemplates.first?.id
             }
             .onChange(of: workspace.activeTabID) {
+                normalizeWorkspaceFocusMode()
                 RuntimeConnectionSyncCoordinator.attachActiveRuntime(
                     workspace.activePane?.runtime,
                     directorySyncBridge: directorySyncBridge,
@@ -241,12 +244,16 @@ struct ContentView: View {
                 )
             }
             .onChange(of: workspace.activePaneByTab) {
+                normalizeWorkspaceFocusMode()
                 RuntimeConnectionSyncCoordinator.attachActiveRuntime(
                     workspace.activePane?.runtime,
                     directorySyncBridge: directorySyncBridge,
                     syncFileManagerBinding: syncFileManagerSFTPBinding,
                     syncServerMetricsTracking: syncServerMetricsTracking
                 )
+            }
+            .onChange(of: splitVisibility) {
+                normalizeWorkspaceFocusMode()
             }
 
         let commandContent = lifecycleContent
@@ -270,6 +277,7 @@ struct ContentView: View {
 
         let syncedContent = commandContent
             .onReceive(activeRuntimeConnectionStatePublisher) { _ in
+                normalizeWorkspaceFocusMode()
                 RuntimeConnectionSyncCoordinator.syncRuntimeDrivenServices(
                     syncFileManagerBinding: syncFileManagerSFTPBinding,
                     syncServerMetricsTracking: syncServerMetricsTracking
@@ -301,6 +309,11 @@ struct ContentView: View {
         return syncedContent
             .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
             .animation(.spring(response: 0.32, dampingFraction: 0.84), value: bottomPanelVisibility)
+            .animation(.spring(response: 0.26, dampingFraction: 0.86), value: workspaceFocusMode)
+            .onExitCommand {
+                guard workspaceFocusMode.isActive else { return }
+                exitWorkspaceFocusMode()
+            }
             .task {
                 await UpdateChecker.shared.performAutomaticCheckIfNeeded()
             }

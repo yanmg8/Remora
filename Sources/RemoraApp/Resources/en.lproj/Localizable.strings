@@ -6,6 +6,10 @@
 "Session" = "Session";
 "Tagging" = "Tagging";
 "File Manager" = "File Manager";
+"Focus File Manager" = "Focus File Manager";
+"Exit File Manager Focus" = "Exit File Manager Focus";
+"Focus Terminal" = "Focus Terminal";
+"Exit Terminal Focus" = "Exit Terminal Focus";
 "Application" = "Application";
 "Download directory" = "Download directory";
 "Download directory" = "Download directory";
