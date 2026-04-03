@@ -6,95 +6,351 @@ import RemoraCore
 struct HostImportSourceSheet: View {
     let onCancel: () -> Void
     let onSelect: (HostConnectionImportSource) -> Void
+    @State private var selectedSource = HostConnectionImportSource.supportedCases.first ?? .remoraJSONCSV
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(tr("Choose Import Source"))
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("Choose Import Source"))
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(VisualStyle.textPrimary)
 
-            Text(tr("Select a format to import into Remora."))
-                .font(.subheadline)
-                .foregroundStyle(VisualStyle.textSecondary)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text(tr("Supported Now"))
-                    .font(.caption.weight(.semibold))
+                Text(tr("Choose a source from the list, then import a file in that format."))
+                    .font(.subheadline)
                     .foregroundStyle(VisualStyle.textSecondary)
-
-                ForEach(HostConnectionImportSource.supportedCases) { source in
-                    HostImportSourceRow(
-                        source: source,
-                        accessoryTitle: tr("Choose File"),
-                        action: { onSelect(source) }
-                    )
-                }
             }
+            .padding(20)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text(tr("Coming Soon"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(VisualStyle.textSecondary)
+            Divider()
 
-                ForEach(HostConnectionImportSource.upcomingCases) { source in
-                    HostImportSourceRow(
-                        source: source,
-                        accessoryTitle: tr("Coming Soon"),
-                        action: nil
-                    )
-                }
+            HStack(alignment: .top, spacing: 18) {
+                HostImportSourcePicker(selectedSource: $selectedSource)
+                    .frame(width: 250)
+                    .frame(maxHeight: .infinity, alignment: .top)
+
+                HostImportSourceDetailPane(source: selectedSource)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            Divider()
 
             HStack {
                 Spacer()
-                Button(tr("Cancel")) {
-                    onCancel()
+
+                Button(tr("Cancel"), action: onCancel)
+                    .buttonStyle(.bordered)
+
+                Button(tr("Choose File")) {
+                    onSelect(selectedSource)
                 }
                 .buttonStyle(.borderedProminent)
             }
+            .padding(20)
         }
-        .padding(20)
-        .frame(width: 560)
+        .frame(width: 760, height: 560)
     }
 }
 
-struct HostImportSourceRow: View {
-    let source: HostConnectionImportSource
-    let accessoryTitle: String
-    let action: (() -> Void)?
+struct HostImportSourcePicker: View {
+    @Binding var selectedSource: HostConnectionImportSource
 
     var body: some View {
-        Button(action: {
-            action?()
-        }) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(source.title)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(VisualStyle.textPrimary)
-
-                    Text(source.detail)
-                        .font(.caption)
-                        .foregroundStyle(VisualStyle.textSecondary)
-                        .multilineTextAlignment(.leading)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HostImportSourcePickerSection(title: tr("Supported Now")) {
+                    ForEach(HostConnectionImportSource.supportedCases) { source in
+                        HostImportSourcePickerRow(
+                            source: source,
+                            isSelected: selectedSource == source,
+                            onSelect: { selectedSource = source }
+                        )
+                    }
                 }
 
-                Spacer(minLength: 12)
-
-                Text(accessoryTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(action == nil ? VisualStyle.textSecondary : VisualStyle.textPrimary)
+                HostImportSourcePickerSection(title: tr("Coming Soon")) {
+                    ForEach(HostConnectionImportSource.upcomingCases) { source in
+                        HostImportSourceUpcomingRow(source: source)
+                    }
+                }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(action == nil ? VisualStyle.mutedSurfaceBackground : VisualStyle.leftHoverBackground)
-            )
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .glassCard(
+            radius: 14,
+            fill: VisualStyle.inputFieldBackground,
+            border: VisualStyle.borderSoft,
+            showsShadow: false
+        )
+    }
+}
+
+struct HostImportSourcePickerSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(VisualStyle.textSecondary)
+                .padding(.horizontal, 6)
+
+            VStack(spacing: 4) {
+                content()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct HostImportSourcePickerRow: View {
+    let source: HostConnectionImportSource
+    let isSelected: Bool
+    let onSelect: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 10) {
+                HostImportSourceListIcon(
+                    source: source,
+                    tint: isSelected ? Color.accentColor : VisualStyle.textSecondary
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(source.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(VisualStyle.textPrimary)
+
+                    Text(source.isSupported ? tr("Ready to import") : tr("Coming Soon"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(VisualStyle.textSecondary)
+                }
+
+                Spacer(minLength: 8)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(rowBackground)
         }
         .buttonStyle(.plain)
-        .disabled(action == nil)
-        .opacity(action == nil ? 0.8 : 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(isSelected ? VisualStyle.leftSelectedBackground : (isHovering ? VisualStyle.leftHoverBackground : Color.clear))
+    }
+}
+
+struct HostImportSourceUpcomingRow: View {
+    let source: HostConnectionImportSource
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HostImportSourceListIcon(
+                source: source,
+                tint: VisualStyle.textTertiary
+            )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(VisualStyle.textSecondary)
+
+                Text(tr("Coming Soon"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(VisualStyle.textTertiary)
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(VisualStyle.mutedSurfaceBackground.opacity(0.55))
+        )
+        .contentShape(Rectangle())
+    }
+}
+
+struct HostImportSourceDetailPane: View {
+    let source: HostConnectionImportSource
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 14) {
+                    HostImportSourceDetailIcon(source: source)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(source.title)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(VisualStyle.textPrimary)
+
+                        Text(tr("Ready to import"))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+
+                Text(source.detail)
+                    .font(.system(size: 14))
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HostImportSourceFactCard(
+                    title: tr("Supported Formats"),
+                    value: source.importFormatsSummary
+                )
+
+                Text(tr("Select the export or config file for this source to begin importing."))
+                    .font(.system(size: 13))
+                    .foregroundStyle(VisualStyle.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(VisualStyle.mutedSurfaceBackground)
+                    )
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .glassCard(
+            radius: 14,
+            fill: VisualStyle.inputFieldBackground,
+            border: VisualStyle.borderSoft,
+            showsShadow: false
+        )
+    }
+}
+
+struct HostImportSourceFactCard: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(VisualStyle.textSecondary)
+
+            Text(value)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(VisualStyle.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(VisualStyle.mutedSurfaceBackground)
+        )
+    }
+}
+
+struct HostImportSourceListIcon: View {
+    let source: HostConnectionImportSource
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: source.importSymbolName)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: 18)
+    }
+}
+
+struct HostImportSourceDetailIcon: View {
+    let source: HostConnectionImportSource
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(VisualStyle.leftHoverBackground)
+            .frame(width: 72, height: 72)
+            .overlay {
+                if source == .remoraJSONCSV, let appIconImage = ContentView.resolveWelcomeAppIconImage() {
+                    Image(nsImage: appIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 56, height: 56)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else {
+                    Image(systemName: source.importSymbolName)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+    }
+}
+
+private extension HostConnectionImportSource {
+    var importSymbolName: String {
+        switch self {
+        case .remoraJSONCSV:
+            return "fish"
+        case .openSSH:
+            return "terminal"
+        case .windTerm:
+            return "wind"
+        case .electerm:
+            return "bolt.horizontal.circle"
+        case .xshell:
+            return "shippingbox"
+        case .puTTYRegistry:
+            return "externaldrive.badge.timemachine"
+        case .shellSessions:
+            return "apple.terminal"
+        case .finalShell:
+            return "server.rack"
+        case .termius:
+            return "rectangle.3.group.bubble.left"
+        }
+    }
+
+    var importFormatsSummary: String {
+        switch self {
+        case .remoraJSONCSV:
+            return "JSON, CSV"
+        case .openSSH:
+            return "config, ssh_config"
+        case .windTerm:
+            return "JSON"
+        case .electerm:
+            return "JSON"
+        case .xshell:
+            return ".xsh, .xts, .zip"
+        case .puTTYRegistry:
+            return ".reg, .txt"
+        case .shellSessions:
+            return "Shell session data"
+        case .finalShell:
+            return "FinalShell export"
+        case .termius:
+            return "Termius export"
+        }
     }
 }
 
