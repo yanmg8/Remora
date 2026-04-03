@@ -429,9 +429,15 @@
 "Import SSH Connections" = "Import SSH Connections";
 "Choose Import Source" = "Choose Import Source";
 "Select a format to import into Remora." = "Select a format to import into Remora.";
+"Choose a source from the list, then import a file in that format." = "Choose a source from the list, then import a file in that format.";
 "Supported Now" = "Supported Now";
 "Coming Soon" = "Coming Soon";
+"Ready to import" = "Ready to import";
 "Choose File" = "Choose File";
+"Supported Formats" = "Supported Formats";
+"Suggested Location" = "Suggested Location";
+"Select the export or config file for this source to begin importing." = "Select the export or config file for this source to begin importing.";
+"This importer is planned for a future update." = "This importer is planned for a future update.";
 "Import file is empty." = "Import file is empty.";
 "Imported" = "Imported";
 "Importing hosts" = "Importing hosts";

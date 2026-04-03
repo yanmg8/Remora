@@ -420,9 +420,15 @@
 "Import SSH Connections" = "导入 SSH 连接";
 "Choose Import Source" = "选择导入来源";
 "Select a format to import into Remora." = "选择一个要导入到 Remora 的来源格式。";
+"Choose a source from the list, then import a file in that format." = "先从列表中选择来源，再导入对应格式的文件。";
 "Supported Now" = "当前已支持";
 "Coming Soon" = "即将支持";
+"Ready to import" = "可立即导入";
 "Choose File" = "选择文件";
+"Supported Formats" = "支持格式";
+"Suggested Location" = "建议位置";
+"Select the export or config file for this source to begin importing." = "选择该来源对应的导出文件或配置文件，即可开始导入。";
+"This importer is planned for a future update." = "该导入器计划在后续版本中提供。";
 "Import file is empty." = "导入文件为空。";
 "Imported" = "已导入";
 "Importing hosts" = "正在导入主机";
