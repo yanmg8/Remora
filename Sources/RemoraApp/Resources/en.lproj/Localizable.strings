@@ -491,6 +491,7 @@
 "Reconnect SSH" = "Reconnect SSH";
 "Rename Session" = "Rename Session";
 "Only this tab name changes. The saved SSH connection name stays the same." = "Only this tab name changes. The saved SSH connection name stays the same.";
+"Press Return to create the group \"%@\"." = "Press Return to create the group \"%@\".";
 "Resize failed" = "Resize failed";
 "Reveal Downloaded File" = "Reveal Downloaded File";
 "Reveal in Finder" = "Reveal in Finder";

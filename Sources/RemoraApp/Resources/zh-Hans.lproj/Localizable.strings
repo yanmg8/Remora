@@ -482,6 +482,7 @@
 "Reconnect SSH" = "重连 SSH";
 "Rename Session" = "重命名会话";
 "Only this tab name changes. The saved SSH connection name stays the same." = "这里只会修改当前标签名称，不会改动已保存的 SSH 连接名称。";
+"Press Return to create the group \"%@\"." = "按回车即可创建分组“%@”。";
 "Resize failed" = "调整大小失败";
 "Follow" = "跟随";
 "Lines" = "行数";

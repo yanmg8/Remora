@@ -198,6 +198,37 @@ enum SidebarHostAuthMethod: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum SidebarHostGroupFieldOptions {
+    static func merged(existing: [String], staged: [String]) -> [String] {
+        var merged: [String] = []
+        for value in existing + staged {
+            let trimmed = normalized(value)
+            guard !trimmed.isEmpty else { continue }
+            guard merged.contains(trimmed) == false else { continue }
+            merged.append(trimmed)
+        }
+        return merged
+    }
+
+    static func contains(_ value: String, in options: [String]) -> Bool {
+        let trimmed = normalized(value)
+        guard !trimmed.isEmpty else { return false }
+        return options.contains(trimmed)
+    }
+
+    static func staged(existing: [String], currentText: String, staged: [String]) -> [String] {
+        let trimmed = normalized(currentText)
+        guard !trimmed.isEmpty else { return staged }
+        guard contains(trimmed, in: existing) == false else { return staged }
+        guard contains(trimmed, in: staged) == false else { return staged }
+        return staged + [trimmed]
+    }
+
+    static func normalized(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 struct SidebarHostEditorDraft {
     var connectionName: String
     var hostAddress: String
@@ -446,15 +477,18 @@ struct SidebarGroupDeletionSheet: View {
 struct SidebarHostEditorSheet: View {
     let mode: SidebarHostEditorMode
     @Binding var draft: SidebarHostEditorDraft
+    let availableGroups: [String]
     let testState: HostConnectionTestState
     let onCancel: () -> Void
     let onTestConnection: () -> Void
     let onConfirm: () -> Void
     @State private var isPasswordVisible = false
+    @State private var stagedGroups: [String] = []
 
     init(
         mode: SidebarHostEditorMode,
         draft: Binding<SidebarHostEditorDraft>,
+        availableGroups: [String],
         testState: HostConnectionTestState,
         onCancel: @escaping () -> Void,
         onTestConnection: @escaping () -> Void,
@@ -462,10 +496,25 @@ struct SidebarHostEditorSheet: View {
     ) {
         self.mode = mode
         self._draft = draft
+        self.availableGroups = availableGroups
         self.testState = testState
         self.onCancel = onCancel
         self.onTestConnection = onTestConnection
         self.onConfirm = onConfirm
+    }
+
+    private var groupOptions: [String] {
+        SidebarHostGroupFieldOptions.merged(existing: availableGroups, staged: stagedGroups)
+    }
+
+    private var normalizedGroupInput: String {
+        SidebarHostGroupFieldOptions.normalized(draft.groupText)
+    }
+
+    private var shouldPromptToCreateGroup: Bool {
+        let groupInput = normalizedGroupInput
+        guard !groupInput.isEmpty else { return false }
+        return SidebarHostGroupFieldOptions.contains(groupInput, in: groupOptions) == false
     }
 
     var body: some View {
@@ -485,7 +534,31 @@ struct SidebarHostEditorSheet: View {
                     TextField(tr("Username"), text: $draft.usernameText)
                 }
 
-                TextField(tr("Group"), text: $draft.groupText)
+                VStack(alignment: .leading, spacing: 6) {
+                    EditableComboBox(
+                        placeholder: tr("Group"),
+                        items: groupOptions,
+                        text: $draft.groupText,
+                        accessibilityIdentifier: "host-editor-group",
+                        onCommit: {
+                            stageCurrentGroupIfNeeded()
+                        }
+                    )
+                    .frame(maxWidth: .infinity)
+
+                    if shouldPromptToCreateGroup {
+                        Label(
+                            String(
+                                format: tr("Press Return to create the group \"%@\"."),
+                                normalizedGroupInput
+                            ),
+                            systemImage: "plus.circle"
+                        )
+                        .font(.system(size: 11))
+                        .foregroundStyle(VisualStyle.textSecondary)
+                        .labelStyle(.titleAndIcon)
+                    }
+                }
 
                 Picker(tr("Auth"), selection: $draft.authMethod) {
                     ForEach(SidebarHostAuthMethod.allCases) { method in
@@ -573,6 +646,16 @@ struct SidebarHostEditorSheet: View {
         }
     }
 
+    private func stageCurrentGroupIfNeeded() {
+        let staged = SidebarHostGroupFieldOptions.staged(
+            existing: availableGroups,
+            currentText: draft.groupText,
+            staged: stagedGroups
+        )
+        stagedGroups = staged
+        draft.groupText = SidebarHostGroupFieldOptions.normalized(draft.groupText)
+    }
+
     private func choosePrivateKeyPath() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -621,6 +704,107 @@ struct SidebarHostEditorSheet: View {
         }
 
         draft.privateKeyPath = selectedURL.standardizedFileURL.path
+    }
+}
+
+struct EditableComboBox: NSViewRepresentable {
+    let placeholder: String
+    let items: [String]
+    @Binding var text: String
+    let accessibilityIdentifier: String?
+    let onCommit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSComboBox {
+        let comboBox = NSComboBox(frame: .zero)
+        comboBox.isEditable = true
+        comboBox.completes = true
+        comboBox.usesDataSource = false
+        comboBox.numberOfVisibleItems = 8
+        comboBox.delegate = context.coordinator
+        comboBox.target = context.coordinator
+        comboBox.action = #selector(Coordinator.selectionDidChange(_:))
+        comboBox.placeholderString = placeholder
+        if let accessibilityIdentifier {
+            comboBox.setAccessibilityIdentifier(accessibilityIdentifier)
+        }
+        context.coordinator.applyItems(items, to: comboBox)
+        comboBox.stringValue = text
+        return comboBox
+    }
+
+    func updateNSView(_ nsView: NSComboBox, context: Context) {
+        context.coordinator.parent = self
+        nsView.placeholderString = placeholder
+        context.coordinator.applyItems(items, to: nsView)
+        context.coordinator.applyText(text, to: nsView)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSComboBoxDelegate, NSControlTextEditingDelegate {
+        var parent: EditableComboBox
+        private var currentItems: [String] = []
+        private var isApplyingProgrammaticChange = false
+
+        init(parent: EditableComboBox) {
+            self.parent = parent
+        }
+
+        func applyItems(_ items: [String], to comboBox: NSComboBox) {
+            guard currentItems != items else { return }
+            currentItems = items
+            comboBox.removeAllItems()
+            comboBox.addItems(withObjectValues: items)
+            comboBox.numberOfVisibleItems = min(max(items.count, 3), 8)
+        }
+
+        func applyText(_ text: String, to comboBox: NSComboBox) {
+            guard comboBox.stringValue != text else { return }
+            isApplyingProgrammaticChange = true
+            comboBox.stringValue = text
+            isApplyingProgrammaticChange = false
+        }
+
+        @objc
+        func selectionDidChange(_ sender: NSComboBox) {
+            guard isApplyingProgrammaticChange == false else { return }
+            parent.text = sender.stringValue
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard isApplyingProgrammaticChange == false else { return }
+            guard let comboBox = notification.object as? NSComboBox else { return }
+            parent.text = comboBox.stringValue
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            guard let comboBox = notification.object as? NSComboBox else { return }
+            commit(from: comboBox)
+        }
+
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            guard commandSelector == #selector(NSResponder.insertNewline(_:)),
+                  let comboBox = control as? NSComboBox
+            else {
+                return false
+            }
+            commit(from: comboBox)
+            return true
+        }
+
+        private func commit(from comboBox: NSComboBox) {
+            let trimmed = SidebarHostGroupFieldOptions.normalized(comboBox.stringValue)
+            applyText(trimmed, to: comboBox)
+            parent.text = trimmed
+            parent.onCommit()
+        }
     }
 }
 

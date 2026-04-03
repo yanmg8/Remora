@@ -119,6 +119,7 @@ extension ContentView {
                 SidebarHostEditorSheet(
                     mode: hostEditorMode,
                     draft: $hostEditorDraft,
+                    availableGroups: hostCatalog.groups,
                     testState: hostEditorTestState,
                     onCancel: {
                         isHostEditorSheetPresented = false
