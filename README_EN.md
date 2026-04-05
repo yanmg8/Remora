@@ -95,7 +95,7 @@ Remora focuses on a practical split:
 
 ### Requirements
 
-- macOS 14+
+- macOS 14.0 (Sonoma) or later
 - Xcode 15.4+
 
 ### Run from Source

@@ -14,7 +14,7 @@ Please follow [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) in project and commun
 
 ### Requirements
 
-- macOS 14+
+- macOS 14.0 (Sonoma) or later
 - Xcode 15.4+ (or Swift 6 toolchain)
 
 ### Build

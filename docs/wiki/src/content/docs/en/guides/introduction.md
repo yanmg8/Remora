@@ -21,5 +21,5 @@ Remora focuses on a practical split between connection management and terminal p
 
 ## System Requirements
 
-- macOS 14.0+
+- macOS 14.0 (Sonoma) or later
 - Xcode 15.4+ (for building from source)

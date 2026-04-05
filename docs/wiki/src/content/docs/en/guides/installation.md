@@ -37,5 +37,5 @@ The packaged archive is written to `dist/`.
 
 ## Requirements
 
-- macOS 14.0+
+- macOS 14.0 (Sonoma) or later
 - Xcode 15.4+ (if building from source)
