@@ -409,6 +409,28 @@ struct HostCatalogStoreTests {
     }
 
     @Test
+    func preservesInternalNewlinesInQuickCommands() {
+        let store = HostCatalogStore()
+        let host = store.addHost(
+            Host(
+                name: "qa",
+                address: "10.0.0.32",
+                username: "qa",
+                group: "QA",
+                auth: HostAuth(method: .agent),
+                quickCommands: [
+                    HostQuickCommand(
+                        name: "Deploy",
+                        command: "\ncd /srv/app\n./deploy.sh\n"
+                    )
+                ]
+            )
+        )
+
+        #expect(host.quickCommands.map(\.command) == ["cd /srv/app\n./deploy.sh"])
+    }
+
+    @Test
     func normalizesQuickPathsDuringHostSave() {
         let store = HostCatalogStore()
         let host = store.addHost(

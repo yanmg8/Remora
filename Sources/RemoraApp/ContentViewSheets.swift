@@ -1173,7 +1173,8 @@ struct HostQuickCommandEditorSheet: View {
                                         Text(command.command)
                                             .font(.system(size: 12, design: .monospaced))
                                             .foregroundStyle(VisualStyle.textSecondary)
-                                            .lineLimit(1)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
                                     }
 
                                     Spacer(minLength: 8)
@@ -1210,9 +1211,19 @@ struct HostQuickCommandEditorSheet: View {
                 TextField(tr("Name"), text: $nameDraft)
                     .textFieldStyle(.roundedBorder)
 
-                TextField(tr("Command"), text: $commandDraft)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textFieldStyle(.roundedBorder)
+                RemoteTextEditorRepresentable(
+                    text: $commandDraft,
+                    isEditable: true
+                )
+                .frame(minHeight: 110, maxHeight: 180)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(VisualStyle.elevatedSurfaceBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(VisualStyle.borderSoft, lineWidth: 1)
+                )
 
                 if let validationMessage {
                     Text(validationMessage)
