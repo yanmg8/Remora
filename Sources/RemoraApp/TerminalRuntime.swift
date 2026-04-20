@@ -79,6 +79,10 @@ final class TerminalRuntime: ObservableObject {
     private var awaitingPwdResponse = false
     private var workingDirectoryLineBuffer = ""
 
+    // MARK: - ZMODEM
+    private var zmodemDetector = ZmodemDetector()
+    private(set) var zmodemCoordinator = ZmodemTransferCoordinator()
+
     private var isReconnecting = false
     init(
         localSessionManager: SessionManager = SessionManager(sshClientFactory: { LocalShellClient() }),
@@ -377,12 +381,53 @@ final class TerminalRuntime: ObservableObject {
 
     private func flushOutputBatch(_ data: Data) {
         guard !data.isEmpty else { return }
+
+        // ZMODEM: if transfer is active, route all data to engine
+        if zmodemCoordinator.isActive {
+            zmodemCoordinator.feedOutput(data)
+            return
+        }
+
+        // ZMODEM: detect initiation sequence
+        let result = zmodemDetector.feed(data)
+        if let trigger = result.trigger {
+            // Feed any normal data before the trigger to the terminal
+            if !result.passthrough.isEmpty {
+                appendTranscript(result.passthrough)
+                updateAuthenticationState(with: result.passthrough)
+                feedTerminalView(result.passthrough)
+            }
+            handleZmodemTrigger(trigger, trailingData: result.trailingData)
+            return
+        }
+
         appendTranscript(data)
         updateAuthenticationState(with: data)
+        feedTerminalView(data)
+    }
+
+    private func feedTerminalView(_ data: Data) {
         if let terminalView {
             terminalView.feed(data: data)
         } else {
             enqueuePendingOutput(data)
+        }
+    }
+
+    private func handleZmodemTrigger(_ trigger: ZmodemTrigger, trailingData: Data) {
+        let writer: (Data) async throws -> Void = { [weak self] data in
+            guard let self else { return }
+            let sid = await MainActor.run { self.sessionID }
+            let mgr = await MainActor.run { self.activeSessionManager }
+            guard let sid, let mgr else { return }
+            try await mgr.write(data, to: sid)
+        }
+
+        switch trigger {
+        case .download:
+            zmodemCoordinator.startReceive(initialData: trailingData, writer: writer)
+        case .upload:
+            zmodemCoordinator.startSend(initialData: trailingData, writer: writer)
         }
     }
 
@@ -461,6 +506,9 @@ final class TerminalRuntime: ObservableObject {
     }
 
     private func enqueueInput(_ data: Data, trackWorkingDirectory: Bool) {
+        // Block user input during ZMODEM transfer
+        if zmodemCoordinator.isActive { return }
+
         pendingInputs.append(.init(data: data, trackWorkingDirectory: trackWorkingDirectory))
         guard inputDrainerTask == nil else { return }
 
@@ -625,6 +673,10 @@ final class TerminalRuntime: ObservableObject {
         transcriptRefreshTask = nil
         awaitingPwdResponse = false
         workingDirectoryLineBuffer.removeAll(keepingCapacity: false)
+        zmodemDetector.reset()
+        if zmodemCoordinator.isActive {
+            zmodemCoordinator.cancelTransfer()
+        }
     }
 
     private func applyPendingResizeIfNeeded() async {

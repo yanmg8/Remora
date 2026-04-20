@@ -564,3 +564,13 @@
 "menu.remora.new_ssh" = "New SSH Connection";
 "menu.remora.import" = "Import Connections";
 "menu.remora.export" = "Export Connections";
+
+/* ZMODEM */
+"ZMODEM Download" = "ZMODEM Download";
+"Save" = "Save";
+"ZMODEM Upload" = "ZMODEM Upload";
+"Upload" = "Upload";
+"ZMODEM Transfer" = "ZMODEM Transfer";
+"Receiving file…" = "Receiving file…";
+"Transfer complete" = "Transfer complete";
+"Cancel Transfer" = "Cancel Transfer";
