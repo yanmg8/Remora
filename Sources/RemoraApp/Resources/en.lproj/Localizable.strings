@@ -574,3 +574,6 @@
 "Receiving file…" = "Receiving file…";
 "Transfer complete" = "Transfer complete";
 "Cancel Transfer" = "Cancel Transfer";
+
+/* Clone Session */
+"Clone Session" = "Clone Session";

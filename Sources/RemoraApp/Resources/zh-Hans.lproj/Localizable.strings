@@ -571,3 +571,6 @@
 "Receiving file…" = "正在接收文件…";
 "Transfer complete" = "传输完成";
 "Cancel Transfer" = "取消传输";
+
+/* Clone Session */
+"Clone Session" = "克隆会话";
