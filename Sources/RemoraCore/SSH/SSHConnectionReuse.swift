@@ -16,6 +16,11 @@ enum SSHConnectionReuse {
         ]
     }
 
+    /// Check if a ControlMaster socket exists for this host
+    static func hasActiveSocket(for host: Host) -> Bool {
+        FileManager.default.fileExists(atPath: controlPath(for: host))
+    }
+
     static func controlPath(for host: Host) -> String {
         let raw = "remora-\(host.username)-\(host.address)-\(host.port)"
         let sanitized = raw.map { scalar -> Character in
@@ -34,8 +39,6 @@ enum SSHConnectionReusePolicy {
         authMethod: AuthenticationMethod,
         hasStoredPassword: Bool
     ) -> Bool {
-        // Always enable connection reuse to support session cloning.
-        // ControlMaster is compatible with all auth methods including sshpass.
-        true
+        authMethod != .password || !hasStoredPassword
     }
 }

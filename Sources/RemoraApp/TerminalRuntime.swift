@@ -388,6 +388,12 @@ final class TerminalRuntime: ObservableObject {
             return
         }
 
+        // ZMODEM: reset detector after transfer ends to avoid re-triggering on leftover bytes
+        if zmodemCoordinator.finished {
+            zmodemDetector.reset()
+            zmodemCoordinator.finished = false
+        }
+
         // ZMODEM: detect initiation sequence
         let result = zmodemDetector.feed(data)
         if let trigger = result.trigger {
