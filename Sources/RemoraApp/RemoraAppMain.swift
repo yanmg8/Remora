@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import RemoraCore
 import RemoraTerminal
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,6 +10,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             AppKeyboardShortcutStore.shared.reportConflictsAtLaunchIfNeeded()
         }
+        installSignalHandlers()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        SSHControlMasterCleanup.killAll()
+    }
+
+    /// Handle SIGTERM/SIGHUP/SIGINT so `kill` also triggers cleanup.
+    private func installSignalHandlers() {
+        let handler: @convention(c) (Int32) -> Void = { sig in
+            SSHControlMasterCleanup.killAllSync()
+            signal(sig, SIG_DFL)
+            raise(sig)
+        }
+        signal(SIGTERM, handler)
+        signal(SIGHUP, handler)
+        signal(SIGINT, handler)
     }
 }
 

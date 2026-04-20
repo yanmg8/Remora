@@ -574,3 +574,13 @@
 
 /* Clone Session */
 "Clone Session" = "克隆会话";
+
+/* OTP */
+"OTP Verification" = "OTP 验证码";
+"Enter code" = "请输入验证码";
+"OK" = "确定";
+"Cancel" = "取消";
+
+/* SSH Password */
+"SSH Password" = "SSH 密码";
+"Enter password" = "请输入密码";

@@ -33,6 +33,8 @@ final class TerminalRuntime: ObservableObject {
     @Published var connectionMode: ConnectionMode = .local
     @Published var transcriptSnapshot: String = ""
     @Published var hostKeyPromptMessage: String?
+    @Published var otpPromptMessage: String?
+    @Published var passwordPromptMessage: String?
     @Published private(set) var workingDirectory: String?
     @Published private(set) var connectedSSHHost: RemoraCore.Host?
     @Published private(set) var lastConnectedSSHHost: RemoraCore.Host?
@@ -74,6 +76,7 @@ final class TerminalRuntime: ObservableObject {
     private var activeSSHAuthStage: SSHAuthStage?
     private var sshAuthProbeTail = ""
     private var activeSSHHostAddress: String?
+    private var activeSSHHasStoredPassword = false
     private var isWorkingDirectoryTrackingEnabled = false
     private var pendingWorkingDirectoryProbeTask: Task<Void, Never>?
     private var awaitingPwdResponse = false
@@ -186,6 +189,10 @@ final class TerminalRuntime: ObservableObject {
 
             await MainActor.run {
                 activeSSHHostAddress = host.address
+                activeSSHHasStoredPassword = {
+                    guard let ref = host.auth.passwordReference else { return false }
+                    return !ref.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }()
                 if config.mode == .ssh {
                     lastConnectedSSHHost = host
                 }
@@ -288,6 +295,34 @@ final class TerminalRuntime: ObservableObject {
 
     func dismissHostKeyPrompt() {
         hostKeyPromptMessage = nil
+    }
+
+    func respondToOTPPrompt(code: String) {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        enqueueInput(Data("\(trimmed)\n".utf8), trackWorkingDirectory: false)
+        otpPromptMessage = nil
+        activeSSHAuthStage = nil
+        sshAuthProbeTail.removeAll(keepingCapacity: false)
+        connectionState = "Waiting (authentication)"
+    }
+
+    func dismissOTPPrompt() {
+        otpPromptMessage = nil
+    }
+
+    func respondToPasswordPrompt(password: String) {
+        let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        enqueueInput(Data("\(trimmed)\n".utf8), trackWorkingDirectory: false)
+        passwordPromptMessage = nil
+        activeSSHAuthStage = nil
+        sshAuthProbeTail.removeAll(keepingCapacity: false)
+        connectionState = "Waiting (authentication)"
+    }
+
+    func dismissPasswordPrompt() {
+        passwordPromptMessage = nil
     }
 
     // PTY Debug Logging
@@ -409,6 +444,13 @@ final class TerminalRuntime: ObservableObject {
 
         appendTranscript(data)
         updateAuthenticationState(with: data)
+
+        // Hide SSH auth prompts (password, OTP, passphrase) from terminal view.
+        // The prompts are handled by the UI (OTP dialog, password autofill, etc.)
+        if activeSSHAuthStage != nil {
+            return
+        }
+
         feedTerminalView(data)
     }
 
@@ -495,11 +537,15 @@ final class TerminalRuntime: ObservableObject {
                         connectionState = "Disconnected"
                         connectedSSHHost = nil
                         hostKeyPromptMessage = nil
+                        otpPromptMessage = nil
+                        passwordPromptMessage = nil
                         activeSSHAuthStage = nil
                     case .failed(let reason):
                         connectionState = "Failed: \(reason)"
                         connectedSSHHost = nil
                         hostKeyPromptMessage = nil
+                        otpPromptMessage = nil
+                        passwordPromptMessage = nil
                         activeSSHAuthStage = nil
                     }
                 }
@@ -670,9 +716,12 @@ final class TerminalRuntime: ObservableObject {
         lastAppliedPTYSize = nil
         activeSSHAuthStage = nil
         activeSSHHostAddress = nil
+        activeSSHHasStoredPassword = false
         connectedSSHHost = nil
         sshAuthProbeTail.removeAll(keepingCapacity: false)
         hostKeyPromptMessage = nil
+        otpPromptMessage = nil
+        passwordPromptMessage = nil
         pendingWorkingDirectoryProbeTask?.cancel()
         pendingWorkingDirectoryProbeTask = nil
         transcriptRefreshTask?.cancel()
@@ -783,6 +832,8 @@ final class TerminalRuntime: ObservableObject {
         activeSSHAuthStage = nil
         sshAuthProbeTail.removeAll(keepingCapacity: false)
         hostKeyPromptMessage = nil
+        otpPromptMessage = nil
+        passwordPromptMessage = nil
     }
 
     private func appendTranscript(_ data: Data) {
@@ -1015,14 +1066,25 @@ final class TerminalRuntime: ObservableObject {
                 }
             case .password:
                 connectionState = "Waiting (password)"
+                if passwordPromptMessage == nil, !activeSSHHasStoredPassword {
+                    passwordPromptMessage = activeSSHHostAddress ?? ""
+                }
             case .otp:
                 connectionState = "Waiting (otp)"
+                if otpPromptMessage == nil {
+                    otpPromptMessage = Self.makeOTPPromptMessage(
+                        from: probeText,
+                        hostAddress: activeSSHHostAddress
+                    )
+                }
             case .passphrase:
                 connectionState = "Waiting (passphrase)"
             }
         } else if activeSSHAuthStage != nil {
             activeSSHAuthStage = nil
             hostKeyPromptMessage = nil
+            otpPromptMessage = nil
+            passwordPromptMessage = nil
             connectionState = "Connected (\(connectionMode.rawValue))"
         }
 
@@ -1113,5 +1175,13 @@ final class TerminalRuntime: ObservableObject {
 
         let snippet = relevantLines.suffix(4).joined(separator: "\n")
         return hostPart + snippet
+    }
+
+    static func makeOTPPromptMessage(from probeText: String, hostAddress: String?) -> String {
+        let trimmedHost = hostAddress?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedHost, !trimmedHost.isEmpty {
+            return trimmedHost
+        }
+        return ""
     }
 }

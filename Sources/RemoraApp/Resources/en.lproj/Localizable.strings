@@ -577,3 +577,13 @@
 
 /* Clone Session */
 "Clone Session" = "Clone Session";
+
+/* OTP */
+"OTP Verification" = "OTP Verification";
+"Enter code" = "Enter code";
+"OK" = "OK";
+"Cancel" = "Cancel";
+
+/* SSH Password */
+"SSH Password" = "SSH Password";
+"Enter password" = "Enter password";
