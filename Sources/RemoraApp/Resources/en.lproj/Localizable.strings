@@ -587,3 +587,8 @@
 /* SSH Password */
 "SSH Password" = "SSH Password";
 "Enter password" = "Enter password";
+
+/* Terminal Behavior */
+"Terminal" = "Terminal";
+"Copy on select & right-click paste" = "Copy on select & right-click paste";
+"Select to copy, right-click to paste. Like a classic Linux terminal." = "Select to copy, right-click to paste. Like a classic Linux terminal.";
