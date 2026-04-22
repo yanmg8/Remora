@@ -15,10 +15,7 @@ struct ContentView: View {
     @Environment(\.openURL) var openURL
     @StateObject var workspace = WorkspaceViewModel()
     @StateObject var hostCatalog = HostCatalogStore()
-    @StateObject var fileTransfer = FileTransferViewModel()
-    @StateObject var directorySyncBridge = TerminalDirectorySyncBridge()
-    @StateObject var serverMetricsCenter = ServerMetricsCenter()
-    @StateObject var serverStatusWindowManager = ServerStatusWindowManager()
+    
 
     @State var hostSearchQuery = ""
     @FocusState var sidebarFocusedField: SidebarFocusedField?
@@ -27,7 +24,6 @@ struct ContentView: View {
     @State var selectedTemplateID: UUID?
     @State var splitVisibility: NavigationSplitViewVisibility = .all
     @State var splitVisibilityBeforeFocusMode: NavigationSplitViewVisibility?
-    @State var bottomPanelVisibility = BottomPanelVisibilityState(terminal: true, fileManager: false)
     @State var workspaceFocusMode: WorkspaceFocusMode = .none
     @State var collapsedGroupNames: Set<String> = []
     @State var isGroupEditorSheetPresented = false
@@ -70,21 +66,10 @@ struct ContentView: View {
     @State var quickPathNameDraft = ""
     @State var quickPathValueDraft = ""
     @State var quickPathValidationMessage: String?
-    @State var fileManagerSFTPBindingKey = "disconnected"
-    @State var fileManagerSFTPBootstrapTask: Task<Void, Never>?
-    @State var hoveredSessionMetricsTooltip: HoveredSessionMetricsTooltip?
-    @State var hoveredSessionMetricsTooltipSize: CGSize = .zero
     @RemoraStored(\.connectionInfoPasswordCopyMutedUntilEpoch)
     var connectionInfoPasswordCopyMutedUntilEpoch: Double
     @RemoraStored(\.connectionInfoPasswordCopyMuteForever)
     var connectionInfoPasswordCopyMuteForever: Bool
-    @RemoraStored(\.serverMetricsActiveRefreshSeconds)
-    var serverMetricsActiveRefreshSeconds: Int
-    @RemoraStored(\.serverMetricsInactiveRefreshSeconds)
-    var serverMetricsInactiveRefreshSeconds: Int
-    @RemoraStored(\.serverMetricsMaxConcurrentFetches)
-    var serverMetricsMaxConcurrentFetches: Int
-    let serverMetricsTrackingTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var selectedHost: RemoraCore.Host? {
         hostCatalog.host(id: selectedHostID)
@@ -170,8 +155,7 @@ struct ContentView: View {
                 ActiveRuntimeConnectionState(
                     runtimeID: nil,
                     connectionMode: nil,
-                    connectionState: "Disconnected",
-                    hostSignature: nil
+                    connectionState: "Disconnected"
                 )
             )
             .eraseToAnyPublisher()
@@ -182,12 +166,11 @@ struct ContentView: View {
             runtime.$connectionState,
             runtime.$connectedSSHHost
         )
-        .map { mode, state, host in
+        .map { mode, state, _ in
             ActiveRuntimeConnectionState(
                 runtimeID: ObjectIdentifier(runtime),
                 connectionMode: mode,
-                connectionState: state,
-                hostSignature: host.map(Self.sftpHostSignature(for:))
+                connectionState: state
             )
         }
         .removeDuplicates()
@@ -222,35 +205,15 @@ struct ContentView: View {
                 if let firstPane = workspace.activePane {
                     firstPane.runtime.connectLocalShell()
                 }
-                syncServerMetricsConfiguration()
-                RuntimeConnectionSyncCoordinator.bindRuntimeDrivenServices(
-                    fileTransfer: fileTransfer,
-                    directorySyncBridge: directorySyncBridge,
-                    activeRuntime: workspace.activePane?.runtime,
-                    syncFileManagerBinding: syncFileManagerSFTPBinding,
-                    syncServerMetricsTracking: syncServerMetricsTracking
-                )
             }
             .onChange(of: selectedHostID) {
                 selectedTemplateID = availableTemplates.first?.id
             }
             .onChange(of: workspace.activeTabID) {
                 normalizeWorkspaceFocusMode()
-                RuntimeConnectionSyncCoordinator.attachActiveRuntime(
-                    workspace.activePane?.runtime,
-                    directorySyncBridge: directorySyncBridge,
-                    syncFileManagerBinding: syncFileManagerSFTPBinding,
-                    syncServerMetricsTracking: syncServerMetricsTracking
-                )
             }
             .onChange(of: workspace.activePaneByTab) {
                 normalizeWorkspaceFocusMode()
-                RuntimeConnectionSyncCoordinator.attachActiveRuntime(
-                    workspace.activePane?.runtime,
-                    directorySyncBridge: directorySyncBridge,
-                    syncFileManagerBinding: syncFileManagerSFTPBinding,
-                    syncServerMetricsTracking: syncServerMetricsTracking
-                )
             }
             .onChange(of: splitVisibility) {
                 normalizeWorkspaceFocusMode()
@@ -278,13 +241,6 @@ struct ContentView: View {
         let syncedContent = commandContent
             .onReceive(activeRuntimeConnectionStatePublisher) { _ in
                 normalizeWorkspaceFocusMode()
-                RuntimeConnectionSyncCoordinator.syncRuntimeDrivenServices(
-                    syncFileManagerBinding: syncFileManagerSFTPBinding,
-                    syncServerMetricsTracking: syncServerMetricsTracking
-                )
-            }
-            .onReceive(serverMetricsTrackingTimer) { _ in
-                RuntimeConnectionSyncCoordinator.syncMetricsTracking(syncServerMetricsTracking)
             }
             .onChange(of: hostCatalog.hosts) {
                 if let selectedHostID, hostCatalog.host(id: selectedHostID) != nil {
@@ -296,19 +252,9 @@ struct ContentView: View {
             .onChange(of: hostCatalog.groups) {
                 collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
             }
-            .onChange(of: serverMetricsActiveRefreshSeconds) {
-                syncServerMetricsConfiguration()
-            }
-            .onChange(of: serverMetricsInactiveRefreshSeconds) {
-                syncServerMetricsConfiguration()
-            }
-            .onChange(of: serverMetricsMaxConcurrentFetches) {
-                syncServerMetricsConfiguration()
-            }
 
         return syncedContent
             .animation(.spring(response: 0.28, dampingFraction: 0.86), value: workspace.activeTabID)
-            .animation(.spring(response: 0.32, dampingFraction: 0.84), value: bottomPanelVisibility)
             .animation(.spring(response: 0.26, dampingFraction: 0.86), value: workspaceFocusMode)
             .onExitCommand {
                 guard workspaceFocusMode.isActive else { return }

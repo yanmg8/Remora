@@ -5,7 +5,6 @@ struct ActiveRuntimeConnectionState: Equatable {
     var runtimeID: ObjectIdentifier?
     var connectionMode: ConnectionMode?
     var connectionState: String
-    var hostSignature: String?
 }
 
 struct HostExportDraft: Equatable {
@@ -26,96 +25,9 @@ struct PendingGroupDeletion: Identifiable, Equatable {
     var deleteHosts: Bool
 }
 
-struct HoveredSessionMetricsTooltip: Equatable {
-    let tabID: UUID
-    let hostTitle: String
-    let connectionState: String
-    let snapshot: ServerResourceMetricsSnapshot?
-    let isLoading: Bool
-    let errorMessage: String?
-}
-
-struct SessionMetricsButtonAnchorPreferenceKey: PreferenceKey {
-    static let defaultValue: [UUID: Anchor<CGRect>] = [:]
-
-    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
-struct BottomPanelVisibilityState: Equatable {
-    var terminal: Bool
-    var fileManager: Bool
-
-    func sessionShouldFillRemainingHeight(fileManagerAvailable: Bool) -> Bool {
-        let normalized = normalizedState(fileManagerAvailable: fileManagerAvailable)
-        return normalized.terminal
-    }
-
-    func fileManagerShouldFillRemainingHeight(fileManagerAvailable: Bool) -> Bool {
-        let normalized = normalizedState(fileManagerAvailable: fileManagerAvailable)
-        return normalized.fileManager && !normalized.terminal
-    }
-
-    mutating func normalize(fileManagerAvailable: Bool) {
-        guard fileManagerAvailable else {
-            terminal = true
-            fileManager = false
-            return
-        }
-
-        if !terminal && !fileManager {
-            terminal = true
-        }
-    }
-
-    mutating func toggleTerminal(fileManagerAvailable: Bool) {
-        guard fileManagerAvailable else {
-            normalize(fileManagerAvailable: false)
-            return
-        }
-
-        if terminal {
-            terminal = false
-            if !fileManager {
-                fileManager = true
-            }
-        } else {
-            terminal = true
-        }
-
-        normalize(fileManagerAvailable: fileManagerAvailable)
-    }
-
-    mutating func toggleFileManager(fileManagerAvailable: Bool) {
-        guard fileManagerAvailable else {
-            normalize(fileManagerAvailable: false)
-            return
-        }
-
-        if fileManager {
-            fileManager = false
-            if !terminal {
-                terminal = true
-            }
-        } else {
-            fileManager = true
-        }
-
-        normalize(fileManagerAvailable: fileManagerAvailable)
-    }
-
-    private func normalizedState(fileManagerAvailable: Bool) -> BottomPanelVisibilityState {
-        var state = self
-        state.normalize(fileManagerAvailable: fileManagerAvailable)
-        return state
-    }
-}
-
 enum WorkspaceFocusMode: Equatable {
     case none
     case terminal
-    case fileManager
 
     var isActive: Bool {
         self != .none

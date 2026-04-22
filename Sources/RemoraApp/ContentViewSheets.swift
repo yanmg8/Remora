@@ -1211,10 +1211,9 @@ struct HostQuickCommandEditorSheet: View {
                 TextField(tr("Name"), text: $nameDraft)
                     .textFieldStyle(.roundedBorder)
 
-                RemoteTextEditorRepresentable(
-                    text: $commandDraft,
-                    isEditable: true
-                )
+                TextEditor(text: $commandDraft)
+                    .font(.system(size: 13, design: .monospaced))
+                    .scrollContentBackground(.hidden)
                 .frame(minHeight: 110, maxHeight: 180)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

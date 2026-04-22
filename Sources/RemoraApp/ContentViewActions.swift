@@ -28,7 +28,6 @@ extension ContentView {
     }
 
     func normalizeBottomPanelVisibility() {
-        bottomPanelVisibility.normalize(fileManagerAvailable: shouldShowFileManager)
     }
 
     func toggleWorkspaceFocusMode(_ target: WorkspaceFocusMode) {
@@ -80,8 +79,6 @@ extension ContentView {
             return true
         case .terminal:
             return workspace.activePane != nil
-        case .fileManager:
-            return shouldShowFileManager && !workspace.tabs.isEmpty
         }
     }
 
@@ -613,7 +610,6 @@ extension ContentView {
     }
 
     func runQuickPath(_ quickPath: HostQuickPath) {
-        fileTransfer.navigateRemote(to: quickPath.path)
     }
 
     func addCurrentPathToQuickPaths(_ currentPath: String, hostID: UUID) {
@@ -726,7 +722,6 @@ extension ContentView {
         guard let tabID = workspace.activeTabID else { return }
         workspace.selectTab(tabID)
         workspace.connectActivePane(host: host, template: nil)
-        bootstrapFileManagerBindingForActiveRuntime()
         hostCatalog.markConnected(hostID: host.id)
     }
 
@@ -745,7 +740,6 @@ extension ContentView {
 
         workspace.selectTab(tabID)
         runtime.reconnectSSHSession()
-        bootstrapFileManagerBindingForActiveRuntime()
         hostCatalog.markConnected(hostID: host.id)
     }
 
@@ -764,170 +758,13 @@ extension ContentView {
         guard let newTabID = workspace.activeTabID else { return }
         workspace.selectTab(newTabID)
         workspace.connectActivePane(host: host, template: nil)
-        bootstrapFileManagerBindingForActiveRuntime()
         hostCatalog.markConnected(hostID: host.id)
     }
 
     func refreshOrReconnectFileManagerForActivePane() {
-        guard let activeTabID = workspace.activeTabID,
-              let runtime = workspace.activePane?.runtime
-        else {
-            fileTransfer.performContextAction(.refresh)
-            return
-        }
-
-        let decision = SSHRefreshActionDecision.resolve(
-            connectionState: runtime.connectionState,
-            hasReconnectableHost: runtime.reconnectableSSHHost != nil
-        )
-
-        switch decision {
-        case .refresh:
-            fileTransfer.performContextAction(.refresh)
-        case .reconnect:
-            reconnectSession(activeTabID)
-        }
     }
 
     func openSettingsAndFocusDownloadPath() {
         openWindow(id: "settings")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            NotificationCenter.default.post(name: .remoraOpenDownloadDirectorySetting, object: nil)
-        }
-    }
-
-    func syncServerMetricsTracking() {
-        let connectedHosts = workspace.tabs.compactMap { tab in
-            runtimeForTab(tab)?.connectedSSHHost
-        }
-        let activeHost = workspace.activePane?.runtime.connectedSSHHost
-        serverMetricsCenter.updateTrackedHosts(connectedHosts, activeHost: activeHost)
-    }
-
-    func syncServerMetricsConfiguration() {
-        let normalizedActive = AppSettings.clampedServerMetricsActiveRefreshSeconds(serverMetricsActiveRefreshSeconds)
-        let normalizedInactiveCandidate = AppSettings.clampedServerMetricsInactiveRefreshSeconds(serverMetricsInactiveRefreshSeconds)
-        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
-        let normalizedConcurrent = AppSettings.clampedServerMetricsMaxConcurrentFetches(serverMetricsMaxConcurrentFetches)
-
-        if normalizedActive != serverMetricsActiveRefreshSeconds {
-            serverMetricsActiveRefreshSeconds = normalizedActive
-        }
-        if normalizedInactive != serverMetricsInactiveRefreshSeconds {
-            serverMetricsInactiveRefreshSeconds = normalizedInactive
-        }
-        if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
-            serverMetricsMaxConcurrentFetches = normalizedConcurrent
-        }
-
-        serverMetricsCenter.configure(
-            activeRefreshInterval: TimeInterval(normalizedActive),
-            inactiveRefreshInterval: TimeInterval(normalizedInactive),
-            maxConcurrentFetches: normalizedConcurrent
-        )
-    }
-
-    func openServerStatusWindow(for host: RemoraCore.Host, runtime: TerminalRuntime) {
-        serverStatusWindowManager.present(
-            host: host,
-            runtime: runtime,
-            metricsCenter: serverMetricsCenter
-        )
-    }
-
-    func syncFileManagerSFTPBinding() {
-        guard let activeTabID = workspace.activeTabID,
-              let activePane = workspace.activePane
-        else {
-            bindDisconnectedSFTPIfNeeded(bindingKey: "tab:none|pane:none|disconnected")
-            return
-        }
-        let runtime = activePane.runtime
-
-        if runtime.connectionMode == .ssh, let host = runtime.connectedSSHHost {
-            let bindingKey = Self.fileManagerBindingKey(
-                tabID: activeTabID,
-                paneID: activePane.id,
-                host: host
-            )
-            guard fileManagerSFTPBindingKey != bindingKey else { return }
-            fileManagerSFTPBindingKey = bindingKey
-            fileTransfer.bindSFTPClient(
-                SystemSFTPClient(host: host),
-                bindingKey: bindingKey,
-                initialRemoteDirectory: runtime.workingDirectory ?? "/"
-            )
-            return
-        }
-
-        // Keep current binding while SSH runtime is transitioning, then retry binding.
-        if runtime.connectionMode == .ssh,
-           runtime.connectionState == "Connecting"
-            || runtime.connectionState.hasPrefix("Waiting")
-            || runtime.connectionState.hasPrefix("Connected")
-        {
-            return
-        }
-
-        let disconnectedBindingKey = Self.fileManagerDisconnectedBindingKey(
-            tabID: activeTabID,
-            paneID: activePane.id
-        )
-        bindDisconnectedSFTPIfNeeded(bindingKey: disconnectedBindingKey)
-    }
-
-    func bindDisconnectedSFTPIfNeeded(bindingKey: String) {
-        guard fileManagerSFTPBindingKey != bindingKey else { return }
-        fileManagerSFTPBindingKey = bindingKey
-        fileTransfer.bindSFTPClient(
-            DisconnectedSFTPClient(),
-            bindingKey: bindingKey,
-            initialRemoteDirectory: "/"
-        )
-    }
-
-    func bootstrapFileManagerBindingForActiveRuntime() {
-        fileManagerSFTPBootstrapTask?.cancel()
-        guard let runtime = workspace.activePane?.runtime else { return }
-        let runtimeID = ObjectIdentifier(runtime)
-
-        fileManagerSFTPBootstrapTask = Task {
-            for _ in 0 ..< 160 {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { return }
-
-                let completed: Bool = await MainActor.run {
-                    guard let currentRuntime = workspace.activePane?.runtime else { return true }
-                    guard ObjectIdentifier(currentRuntime) == runtimeID else { return true }
-
-                    syncFileManagerSFTPBinding()
-                    return currentRuntime.connectionMode != .ssh || currentRuntime.connectedSSHHost != nil
-                }
-
-                if completed {
-                    return
-                }
-            }
-        }
-    }
-
-    static func sftpHostSignature(for host: RemoraCore.Host) -> String {
-        [
-            host.id.uuidString,
-            host.address,
-            "\(host.port)",
-            host.username,
-            host.auth.method.rawValue,
-            host.auth.keyReference ?? "",
-            host.auth.passwordReference ?? "",
-        ].joined(separator: "|")
-    }
-
-    static func fileManagerBindingKey(tabID: UUID, paneID: UUID, host: RemoraCore.Host) -> String {
-        "tab:\(tabID.uuidString)|pane:\(paneID.uuidString)|ssh:\(sftpHostSignature(for: host))"
-    }
-
-    static func fileManagerDisconnectedBindingKey(tabID: UUID, paneID: UUID) -> String {
-        "tab:\(tabID.uuidString)|pane:\(paneID.uuidString)|disconnected"
     }
 }

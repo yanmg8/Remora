@@ -19,7 +19,7 @@ extension ContentView {
                     .fill(VisualStyle.borderSoft)
                     .frame(width: 1)
             }
-            .navigationSplitViewColumnWidth(min: 250, ideal: 300, max: 340)
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
             .alert(exportAlertTitle, isPresented: $isExportResultAlertPresented) {
                 Button(tr("OK"), role: .cancel) {}
             } message: {
@@ -358,19 +358,11 @@ extension ContentView {
         Group {
             switch workspaceFocusMode {
             case .none:
-                VStack(spacing: VisualStyle.panelSpacing) {
-                    sessionContainer
-                        .frame(maxWidth: .infinity, maxHeight: sessionShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
-                    if !workspace.tabs.isEmpty, shouldShowFileManager {
-                        fileManagerDisclosure
-                    }
-                }
+                sessionContainer
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             case .terminal:
                 focusedTerminalWorkspace
-
-            case .fileManager:
-                focusedFileManagerWorkspace
             }
         }
         .padding(VisualStyle.pagePadding)
@@ -432,38 +424,8 @@ extension ContentView {
         )
     }
 
-    var shouldShowFileManager: Bool {
-        workspace.activePane?.runtime.connectionMode == .ssh
-    }
-
-    var normalizedBottomPanelVisibility: BottomPanelVisibilityState {
-        var state = bottomPanelVisibility
-        state.normalize(fileManagerAvailable: shouldShowFileManager)
-        return state
-    }
-
-    var isTerminalPanelVisible: Bool {
-        normalizedBottomPanelVisibility.terminal
-    }
-
-    var isFileManagerPanelVisible: Bool {
-        normalizedBottomPanelVisibility.fileManager
-    }
-
     var isTerminalFocusMode: Bool {
         workspaceFocusMode == .terminal
-    }
-
-    var isFileManagerFocusMode: Bool {
-        workspaceFocusMode == .fileManager
-    }
-
-    var sessionShouldFillRemainingHeight: Bool {
-        normalizedBottomPanelVisibility.sessionShouldFillRemainingHeight(fileManagerAvailable: shouldShowFileManager)
-    }
-
-    var fileManagerShouldFillRemainingHeight: Bool {
-        normalizedBottomPanelVisibility.fileManagerShouldFillRemainingHeight(fileManagerAvailable: shouldShowFileManager)
     }
 
     var sessionContainer: some View {
@@ -494,62 +456,11 @@ extension ContentView {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: sessionShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
-        .layoutPriority(sessionShouldFillRemainingHeight ? 1 : 0)
+        .layoutPriority(1)
         .coordinateSpace(name: "session-container")
-        .overlayPreferenceValue(SessionMetricsButtonAnchorPreferenceKey.self) { anchors in
-            GeometryReader { proxy in
-                if let hoveredSessionMetricsTooltip,
-                   let anchor = anchors[hoveredSessionMetricsTooltip.tabID]
-                {
-                    let frame = proxy[anchor]
-                    SessionMetricsTooltip(
-                        hostTitle: hoveredSessionMetricsTooltip.hostTitle,
-                        connectionState: hoveredSessionMetricsTooltip.connectionState,
-                        snapshot: hoveredSessionMetricsTooltip.snapshot,
-                        isLoading: hoveredSessionMetricsTooltip.isLoading,
-                        errorMessage: hoveredSessionMetricsTooltip.errorMessage
-                    )
-                    .background(
-                        GeometryReader { tooltipProxy in
-                            Color.clear
-                                .onAppear {
-                                    hoveredSessionMetricsTooltipSize = tooltipProxy.size
-                                }
-                                .onChange(of: tooltipProxy.size) { _, size in
-                                    hoveredSessionMetricsTooltipSize = size
-                                }
-                        }
-                    )
-                    .offset(
-                        x: SessionMetricsTooltipPlacement.xOffset(
-                            anchorFrame: frame,
-                            tooltipWidth: max(hoveredSessionMetricsTooltipSize.width, 1),
-                            containerWidth: proxy.size.width
-                        ),
-                        y: frame.maxY + 8
-                    )
-                    .allowsHitTesting(false)
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)),
-                            removal: .opacity.combined(with: .scale(scale: 0.985, anchor: .topLeading))
-                        )
-                    )
-                    .zIndex(100)
-                }
-            }
-        }
-        .animation(
-            .easeOut(
-                duration: hoveredSessionMetricsTooltip == nil
-                    ? SessionMetricsTooltipStyle.exitDuration
-                    : SessionMetricsTooltipStyle.enterDuration
-            ),
-            value: hoveredSessionMetricsTooltip != nil
-        )
     }
 
     var emptySessionPlaceholder: some View {
@@ -651,25 +562,13 @@ extension ContentView {
                             title: tab.title,
                             tabID: tab.id,
                             runtime: runtime,
-                            metricsState: serverMetricsCenter.state(for: runtime.connectedSSHHost),
                             isActive: workspace.activeTabID == tab.id,
                             canClose: workspace.tabs.count > 1,
                             onSelect: {
                                 workspace.selectTab(tab.id)
                             },
-                            onOpenMetricsWindow: {
-                                guard let host = runtime.connectedSSHHost else { return }
-                                openServerStatusWindow(for: host, runtime: runtime)
-                            },
                             onClose: {
                                 workspace.closeTab(tab.id)
-                            },
-                            onMetricsHoverChange: { tooltip in
-                                if let tooltip {
-                                    hoveredSessionMetricsTooltip = tooltip
-                                } else if hoveredSessionMetricsTooltip?.tabID == tab.id {
-                                    hoveredSessionMetricsTooltip = nil
-                                }
                             },
                             accessibilityIdentifier: "session-tab-\(tab.title)"
                         )
@@ -802,179 +701,9 @@ extension ContentView {
         }
     }
 
-    var fileManagerDisclosure: some View {
-        VStack(spacing: 0) {
-            fileManagerHeader(
-                showsDisclosure: true,
-                isExpanded: isFileManagerPanelVisible,
-                isFocusActive: isFileManagerFocusMode,
-                onToggleDisclosure: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        bottomPanelVisibility.toggleFileManager(fileManagerAvailable: shouldShowFileManager)
-                    }
-                },
-                onToggleFocus: {
-                    toggleWorkspaceFocusMode(.fileManager)
-                }
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 5)
-            .padding(.bottom, 5)
-
-            if isFileManagerPanelVisible {
-                Divider()
-                    .overlay(VisualStyle.borderSoft)
-                let fileManagerHostID = workspace.activePane?.runtime.reconnectableSSHHost?.id
-                FileManagerPanelView(
-                    viewModel: fileTransfer,
-                    quickPaths: hostCatalog.quickPaths(for: fileManagerHostID),
-                    onRunQuickPath: { quickPath in
-                        runQuickPath(quickPath)
-                    },
-                    onManageQuickPaths: {
-                        guard let fileManagerHostID else { return }
-                        beginManageQuickPaths(for: fileManagerHostID)
-                    },
-                    onAddCurrentQuickPath: { currentPath in
-                        guard let fileManagerHostID else { return }
-                        addCurrentPathToQuickPaths(currentPath, hostID: fileManagerHostID)
-                    },
-                    onRefreshRemote: {
-                        refreshOrReconnectFileManagerForActivePane()
-                    },
-                    onEditDownloadPath: {
-                        openSettingsAndFocusDownloadPath()
-                    }
-                )
-                    .frame(minHeight: 280, maxHeight: fileManagerShouldFillRemainingHeight ? .infinity : 420, alignment: .top)
-                    .layoutPriority(fileManagerShouldFillRemainingHeight ? 1 : 0)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
-            }
-        }
-        .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
-        .frame(maxWidth: .infinity, maxHeight: fileManagerShouldFillRemainingHeight ? .infinity : nil, alignment: .top)
-        .layoutPriority(fileManagerShouldFillRemainingHeight ? 1 : 0)
-    }
-
     var focusedTerminalWorkspace: some View {
         sessionContainer
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    var focusedFileManagerWorkspace: some View {
-        VStack(spacing: 0) {
-            fileManagerHeader(
-                showsDisclosure: false,
-                isExpanded: true,
-                isFocusActive: true,
-                onToggleDisclosure: nil,
-                onToggleFocus: {
-                    toggleWorkspaceFocusMode(.fileManager)
-                }
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 5)
-            .padding(.bottom, 5)
-
-            Divider()
-                .overlay(VisualStyle.borderSoft)
-
-            let fileManagerHostID = workspace.activePane?.runtime.reconnectableSSHHost?.id
-            FileManagerPanelView(
-                viewModel: fileTransfer,
-                quickPaths: hostCatalog.quickPaths(for: fileManagerHostID),
-                onRunQuickPath: { quickPath in
-                    runQuickPath(quickPath)
-                },
-                onManageQuickPaths: {
-                    guard let fileManagerHostID else { return }
-                    beginManageQuickPaths(for: fileManagerHostID)
-                },
-                onAddCurrentQuickPath: { currentPath in
-                    guard let fileManagerHostID else { return }
-                    addCurrentPathToQuickPaths(currentPath, hostID: fileManagerHostID)
-                },
-                onRefreshRemote: {
-                    refreshOrReconnectFileManagerForActivePane()
-                },
-                onEditDownloadPath: {
-                    openSettingsAndFocusDownloadPath()
-                }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
-        }
-        .glassCard(fill: VisualStyle.rightPanelBackground, border: VisualStyle.borderSoft, showsShadow: false)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    @ViewBuilder
-    func fileManagerHeader(
-        showsDisclosure: Bool,
-        isExpanded: Bool,
-        isFocusActive: Bool,
-        onToggleDisclosure: (() -> Void)?,
-        onToggleFocus: @escaping () -> Void
-    ) -> some View {
-        HStack(spacing: 8) {
-            if let onToggleDisclosure, showsDisclosure {
-                Button(action: onToggleDisclosure) {
-                    fileManagerHeaderTitle(disclosureState: isExpanded)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("file-manager-disclosure-toggle")
-            } else {
-                fileManagerHeaderTitle(disclosureState: nil)
-            }
-
-            panelFocusButton(
-                isActive: isFocusActive,
-                enterLabel: tr("Focus File Manager"),
-                exitLabel: tr("Exit File Manager Focus")
-            ) {
-                onToggleFocus()
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 24, alignment: .center)
-    }
-
-    func fileManagerHeaderTitle(disclosureState: Bool?) -> some View {
-        HStack(spacing: 8) {
-            if let disclosureState {
-                Image(systemName: disclosureState ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(VisualStyle.textSecondary)
-                    .frame(width: 14, height: 14, alignment: .center)
-            }
-
-            Label(tr("File Manager"), systemImage: "folder")
-                .panelTitleStyle()
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-
-    func panelFocusButton(
-        isActive: Bool,
-        enterLabel: String,
-        exitLabel: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: isActive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 24, height: 24, alignment: .center)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(VisualStyle.textSecondary)
-        .accessibilityLabel(isActive ? exitLabel : enterLabel)
     }
 
     var sidebarEmptyState: some View {
@@ -1007,18 +736,14 @@ extension ContentView {
         return TerminalPaneView(
             pane: pane,
             quickCommands: hostCatalog.quickCommands(for: hostID),
-            isContentVisible: isTerminalFocusMode ? true : isTerminalPanelVisible,
+            isContentVisible: isTerminalFocusMode ? true : true,
             isFocused: workspace.activePaneByTab[tabID] == pane.id,
             isInFocusMode: isTerminalFocusMode,
             canClose: (workspace.tab(id: tabID)?.panes.count ?? 0) > 1,
             onSelect: {
                 workspace.selectPane(pane.id, in: tabID)
             },
-            onToggleCollapse: {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    bottomPanelVisibility.toggleTerminal(fileManagerAvailable: shouldShowFileManager)
-                }
-            },
+            onToggleCollapse: {},
             onToggleFocusMode: {
                 toggleWorkspaceFocusMode(.terminal)
             },

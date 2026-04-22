@@ -77,9 +77,6 @@ struct RemoraSettingsSheet: View {
     @RemoraStored(\.aiIncludeTranscript) private var aiIncludeTranscript: Bool
     @RemoraStored(\.aiTranscriptLineCount) private var aiTranscriptLineCount: Int
     @RemoraStored(\.aiRequireRunConfirmation) private var aiRequireRunConfirmation: Bool
-    @RemoraStored(\.serverMetricsActiveRefreshSeconds) private var serverMetricsActiveRefreshSeconds: Int
-    @RemoraStored(\.serverMetricsInactiveRefreshSeconds) private var serverMetricsInactiveRefreshSeconds: Int
-    @RemoraStored(\.serverMetricsMaxConcurrentFetches) private var serverMetricsMaxConcurrentFetches: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -92,7 +89,6 @@ struct RemoraSettingsSheet: View {
         .accessibilityIdentifier("settings-window")
         .onAppear {
             syncDownloadDirectoryDraftFromStorage()
-            normalizeServerMetricsSettings()
             normalizeAISettings()
             Task { await loadAIAPIKey() }
         }
@@ -101,15 +97,6 @@ struct RemoraSettingsSheet: View {
         }
         .onDisappear {
             stopShortcutCapture(clearSelection: true)
-        }
-        .onChange(of: serverMetricsActiveRefreshSeconds) {
-            normalizeServerMetricsSettings()
-        }
-        .onChange(of: serverMetricsInactiveRefreshSeconds) {
-            normalizeServerMetricsSettings()
-        }
-        .onChange(of: serverMetricsMaxConcurrentFetches) {
-            normalizeServerMetricsSettings()
         }
         .onChange(of: aiProviderRawValue) {
             applyAIProviderDefaults()
@@ -501,37 +488,6 @@ struct RemoraSettingsSheet: View {
     private var advancedPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                settingsSectionCard(
-                    title: tr("Server metrics sampling"),
-                    message: tr("Higher refresh and concurrency improve responsiveness but increase local and remote load.")
-                ) {
-                    compactSettingRow(title: tr("Active tab refresh (seconds)")) {
-                        Stepper(value: $serverMetricsActiveRefreshSeconds, in: 1...30) {
-                            Text("\(serverMetricsActiveRefreshSeconds)")
-                                .font(.system(.body, design: .monospaced))
-                        }
-                        .frame(width: 140, alignment: .trailing)
-                        .accessibilityIdentifier("settings-metrics-active-refresh")
-                    }
-
-                    compactSettingRow(title: tr("Inactive tab refresh (seconds)")) {
-                        Stepper(value: $serverMetricsInactiveRefreshSeconds, in: 1...90) {
-                            Text("\(serverMetricsInactiveRefreshSeconds)")
-                                .font(.system(.body, design: .monospaced))
-                        }
-                        .frame(width: 140, alignment: .trailing)
-                        .accessibilityIdentifier("settings-metrics-inactive-refresh")
-                    }
-
-                    compactSettingRow(title: tr("Max concurrent metric fetches")) {
-                        Stepper(value: $serverMetricsMaxConcurrentFetches, in: 1...6) {
-                            Text("\(serverMetricsMaxConcurrentFetches)")
-                                .font(.system(.body, design: .monospaced))
-                        }
-                        .frame(width: 140, alignment: .trailing)
-                        .accessibilityIdentifier("settings-metrics-max-concurrency")
-                    }
-                }
             }
             .padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -921,23 +877,6 @@ struct RemoraSettingsSheet: View {
         downloadDirectoryHighlight = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
             downloadDirectoryHighlight = false
-        }
-    }
-
-    private func normalizeServerMetricsSettings() {
-        let normalizedActive = AppSettings.clampedServerMetricsActiveRefreshSeconds(serverMetricsActiveRefreshSeconds)
-        let normalizedInactiveCandidate = AppSettings.clampedServerMetricsInactiveRefreshSeconds(serverMetricsInactiveRefreshSeconds)
-        let normalizedInactive = max(normalizedInactiveCandidate, normalizedActive)
-        let normalizedConcurrent = AppSettings.clampedServerMetricsMaxConcurrentFetches(serverMetricsMaxConcurrentFetches)
-
-        if normalizedActive != serverMetricsActiveRefreshSeconds {
-            serverMetricsActiveRefreshSeconds = normalizedActive
-        }
-        if normalizedInactive != serverMetricsInactiveRefreshSeconds {
-            serverMetricsInactiveRefreshSeconds = normalizedInactive
-        }
-        if normalizedConcurrent != serverMetricsMaxConcurrentFetches {
-            serverMetricsMaxConcurrentFetches = normalizedConcurrent
         }
     }
 

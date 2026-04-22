@@ -18,14 +18,7 @@ enum AppSettings {
     static let aiRequireRunConfirmationKey = "settings.ai.requireRunConfirmation"
     static let connectionInfoPasswordCopyMuteUntilKey = "settings.credentials.connectionInfoPasswordCopyMuteUntil"
     static let connectionInfoPasswordCopyMuteForeverKey = "settings.credentials.connectionInfoPasswordCopyMuteForever"
-    static let serverMetricsActiveRefreshSecondsKey = "settings.metrics.activeRefreshSeconds"
-    static let serverMetricsInactiveRefreshSecondsKey = "settings.metrics.inactiveRefreshSeconds"
-    static let serverMetricsMaxConcurrentFetchesKey = "settings.metrics.maxConcurrentFetches"
     static let automaticallyCheckForUpdatesKey = "settings.updates.automaticallyCheckAtLaunch"
-
-    static let defaultServerMetricsActiveRefreshSeconds = 1
-    static let defaultServerMetricsInactiveRefreshSeconds = 1
-    static let defaultServerMetricsMaxConcurrentFetches = 2
     static let defaultAutomaticallyCheckForUpdates = true
     static let defaultAIEnabled = true
     static let defaultAIActiveProvider = AIProviderOption.openAI.rawValue
@@ -85,18 +78,6 @@ enum AppSettings {
             return false
         }
         return fileManager.isWritableFile(atPath: url.path)
-    }
-
-    static func clampedServerMetricsActiveRefreshSeconds(_ value: Int) -> Int {
-        min(max(value, 1), 30)
-    }
-
-    static func clampedServerMetricsInactiveRefreshSeconds(_ value: Int) -> Int {
-        min(max(value, 1), 90)
-    }
-
-    static func clampedServerMetricsMaxConcurrentFetches(_ value: Int) -> Int {
-        min(max(value, 1), 6)
     }
 
     static func clampedAITerminalTranscriptLineCount(_ value: Int) -> Int {

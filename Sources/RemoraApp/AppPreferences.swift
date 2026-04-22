@@ -20,9 +20,6 @@ struct AppPreferencesSnapshot: Codable, Equatable {
     var aiAPIKey: String
     var connectionInfoPasswordCopyMutedUntilEpoch: Double
     var connectionInfoPasswordCopyMuteForever: Bool
-    var serverMetricsActiveRefreshSeconds: Int
-    var serverMetricsInactiveRefreshSeconds: Int
-    var serverMetricsMaxConcurrentFetches: Int
     var automaticallyCheckForUpdates: Bool
     var terminalCopyOnSelect: Bool
 
@@ -45,9 +42,6 @@ struct AppPreferencesSnapshot: Codable, Equatable {
             aiAPIKey: "",
             connectionInfoPasswordCopyMutedUntilEpoch: 0,
             connectionInfoPasswordCopyMuteForever: false,
-            serverMetricsActiveRefreshSeconds: AppSettings.defaultServerMetricsActiveRefreshSeconds,
-            serverMetricsInactiveRefreshSeconds: AppSettings.defaultServerMetricsInactiveRefreshSeconds,
-            serverMetricsMaxConcurrentFetches: AppSettings.defaultServerMetricsMaxConcurrentFetches,
             automaticallyCheckForUpdates: AppSettings.defaultAutomaticallyCheckForUpdates,
             terminalCopyOnSelect: false
         )
@@ -61,9 +55,6 @@ struct AppPreferencesSnapshot: Codable, Equatable {
         ).path
         normalized.aiTranscriptLineCount = AppSettings.clampedAITerminalTranscriptLineCount(aiTranscriptLineCount)
         normalized.aiAPIKey = aiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        normalized.serverMetricsActiveRefreshSeconds = AppSettings.clampedServerMetricsActiveRefreshSeconds(serverMetricsActiveRefreshSeconds)
-        normalized.serverMetricsInactiveRefreshSeconds = AppSettings.clampedServerMetricsInactiveRefreshSeconds(serverMetricsInactiveRefreshSeconds)
-        normalized.serverMetricsMaxConcurrentFetches = AppSettings.clampedServerMetricsMaxConcurrentFetches(serverMetricsMaxConcurrentFetches)
         return normalized
     }
 }
@@ -87,9 +78,6 @@ extension AppPreferencesSnapshot {
         case aiAPIKey
         case connectionInfoPasswordCopyMutedUntilEpoch
         case connectionInfoPasswordCopyMuteForever
-        case serverMetricsActiveRefreshSeconds
-        case serverMetricsInactiveRefreshSeconds
-        case serverMetricsMaxConcurrentFetches
         case automaticallyCheckForUpdates
         case terminalCopyOnSelect
     }
@@ -113,9 +101,6 @@ extension AppPreferencesSnapshot {
         aiAPIKey = try container.decode(String.self, forKey: .aiAPIKey)
         connectionInfoPasswordCopyMutedUntilEpoch = try container.decode(Double.self, forKey: .connectionInfoPasswordCopyMutedUntilEpoch)
         connectionInfoPasswordCopyMuteForever = try container.decode(Bool.self, forKey: .connectionInfoPasswordCopyMuteForever)
-        serverMetricsActiveRefreshSeconds = try container.decode(Int.self, forKey: .serverMetricsActiveRefreshSeconds)
-        serverMetricsInactiveRefreshSeconds = try container.decode(Int.self, forKey: .serverMetricsInactiveRefreshSeconds)
-        serverMetricsMaxConcurrentFetches = try container.decode(Int.self, forKey: .serverMetricsMaxConcurrentFetches)
         automaticallyCheckForUpdates = try container.decodeIfPresent(Bool.self, forKey: .automaticallyCheckForUpdates)
             ?? AppSettings.defaultAutomaticallyCheckForUpdates
         terminalCopyOnSelect = try container.decodeIfPresent(Bool.self, forKey: .terminalCopyOnSelect)
