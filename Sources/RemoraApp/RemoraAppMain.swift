@@ -51,6 +51,7 @@ struct RemoraAppMain: App {
                 .environment(\.locale, preferredLocale)
                 .environmentObject(keyboardShortcutStore)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
 
         Window(

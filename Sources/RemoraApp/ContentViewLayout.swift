@@ -19,7 +19,7 @@ extension ContentView {
                     .fill(VisualStyle.borderSoft)
                     .frame(width: 1)
             }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 200, max: 250)
             .alert(exportAlertTitle, isPresented: $isExportResultAlertPresented) {
                 Button(tr("OK"), role: .cancel) {}
             } message: {
@@ -366,6 +366,7 @@ extension ContentView {
             }
         }
         .padding(VisualStyle.pagePadding)
+        .toolbar(.hidden)
     }
 
     @ViewBuilder
