@@ -210,6 +210,8 @@ extension ContentView {
             )
         }
 
+        host.policies.keepAliveSeconds = hostEditorDraft.keepAlive ? 30 : 0
+
         return host
     }
 

@@ -502,6 +502,7 @@
 "Save password in local config file?" = "要将密码保存到本地配置文件吗？";
 "Save to ~/.config/remora" = "保存到 ~/.config/remora";
 "Save password in ~/.config/remora" = "将密码保存到 ~/.config/remora";
+"Keep connection alive (send heartbeat every 30s)" = "保持连接心跳（每 30 秒发送空信号）";
 "Saved to" = "已保存到";
 "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored." = "已保存的密码会以明文写入导出文件。只有在你明确理解风险，并且能控制文件存放位置时，才应继续。";
 "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora 会将已保存的密码以明文形式存放在 ~/.config/remora 中，并仅用于 SSH/SFTP 认证。除非你明确选择导出，否则这些密码不会被上传，也不会用于其他用途。";

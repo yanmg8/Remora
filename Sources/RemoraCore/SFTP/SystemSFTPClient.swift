@@ -434,10 +434,14 @@ public actor SystemSFTPClient: SFTPClientProtocol {
             "-b", "-",
             "-P", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
-            "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
-            "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
+        if host.policies.keepAliveSeconds > 0 {
+            args.append(contentsOf: [
+                "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
+                "-o", "ServerAliveCountMax=3",
+            ])
+        }
         if batchMode {
             args.append(contentsOf: ["-o", "BatchMode=yes"])
         }
@@ -472,10 +476,14 @@ public actor SystemSFTPClient: SFTPClientProtocol {
         var args: [String] = [
             "-p", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
-            "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
-            "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
         ]
+        if host.policies.keepAliveSeconds > 0 {
+            args.append(contentsOf: [
+                "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
+                "-o", "ServerAliveCountMax=3",
+            ])
+        }
         if batchMode {
             args.append(contentsOf: ["-o", "BatchMode=yes"])
         }

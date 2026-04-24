@@ -558,11 +558,15 @@ public final class ProcessSSHShellSession: SSHTransportSessionProtocol, @uncheck
         var args: [String] = [
             "-p", "\(host.port)",
             "-o", "ConnectTimeout=\(max(1, host.policies.connectTimeoutSeconds))",
-            "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
-            "-o", "ServerAliveCountMax=3",
             "-o", "StrictHostKeyChecking=ask",
             "-o", "LogLevel=ERROR",
         ]
+        if host.policies.keepAliveSeconds > 0 {
+            args.append(contentsOf: [
+                "-o", "ServerAliveInterval=\(max(5, host.policies.keepAliveSeconds))",
+                "-o", "ServerAliveCountMax=3",
+            ])
+        }
         if allocateTTY {
             args.insert("-tt", at: 0)
         }

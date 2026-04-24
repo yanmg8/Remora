@@ -495,6 +495,7 @@ struct SidebarHostEditorDraft {
     var privateKeyPath: String
     var password: String
     var savePassword: Bool
+    var keepAlive: Bool
 
     init(preferredGroup: String = "") {
         self.connectionName = ""
@@ -506,6 +507,7 @@ struct SidebarHostEditorDraft {
         self.privateKeyPath = ""
         self.password = ""
         self.savePassword = false
+        self.keepAlive = true
     }
 
     init(host: RemoraCore.Host) {
@@ -517,6 +519,7 @@ struct SidebarHostEditorDraft {
         self.privateKeyPath = host.auth.keyReference ?? ""
         self.password = ""
         self.savePassword = host.auth.passwordReference != nil
+        self.keepAlive = host.policies.keepAliveSeconds > 0
 
         switch host.auth.method {
         case .agent:
@@ -868,6 +871,13 @@ struct SidebarHostEditorSheet: View {
                 }
             }
             .textFieldStyle(.roundedBorder)
+
+            Toggle(
+                tr("Keep connection alive (send heartbeat every 30s)"),
+                isOn: $draft.keepAlive
+            )
+            .toggleStyle(.checkbox)
+            .accessibilityIdentifier("host-editor-keep-alive")
 
             HStack(spacing: 8) {
                 Button(tr("Test Connection"), action: onTestConnection)

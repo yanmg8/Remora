@@ -506,6 +506,7 @@
 "Save password in local config file?" = "Save password in local config file?";
 "Save to ~/.config/remora" = "Save to ~/.config/remora";
 "Save password in ~/.config/remora" = "Save password in ~/.config/remora";
+"Keep connection alive (send heartbeat every 30s)" = "Keep connection alive (send heartbeat every 30s)";
 "Saved to" = "Saved to";
 "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored." = "Saved passwords will be written to the export file in plaintext. Only continue if you understand the risk and control where the file will be stored.";
 "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them." = "Remora stores saved passwords in plaintext in ~/.config/remora for SSH/SFTP authentication. They are not uploaded or used for anything else unless you explicitly choose to export them.";
