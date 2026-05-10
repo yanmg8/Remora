@@ -7,8 +7,8 @@ require 'xcodeproj'
 ROOT = Pathname.new(__dir__).join('..').realpath
 PROJECT_PATH = ROOT.join('Remora.xcodeproj')
 DEPLOYMENT_TARGET = '14.0'
-SWIFTTERM_URL = 'https://github.com/migueldeicaza/SwiftTerm'
-SWIFTTERM_MIN_VERSION = '1.13.0'
+SWIFTTERM_URL = 'https://github.com/wuuJiawei/SwiftTerm'
+SWIFTTERM_REVISION = '4f632d1c60be15ad70152b006cb8679fc81c764f'
 
 def sorted_swift_files(path, relative_to:)
   Dir.glob(path.join('**/*.swift').to_s).sort.map { |file| Pathname(file).relative_path_from(relative_to).to_s }
@@ -25,12 +25,12 @@ def add_file_references(group, paths)
   end
 end
 
-def add_remote_package_dependency(project, repository_url:, minimum_version:, product_name:, targets:)
+def add_remote_package_dependency(project, repository_url:, revision:, product_name:, targets:)
   package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
   package.repositoryURL = repository_url
   package.requirement = {
-    'kind' => 'upToNextMajorVersion',
-    'minimumVersion' => minimum_version,
+    'kind' => 'revision',
+    'revision' => revision,
   }
   project.root_object.package_references << package
 
@@ -57,8 +57,8 @@ project.root_object.known_regions = ['en', 'zh-Hans']
 
 project.build_configurations.each do |config|
   config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = DEPLOYMENT_TARGET
-  config.build_settings['MARKETING_VERSION'] = '0.16.0'
-  config.build_settings['CURRENT_PROJECT_VERSION'] = '8'
+  config.build_settings['MARKETING_VERSION'] = '0.17.0'
+  config.build_settings['CURRENT_PROJECT_VERSION'] = '9'
   config.build_settings['SWIFT_VERSION'] = '6.0'
   config.build_settings['CLANG_ENABLE_MODULES'] = 'YES'
   config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
@@ -124,7 +124,7 @@ app_target.frameworks_build_phase.add_file_reference(terminal_target.product_ref
 add_remote_package_dependency(
   project,
   repository_url: SWIFTTERM_URL,
-  minimum_version: SWIFTTERM_MIN_VERSION,
+  revision: SWIFTTERM_REVISION,
   product_name: 'SwiftTerm',
   targets: [terminal_target, app_target]
 )
@@ -160,8 +160,16 @@ localizable_group.new_file('en.lproj/Localizable.strings')
 localizable_group.new_file('zh-Hans.lproj/Localizable.strings')
 app_target.resources_build_phase.add_file_reference(localizable_group, true)
 
+update_checker_group = app_resources_group.new_variant_group('UpdateChecker.strings')
+update_checker_group.new_file('en.lproj/UpdateChecker.strings')
+update_checker_group.new_file('zh-Hans.lproj/UpdateChecker.strings')
+app_target.resources_build_phase.add_file_reference(update_checker_group, true)
+
 asset_catalog_ref = resources_group.new_file('Assets.xcassets')
 app_target.resources_build_phase.add_file_reference(asset_catalog_ref, true)
+
+web_editor_ref = app_resources_group.new_file('WebEditor')
+app_target.resources_build_phase.add_file_reference(web_editor_ref, true)
 
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(app_target, nil, launch_target: true)

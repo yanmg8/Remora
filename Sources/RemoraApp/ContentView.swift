@@ -19,6 +19,8 @@ struct ContentView: View {
     @StateObject var directorySyncBridge = TerminalDirectorySyncBridge()
     @StateObject var serverMetricsCenter = ServerMetricsCenter()
     @StateObject var serverStatusWindowManager = ServerStatusWindowManager()
+    @EnvironmentObject var extensionScriptStore: ExtensionScriptAppStore
+    @StateObject var extensionScriptRunner = ExtensionScriptRunnerViewModel()
 
     @State var hostSearchQuery = ""
     @FocusState var sidebarFocusedField: SidebarFocusedField?
@@ -30,6 +32,7 @@ struct ContentView: View {
     @State var bottomPanelVisibility = BottomPanelVisibilityState(terminal: true, fileManager: false)
     @State var workspaceFocusMode: WorkspaceFocusMode = .none
     @State var collapsedGroupNames: Set<String> = []
+    @RemoraStored(\.collapsedGroupNames) var persistedCollapsedGroupNames: [String]
     @State var isGroupEditorSheetPresented = false
     @State var groupEditorMode: SidebarGroupEditorMode = .create
     @State var groupEditorSourceName = ""
@@ -209,6 +212,7 @@ struct ContentView: View {
 
         let lifecycleContent = rootContent
             .onAppear {
+                collapsedGroupNames = Set(persistedCollapsedGroupNames)
                 if selectedHostID == nil {
                     selectedHostID = hostCatalog.hosts.first?.id
                 }
@@ -274,6 +278,15 @@ struct ContentView: View {
                 guard !isExportingHosts, !isImportingHosts, !hostCatalog.isLoading else { return }
                 beginExportAllHosts()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraTerminalCopyCommand)) { _ in
+                workspace.activePane?.terminalView.performTerminalAction(.copy)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraTerminalPasteCommand)) { _ in
+                workspace.activePane?.terminalView.performTerminalAction(.paste)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .remoraTerminalClearScreenCommand)) { _ in
+                workspace.activePane?.terminalView.performTerminalAction(.clearScreen)
+            }
 
         let syncedContent = commandContent
             .onReceive(activeRuntimeConnectionStatePublisher) { _ in
@@ -295,6 +308,9 @@ struct ContentView: View {
             }
             .onChange(of: hostCatalog.groups) {
                 collapsedGroupNames = collapsedGroupNames.intersection(Set(hostCatalog.groups))
+            }
+            .onChange(of: collapsedGroupNames) {
+                persistedCollapsedGroupNames = Array(collapsedGroupNames).sorted()
             }
             .onChange(of: serverMetricsActiveRefreshSeconds) {
                 syncServerMetricsConfiguration()
